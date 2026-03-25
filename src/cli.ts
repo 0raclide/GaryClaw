@@ -5,14 +5,20 @@
  * Usage:
  *   garyclaw run <skill> [--project-dir <dir>] [--max-turns <n>] [--threshold <ratio>]
  *   garyclaw resume [--checkpoint-dir <dir>]
+ *   garyclaw daemon start|stop|status|trigger|log
  */
 
 import { createInterface } from "node:readline";
 import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fork } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runSkill, resumeSkill } from "./orchestrator.js";
 import { runPipeline, resumePipeline, readPipelineState } from "./pipeline.js";
+import { sendIPCRequest } from "./daemon-ipc.js";
+import { readPidFile, isPidAlive } from "./daemon.js";
 import type { GaryClawConfig, OrchestratorCallbacks, OrchestratorEvent } from "./types.js";
 
 // ── ANSI colors ─────────────────────────────────────────────────
@@ -30,24 +36,30 @@ const MAGENTA = "\x1b[35m";
 
 function parseArgs(argv: string[]): {
   command: string;
+  subcommand: string;
   skills: string[];
   projectDir: string;
   maxTurns: number;
   threshold: number;
   checkpointDir?: string;
+  configPath?: string;
   maxSessions: number;
   autonomous: boolean;
+  tailLines: number;
 } {
   const args = argv.slice(2);
   const command = args[0] ?? "help";
   const skills: string[] = [];
 
+  let subcommand = "";
   let projectDir = process.cwd();
   let maxTurns = 15;
   let threshold = 0.85;
   let checkpointDir: string | undefined;
+  let configPath: string | undefined;
   let maxSessions = 10;
   let autonomous = false;
+  let tailLines = 50;
 
   // Collect skills (positional args after "run") and flags
   if (command === "run") {
@@ -72,6 +84,23 @@ function parseArgs(argv: string[]): {
         skills.push(args[i].replace(/^\//, ""));
       }
     }
+  } else if (command === "daemon") {
+    // daemon subcommand: start, stop, status, trigger, log
+    subcommand = args[1] ?? "";
+    for (let i = 2; i < args.length; i++) {
+      if (args[i] === "--project-dir" && args[i + 1]) {
+        projectDir = resolve(args[++i]);
+      } else if (args[i] === "--checkpoint-dir" && args[i + 1]) {
+        checkpointDir = resolve(args[++i]);
+      } else if (args[i] === "--config" && args[i + 1]) {
+        configPath = resolve(args[++i]);
+      } else if (args[i] === "--tail" && args[i + 1]) {
+        tailLines = parseInt(args[++i], 10);
+      } else if (!args[i].startsWith("--")) {
+        // Positional args after subcommand = skill names for trigger
+        skills.push(args[i].replace(/^\//, ""));
+      }
+    }
   } else {
     // Non-run commands: parse flags only
     for (let i = 1; i < args.length; i++) {
@@ -91,7 +120,7 @@ function parseArgs(argv: string[]): {
     }
   }
 
-  return { command, skills, projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous };
+  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, tailLines };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -256,6 +285,11 @@ ${BOLD}Usage:${RESET}
   garyclaw run <skill> [skill2 ...]   Run one or more skills (pipeline if multiple)
   garyclaw resume                     Resume from last checkpoint or pipeline
   garyclaw replay                     Replay decision log as timeline
+  garyclaw daemon start               Start background daemon
+  garyclaw daemon stop                Stop running daemon
+  garyclaw daemon status              Show daemon status
+  garyclaw daemon trigger <skill...>  Enqueue skills for daemon to run
+  garyclaw daemon log [--tail N]      Show daemon log (default: last 50 lines)
 
 ${BOLD}Options:${RESET}
   --project-dir <dir>      Project directory (default: cwd)
@@ -264,6 +298,7 @@ ${BOLD}Options:${RESET}
   --checkpoint-dir <dir>   Checkpoint directory (default: .garyclaw)
   --max-sessions <n>       Max relay sessions (default: 10)
   --autonomous             Use Decision Oracle instead of human prompts
+  --config <path>          Daemon config file (default: .garyclaw/daemon.json)
 
 ${BOLD}Examples:${RESET}
   garyclaw run qa
@@ -273,6 +308,10 @@ ${BOLD}Examples:${RESET}
   garyclaw run design-review --threshold 0.80
   garyclaw resume --checkpoint-dir .garyclaw
   garyclaw replay
+  garyclaw daemon start                       # start background daemon
+  garyclaw daemon trigger qa design-review    # enqueue skills
+  garyclaw daemon status                      # check daemon state
+  garyclaw daemon log --tail 100              # view recent log
 `);
 }
 
@@ -458,9 +497,156 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (parsed.command === "daemon") {
+    const checkpointDir = parsed.checkpointDir ?? join(parsed.projectDir, ".garyclaw");
+    const socketPath = join(checkpointDir, "daemon.sock");
+
+    if (parsed.subcommand === "start") {
+      // Check if daemon is already running
+      const existingPid = readPidFile(checkpointDir);
+      if (existingPid !== null && isPidAlive(existingPid)) {
+        console.log(`${YELLOW}Daemon already running${RESET} (PID ${existingPid})`);
+        return;
+      }
+
+      // Check for config
+      const configPath = parsed.configPath ?? join(checkpointDir, "daemon.json");
+      if (!existsSync(configPath)) {
+        console.error(`${RED}No daemon config found at:${RESET} ${configPath}`);
+        console.error(`${DIM}Create a daemon.json config file. See docs for schema.${RESET}`);
+        process.exit(1);
+      }
+
+      // Fork the daemon process
+      const __filename = fileURLToPath(import.meta.url);
+      const daemonScript = join(dirname(__filename), "daemon.ts");
+      const logPath = join(checkpointDir, "daemon.log");
+
+      console.log(`${BOLD}GaryClaw Daemon${RESET} — starting...`);
+      console.log(`${DIM}  Config:     ${configPath}${RESET}`);
+      console.log(`${DIM}  Log:        ${logPath}${RESET}`);
+      console.log(`${DIM}  Checkpoint: ${checkpointDir}${RESET}`);
+
+      const child = fork(daemonScript, ["--start", checkpointDir], {
+        detached: true,
+        stdio: "ignore",
+        execArgv: ["--import", "tsx"],
+      });
+
+      child.unref();
+      console.log(`${GREEN}Daemon started${RESET} (PID ${child.pid})`);
+      return;
+    }
+
+    if (parsed.subcommand === "stop") {
+      const pid = readPidFile(checkpointDir);
+      if (pid === null) {
+        console.log(`${YELLOW}No daemon running${RESET} (no PID file found)`);
+        return;
+      }
+
+      if (!isPidAlive(pid)) {
+        console.log(`${YELLOW}Daemon not running${RESET} (stale PID ${pid})`);
+        // Clean up stale files
+        const { cleanupDaemonFiles } = await import("./daemon.js");
+        cleanupDaemonFiles(checkpointDir);
+        console.log(`${DIM}Cleaned up stale PID file${RESET}`);
+        return;
+      }
+
+      console.log(`Stopping daemon (PID ${pid})...`);
+      process.kill(pid, "SIGTERM");
+      console.log(`${GREEN}SIGTERM sent${RESET} — daemon will shut down gracefully`);
+      return;
+    }
+
+    if (parsed.subcommand === "status") {
+      try {
+        const resp = await sendIPCRequest(socketPath, { type: "status" }, 3000);
+        if (!resp.ok) {
+          console.error(`${RED}Error:${RESET} ${resp.error}`);
+          process.exit(1);
+        }
+
+        const d = resp.data as any;
+        console.log(`${BOLD}GaryClaw Daemon Status${RESET}\n`);
+        console.log(`  ${BOLD}Running:${RESET}     ${d.running ? `${GREEN}yes${RESET}` : "no"}`);
+        console.log(`  ${BOLD}Uptime:${RESET}      ${formatUptime(d.uptimeSeconds)}`);
+        console.log(`  ${BOLD}Queue:${RESET}       ${d.queuedCount} job(s) queued`);
+        console.log(`  ${BOLD}Total jobs:${RESET}  ${d.totalJobs}`);
+        console.log(`  ${BOLD}Daily cost:${RESET}  $${d.dailyCost.totalUsd.toFixed(3)} (${d.dailyCost.jobCount} jobs today)`);
+
+        if (d.currentJob) {
+          console.log(`\n  ${BOLD}Current Job:${RESET}`);
+          console.log(`    ID:      ${d.currentJob.id}`);
+          console.log(`    Skills:  ${d.currentJob.skills.map((s: string) => `/${s}`).join(", ")}`);
+          console.log(`    Started: ${d.currentJob.startedAt}`);
+          console.log(`    Cost:    $${d.currentJob.costUsd.toFixed(3)}`);
+        }
+      } catch (err) {
+        const pid = readPidFile(checkpointDir);
+        if (pid !== null && isPidAlive(pid)) {
+          console.log(`${YELLOW}Daemon is running (PID ${pid}) but IPC not responding${RESET}`);
+        } else {
+          console.log(`${DIM}Daemon is not running${RESET}`);
+        }
+      }
+      return;
+    }
+
+    if (parsed.subcommand === "trigger") {
+      if (parsed.skills.length === 0) {
+        console.error(`${RED}Error:${RESET} skill name required. Usage: garyclaw daemon trigger <skill> [skill2 ...]`);
+        process.exit(1);
+      }
+
+      try {
+        const resp = await sendIPCRequest(socketPath, { type: "trigger", skills: parsed.skills }, 3000);
+        if (resp.ok) {
+          const d = resp.data as any;
+          console.log(`${GREEN}Job enqueued:${RESET} ${d.jobId}`);
+          console.log(`${DIM}  Skills: ${parsed.skills.map((s) => `/${s}`).join(", ")}${RESET}`);
+        } else {
+          console.error(`${RED}Rejected:${RESET} ${resp.error}`);
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error(`${RED}Cannot connect to daemon.${RESET} Is it running? Try: garyclaw daemon start`);
+        process.exit(1);
+      }
+      return;
+    }
+
+    if (parsed.subcommand === "log") {
+      const logPath = join(checkpointDir, "daemon.log");
+      if (!existsSync(logPath)) {
+        console.log(`${DIM}No daemon log found at ${logPath}${RESET}`);
+        return;
+      }
+
+      const content = readFileSync(logPath, "utf-8");
+      const lines = content.split("\n");
+      const tail = lines.slice(-parsed.tailLines).join("\n");
+      console.log(tail);
+      return;
+    }
+
+    console.error(`${RED}Unknown daemon subcommand:${RESET} ${parsed.subcommand}`);
+    console.error(`${DIM}Available: start, stop, status, trigger, log${RESET}`);
+    process.exit(1);
+  }
+
   console.error(`${RED}Unknown command:${RESET} ${parsed.command}`);
   printUsage();
   process.exit(1);
+}
+
+function formatUptime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${h}h ${m}m`;
 }
 
 main().catch((err) => {

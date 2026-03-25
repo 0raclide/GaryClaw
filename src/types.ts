@@ -184,6 +184,83 @@ export interface PipelineReport {
   decisions: Decision[];
 }
 
+// ── Daemon mode ─────────────────────────────────────────────────
+
+export interface DaemonConfig {
+  version: 1;
+  projectDir: string;
+  triggers: TriggerConfig[];
+  budget: BudgetConfig;
+  notifications: {
+    enabled: boolean;
+    onComplete: boolean;
+    onError: boolean;
+    onEscalation: boolean;
+  };
+  orchestrator: {
+    maxTurnsPerSegment: number;
+    relayThresholdRatio: number;
+    maxRelaySessions: number;
+    askTimeoutMs: number;
+  };
+  logging: {
+    level: "debug" | "info" | "warn" | "error";
+    retainDays: number;
+  };
+}
+
+export type TriggerConfig = GitPollTrigger;
+
+export interface GitPollTrigger {
+  type: "git_poll";
+  intervalSeconds: number;
+  skills: string[];
+  branch?: string;
+  debounceSeconds?: number;
+}
+
+export interface BudgetConfig {
+  dailyCostLimitUsd: number;
+  perJobCostLimitUsd: number;
+  maxJobsPerDay: number;
+}
+
+export type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelled";
+
+export interface Job {
+  id: string;
+  triggeredBy: "git_poll" | "manual";
+  triggerDetail: string;
+  skills: string[];
+  projectDir: string;
+  status: JobStatus;
+  enqueuedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  costUsd: number;
+  error?: string;
+  reportPath?: string;
+}
+
+export interface DaemonState {
+  version: 1;
+  jobs: Job[];
+  dailyCost: { date: string; totalUsd: number; jobCount: number };
+}
+
+// ── IPC protocol ────────────────────────────────────────────────
+
+export type IPCRequest =
+  | { type: "status" }
+  | { type: "trigger"; skills: string[] }
+  | { type: "queue" };
+
+export interface IPCResponse {
+  ok: boolean;
+  data?: unknown;
+  error?: string;
+}
+
 // ── SDK message types (loosely typed for pre-1.0 safety) ────────
 
 export interface SdkUsage {

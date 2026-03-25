@@ -15,10 +15,11 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 2: COMPLETE** (2026-03-25) — Decision Oracle, autonomous mode, replay command
 **Phase 3: COMPLETE** (2026-03-25) — Skill Chaining, pipeline runner, context handoff, pipeline resume
 **Structured Issue Extraction: COMPLETE** (2026-03-25) — Real-time + git log hybrid extraction
-- 178 passing tests across 9 test files
+**Phase 4a: COMPLETE** (2026-03-25) — Daemon Mode MVP: lifecycle, IPC, job queue, git poll, notifications
+- 16 source modules + CLI
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
-**Next:** Phase 4 (Daemon Mode)
+**Next:** Phase 4b (Scheduling: cron triggers, config hot-reload)
 
 ---
 
@@ -41,6 +42,13 @@ npx tsx src/cli.ts resume --checkpoint-dir .garyclaw
 # Replay decision timeline
 npx tsx src/cli.ts replay
 
+# Daemon mode (background process)
+npx tsx src/cli.ts daemon start                    # start daemon (reads .garyclaw/daemon.json)
+npx tsx src/cli.ts daemon status                   # show running status
+npx tsx src/cli.ts daemon trigger qa design-review # enqueue skills
+npx tsx src/cli.ts daemon log --tail 100           # view daemon log
+npx tsx src/cli.ts daemon stop                     # graceful shutdown
+
 # Options
 npx tsx src/cli.ts run qa \
   --max-turns 15 \         # turns per segment (default: 15)
@@ -57,7 +65,12 @@ npm test
 ## Architecture
 
 ```
-CLI (args, readline, display)
+CLI (args, readline, display, daemon subcommands)
+  → Daemon (persistent background process, PID file, IPC)
+  |   → Job Runner (FIFO queue, budget enforcement, state persistence)
+  |   → Git Poller (HEAD change detection, debounce)
+  |   → Notifier (macOS notifications, job summaries)
+  |
   → Pipeline (multi-skill sequential execution, context handoff)
       → Orchestrator (main loop per skill: sessions × segments)
           → sdk-wrapper.startSegment()  →  SDK query() generator
@@ -84,7 +97,12 @@ CLI (args, readline, display)
 | `src/issue-extractor.ts` | Hybrid issue extraction from SDK stream + git log |
 | `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state |
 | `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
-| `src/cli.ts` | `garyclaw run/resume/replay`, `--autonomous` mode, multi-skill |
+| `src/daemon.ts` | Daemon process: PID, IPC server, pollers, signal handling |
+| `src/daemon-ipc.ts` | Unix socket IPC: `createIPCServer`, `sendIPCRequest` |
+| `src/job-runner.ts` | FIFO job queue, budget enforcement, state persistence |
+| `src/triggers.ts` | Git poll trigger with HEAD change detection + debounce |
+| `src/notifier.ts` | macOS notifications via osascript, job summary files |
+| `src/cli.ts` | `garyclaw run/resume/replay/daemon`, multi-skill, daemon subcommands |
 
 ### Key Design Decisions
 
@@ -131,6 +149,11 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/relay.test.ts` | 7 | git stash/pop, relay segment construction |
 | `test/pipeline.test.ts` | 27 | state persistence, context handoff, pipeline report, validation |
 | `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |
+| `test/daemon-ipc.test.ts` | 10 | Request/response over socket, malformed input, timeout |
+| `test/notifier.test.ts` | 15 | Notification formatting, summary generation, graceful failure |
+| `test/job-runner.test.ts` | 20 | FIFO queue, dedup, budget, state persistence, job lifecycle |
+| `test/triggers.test.ts` | 15 | Git poll HEAD detection, debounce, interval, branch filtering |
+| `test/daemon.test.ts` | 12 | Config validation, PID lifecycle, IPC handler, logger |
 
 ---
 
@@ -151,8 +174,14 @@ Auto-decisions via `--autonomous` mode using 6 Decision Principles. Confidence s
 ### Structured Issue Extraction — COMPLETE
 Hybrid extraction from SDK message stream (git commit tool_use blocks) + post-hoc git log verification. `IssueTracker` class, `parseCommitMessage()`, severity inference, file path association. Real-time `issue_extracted` events in CLI. See `docs/designs/structured-issue-extraction.md`.
 
-### Phase 4: Daemon Mode (DEFERRED)
-Persistent background process with triggers/scheduling. See TODOS.md.
+### Phase 4a: Daemon Mode MVP — COMPLETE
+Persistent background daemon: `garyclaw daemon start/stop/status/trigger/log`. FIFO job queue with budget enforcement and dedup. Git poll trigger with HEAD change detection and debounce. macOS notifications via osascript. Unix domain socket IPC. Job state persistence in `.garyclaw/daemon-state.json`. Always autonomous mode. See `src/daemon.ts`.
+
+### Phase 4b: Scheduling (DEFERRED)
+Cron triggers, config hot-reload via SIGHUP.
+
+### Phase 4c: Hardening (DEFERRED)
+Log rotation, job cancellation, AbortSignal in orchestrator, stale PID cleanup.
 
 ---
 

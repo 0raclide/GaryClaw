@@ -16,7 +16,8 @@
     "spike:3": "tsx src/spikes/spike-3-env-passthrough.ts",
     "spike:4": "tsx src/spikes/spike-4-relay-prompt-size.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "daemon": "tsx src/cli.ts daemon"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.2.83"
