@@ -37,6 +37,7 @@ import {
 } from "./token-monitor.js";
 import { writeCheckpoint, readCheckpoint } from "./checkpoint.js";
 import { createAskHandler } from "./ask-handler.js";
+import { askOracle, createSdkOracleQueryFn } from "./oracle.js";
 import { executeRelay, finalizeRelay } from "./relay.js";
 import { buildReport, formatReportMarkdown } from "./report.js";
 
@@ -155,6 +156,20 @@ export async function runSkill(
       askTimeoutMs: config.askTimeoutMs,
       sessionIndex,
       decisionLogPath,
+      autonomous: config.autonomous,
+      ...(config.autonomous
+        ? {
+            oracle: {
+              askOracle,
+              config: {
+                queryFn: createSdkOracleQueryFn(config.env),
+                escalateThreshold: 6,
+              },
+              skillName: config.skillName,
+            },
+            escalatedLogPath: join(config.checkpointDir, "escalated.jsonl"),
+          }
+        : {}),
     });
 
     let relayFlag = false;

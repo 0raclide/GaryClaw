@@ -97,6 +97,7 @@ export interface GaryClawConfig {
   env: Record<string, string>;
   askTimeoutMs: number;
   maxRelaySessions: number;
+  autonomous: boolean;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────

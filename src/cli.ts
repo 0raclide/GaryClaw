@@ -8,6 +8,7 @@
  */
 
 import { createInterface } from "node:readline";
+import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runSkill, resumeSkill } from "./orchestrator.js";
@@ -34,6 +35,7 @@ function parseArgs(argv: string[]): {
   threshold: number;
   checkpointDir?: string;
   maxSessions: number;
+  autonomous: boolean;
 } {
   const args = argv.slice(2);
   const command = args[0] ?? "help";
@@ -44,6 +46,7 @@ function parseArgs(argv: string[]): {
   let threshold = 0.85;
   let checkpointDir: string | undefined;
   let maxSessions = 10;
+  let autonomous = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--project-dir" && args[i + 1]) {
@@ -56,10 +59,12 @@ function parseArgs(argv: string[]): {
       checkpointDir = resolve(args[++i]);
     } else if (args[i] === "--max-sessions" && args[i + 1]) {
       maxSessions = parseInt(args[++i], 10);
+    } else if (args[i] === "--autonomous") {
+      autonomous = true;
     }
   }
 
-  return { command, skill, projectDir, maxTurns, threshold, checkpointDir, maxSessions };
+  return { command, skill, projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -211,6 +216,7 @@ ${BOLD}GaryClaw${RESET} — Context-infinite skill orchestration
 ${BOLD}Usage:${RESET}
   garyclaw run <skill>     Run a gstack skill with context relay
   garyclaw resume          Resume from last checkpoint
+  garyclaw replay          Replay decision log as timeline
 
 ${BOLD}Options:${RESET}
   --project-dir <dir>      Project directory (default: cwd)
@@ -218,11 +224,14 @@ ${BOLD}Options:${RESET}
   --threshold <ratio>      Relay threshold ratio (default: 0.85)
   --checkpoint-dir <dir>   Checkpoint directory (default: .garyclaw)
   --max-sessions <n>       Max relay sessions (default: 10)
+  --autonomous             Use Decision Oracle instead of human prompts
 
 ${BOLD}Examples:${RESET}
   garyclaw run qa
+  garyclaw run qa --autonomous
   garyclaw run design-review --threshold 0.80
   garyclaw resume --checkpoint-dir .garyclaw
+  garyclaw replay
 `);
 }
 
@@ -252,9 +261,10 @@ async function main(): Promise<void> {
       env: buildSdkEnv(process.env as Record<string, string>),
       askTimeoutMs: 5 * 60 * 1000, // 5 minutes
       maxRelaySessions: parsed.maxSessions,
+      autonomous: parsed.autonomous,
     };
 
-    console.log(`${BOLD}GaryClaw${RESET} — running ${CYAN}/${config.skillName}${RESET}`);
+    console.log(`${BOLD}GaryClaw${RESET} — running ${CYAN}/${config.skillName}${RESET}${config.autonomous ? ` ${YELLOW}[AUTONOMOUS]${RESET}` : ""}`);
     console.log(`${DIM}  Project:          ${config.projectDir}${RESET}`);
     console.log(`${DIM}  Max turns/segment: ${config.maxTurnsPerSegment}${RESET}`);
     console.log(`${DIM}  Relay threshold:   ${(config.relayThresholdRatio * 100).toFixed(0)}%${RESET}`);
@@ -286,6 +296,7 @@ async function main(): Promise<void> {
       env: buildSdkEnv(process.env as Record<string, string>),
       askTimeoutMs: 5 * 60 * 1000,
       maxRelaySessions: parsed.maxSessions,
+      autonomous: parsed.autonomous,
     };
 
     console.log(`${BOLD}GaryClaw${RESET} — resuming from ${CYAN}${checkpointDir}${RESET}`);
@@ -298,6 +309,66 @@ async function main(): Promise<void> {
       },
       onAskUser: askUserViaReadline,
     });
+
+    return;
+  }
+
+  if (parsed.command === "replay") {
+    const checkpointDir =
+      parsed.checkpointDir ?? join(parsed.projectDir, ".garyclaw");
+    const logPath = join(checkpointDir, "decisions.jsonl");
+
+    if (!existsSync(logPath)) {
+      console.error(`${RED}No decision log found at:${RESET} ${logPath}`);
+      process.exit(1);
+    }
+
+    console.log(`${BOLD}GaryClaw Decision Replay${RESET}\n`);
+
+    const lines = readFileSync(logPath, "utf-8").trim().split("\n").filter(Boolean);
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const d = JSON.parse(lines[i]);
+        const conf = d.confidence ?? "?";
+        const confColor = conf >= 8 ? GREEN : conf >= 6 ? YELLOW : RED;
+
+        console.log(`${DIM}${d.timestamp}${RESET}`);
+        console.log(`${BOLD}${i + 1}. ${d.question}${RESET}`);
+
+        if (d.options && Array.isArray(d.options)) {
+          for (const opt of d.options) {
+            const marker = opt.label === d.chosen ? `${GREEN}>>${RESET}` : "  ";
+            console.log(`  ${marker} ${opt.label} ${DIM}— ${opt.description}${RESET}`);
+          }
+        }
+
+        console.log(`  ${CYAN}Answer:${RESET} ${BOLD}${d.chosen}${RESET} ${confColor}(confidence: ${conf}/10)${RESET}`);
+        if (d.rationale) console.log(`  ${DIM}Why: ${d.rationale}${RESET}`);
+        if (d.principle) console.log(`  ${DIM}Principle: ${d.principle}${RESET}`);
+        console.log("");
+      } catch {
+        console.log(`${DIM}  [corrupt entry at line ${i + 1}]${RESET}\n`);
+      }
+    }
+
+    console.log(`${DIM}Total decisions: ${lines.length}${RESET}`);
+
+    // Check for escalated decisions
+    const escalatedPath = join(checkpointDir, "escalated.jsonl");
+    if (existsSync(escalatedPath)) {
+      const escalated = readFileSync(escalatedPath, "utf-8").trim().split("\n").filter(Boolean);
+      if (escalated.length > 0) {
+        console.log(`\n${YELLOW}${BOLD}Escalated decisions: ${escalated.length}${RESET}`);
+        for (const line of escalated) {
+          try {
+            const e = JSON.parse(line);
+            console.log(`  ${YELLOW}>${RESET} ${e.question} — ${e.escalateReason}`);
+          } catch {
+            // skip corrupt
+          }
+        }
+      }
+    }
 
     return;
   }

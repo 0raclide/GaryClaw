@@ -78,6 +78,7 @@ describe("relay", () => {
         env: { PATH: "/usr/bin" },
         askTimeoutMs: 300_000,
         maxRelaySessions: 10,
+        autonomous: false,
       };
 
       const segment = buildRelaySegment(checkpoint, config);
