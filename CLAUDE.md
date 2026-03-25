@@ -12,27 +12,35 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 
 **Phase 1a: COMPLETE** (2026-03-25) — Core relay engine, 8 source modules
 **Phase 1b: COMPLETE** (2026-03-25) — AskUserQuestion UX polish, live progress, decision audit log
-- 97 passing tests across 6 test files
+**Phase 2: COMPLETE** (2026-03-25) — Decision Oracle, autonomous mode, replay command
+- 113 passing tests across 7 test files
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
-**Next:** E2E test with real /qa skill → Phase 2 (Decision Oracle)
+**Next:** E2E test with real /qa skill → Phase 3 (Skill Chaining)
 
 ---
 
 ## Usage
 
 ```bash
-# Run a skill with context relay
+# Run a skill with human-in-the-loop decisions
 npx tsx src/cli.ts run qa --project-dir /path/to/project
+
+# Run fully autonomous (Decision Oracle makes all decisions)
+npx tsx src/cli.ts run qa --autonomous
 
 # Resume from last checkpoint
 npx tsx src/cli.ts resume --checkpoint-dir .garyclaw
+
+# Replay decision timeline
+npx tsx src/cli.ts replay
 
 # Options
 npx tsx src/cli.ts run qa \
   --max-turns 15 \         # turns per segment (default: 15)
   --threshold 0.85 \       # relay at 85% context (default: 0.85)
-  --max-sessions 10        # max relay sessions (default: 10)
+  --max-sessions 10 \      # max relay sessions (default: 10)
+  --autonomous             # use Decision Oracle
 
 # Run tests
 npm test
@@ -64,8 +72,9 @@ CLI (args, readline, display)
 | `src/sdk-wrapper.ts` | SDK isolation layer: `startSegment`, `extractTurnUsage`, `buildSdkEnv` |
 | `src/relay.ts` | Git stash + fresh relay segment + stash pop |
 | `src/report.ts` | Merge issues/findings/decisions, markdown report |
+| `src/oracle.ts` | Decision Oracle — 6 Principles, confidence scoring, escalation |
 | `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
-| `src/cli.ts` | `garyclaw run <skill>`, `garyclaw resume` |
+| `src/cli.ts` | `garyclaw run/resume/replay`, `--autonomous` mode |
 
 ### Key Design Decisions
 
@@ -106,6 +115,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/token-monitor.test.ts` | 24 | recordTurnUsage, shouldRelay, growthRate, edge cases |
 | `test/checkpoint.test.ts` | 25 | write/read/rotation, relay prompt tiering, token budget |
 | `test/ask-handler.test.ts` | 16 | Multi-question, multi-select, decision audit log, timeout→deny |
+| `test/oracle.test.ts` | 16 | Oracle decisions, confidence, escalation, error handling |
 | `test/sdk-wrapper.test.ts` | 12 | env stripping, usage extraction, result parsing |
 | `test/report.test.ts` | 13 | merge/dedup, markdown formatting |
 | `test/relay.test.ts` | 7 | git stash/pop, relay segment construction |
@@ -120,8 +130,8 @@ SDK harness, token tracking, checkpoint/relay, report generation. Solves context
 ### Phase 1b: AskUserQuestion UX Polish — COMPLETE
 Multi-question/multi-select handling, "Other" free text, ANSI-colored CLI, live progress feed (assistant text + tool calls), decision audit log (`.garyclaw/decisions.jsonl`), cost tracking display.
 
-### Phase 2: Decision Oracle
-Auto-decisions via separate Opus API call using 6 Decision Principles from /autoplan. Confidence scoring, audit trail, `garyclaw replay`.
+### Phase 2: Decision Oracle — COMPLETE
+Auto-decisions via `--autonomous` mode using 6 Decision Principles. Confidence scoring (1-10), security/destructive escalation, `garyclaw replay` command, escalated.jsonl audit trail.
 
 ### Phase 3: Skill Chaining
 `garyclaw run /qa /design-review /ship` — sequential pipeline with context passing.
