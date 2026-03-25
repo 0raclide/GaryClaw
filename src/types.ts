@@ -108,13 +108,17 @@ export type OrchestratorEvent =
   | { type: "relay_triggered"; sessionIndex: number; reason: string; contextSize: number }
   | { type: "relay_complete"; newSessionIndex: number }
   | { type: "ask_user"; question: string; options: { label: string; description: string }[] }
-  | { type: "skill_complete"; totalSessions: number; totalTurns: number }
+  | { type: "skill_complete"; totalSessions: number; totalTurns: number; costUsd: number }
   | { type: "error"; message: string; recoverable: boolean }
-  | { type: "checkpoint_saved"; path: string };
+  | { type: "checkpoint_saved"; path: string }
+  | { type: "assistant_text"; text: string }
+  | { type: "tool_use"; toolName: string; inputSummary: string }
+  | { type: "tool_result"; toolName: string }
+  | { type: "cost_update"; costUsd: number; sessionIndex: number };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;
-  onAskUser: (question: string, options: { label: string; description: string }[]) => Promise<string>;
+  onAskUser: (question: string, options: { label: string; description: string }[], multiSelect: boolean) => Promise<string>;
 }
 
 // ── Report (merged across sessions) ─────────────────────────────

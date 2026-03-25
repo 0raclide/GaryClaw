@@ -1,6 +1,6 @@
 /**
  * Orchestrator — two-level loop: outer=sessions, inner=segments.
- * Per-turn monitoring, deferred relay.
+ * Per-turn monitoring, deferred relay, live progress feed.
  *
  * Loop:
  * 1. verifyAuth()
@@ -25,7 +25,6 @@ import {
   startSegment,
   extractTurnUsage,
   extractResultData,
-  buildSdkEnv,
   verifyAuth,
 } from "./sdk-wrapper.js";
 import {
@@ -50,6 +49,68 @@ import type {
 } from "./types.js";
 
 /**
+ * Extract assistant text content from an SDK message for live progress.
+ */
+function extractAssistantText(msg: any): string | null {
+  if (msg.type !== "assistant") return null;
+  const content = msg.message?.content;
+  if (!Array.isArray(content)) return null;
+  const texts: string[] = [];
+  for (const block of content) {
+    if (block.type === "text" && block.text) {
+      texts.push(block.text);
+    }
+  }
+  return texts.length > 0 ? texts.join("") : null;
+}
+
+/**
+ * Extract tool use info from an SDK message for live progress.
+ */
+function extractToolUse(msg: any): { toolName: string; inputSummary: string } | null {
+  if (msg.type !== "assistant") return null;
+  const content = msg.message?.content;
+  if (!Array.isArray(content)) return null;
+  for (const block of content) {
+    if (block.type === "tool_use") {
+      const toolName = block.name ?? "unknown";
+      const input = block.input ?? {};
+      // Summarize input: first string field, truncated
+      const summary = summarizeToolInput(toolName, input);
+      return { toolName, inputSummary: summary };
+    }
+  }
+  return null;
+}
+
+function summarizeToolInput(toolName: string, input: Record<string, any>): string {
+  switch (toolName) {
+    case "Read":
+      return input.file_path ? truncate(input.file_path, 80) : "";
+    case "Edit":
+      return input.file_path ? truncate(input.file_path, 80) : "";
+    case "Write":
+      return input.file_path ? truncate(input.file_path, 80) : "";
+    case "Bash":
+      return input.command ? truncate(input.command, 80) : "";
+    case "Glob":
+      return input.pattern ? truncate(input.pattern, 80) : "";
+    case "Grep":
+      return input.pattern ? truncate(input.pattern, 80) : "";
+    case "WebFetch":
+      return input.url ? truncate(input.url, 80) : "";
+    default: {
+      const firstVal = Object.values(input)[0];
+      return typeof firstVal === "string" ? truncate(firstVal, 60) : "";
+    }
+  }
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max - 3) + "..." : s;
+}
+
+/**
  * Run a skill from scratch.
  */
 export async function runSkill(
@@ -58,6 +119,7 @@ export async function runSkill(
 ): Promise<void> {
   const runId = `garyclaw-${Date.now()}-${randomBytes(3).toString("hex")}`;
   const startTime = new Date().toISOString();
+  const decisionLogPath = join(config.checkpointDir, "decisions.jsonl");
 
   // 1. Verify auth
   callbacks.onEvent({ type: "segment_start", sessionIndex: 0, segmentIndex: 0 });
@@ -92,6 +154,7 @@ export async function runSkill(
       onAskUser: callbacks.onAskUser,
       askTimeoutMs: config.askTimeoutMs,
       sessionIndex,
+      decisionLogPath,
     });
 
     let relayFlag = false;
@@ -120,6 +183,22 @@ export async function runSkill(
 
       // 4. Process messages
       for await (const msg of segment) {
+        // Live progress: assistant text
+        const text = extractAssistantText(msg);
+        if (text) {
+          callbacks.onEvent({ type: "assistant_text", text });
+        }
+
+        // Live progress: tool use
+        const toolUse = extractToolUse(msg);
+        if (toolUse) {
+          callbacks.onEvent({
+            type: "tool_use",
+            toolName: toolUse.toolName,
+            inputSummary: toolUse.inputSummary,
+          });
+        }
+
         // Per-turn monitoring
         const turnUsage = extractTurnUsage(msg);
         if (turnUsage) {
@@ -157,6 +236,11 @@ export async function runSkill(
           if (result.totalCostUsd > 0) {
             setCost(monitor, result.totalCostUsd);
             estimatedCostUsd = result.totalCostUsd;
+            callbacks.onEvent({
+              type: "cost_update",
+              costUsd: estimatedCostUsd,
+              sessionIndex,
+            });
           }
 
           totalTurns = Math.max(totalTurns, result.numTurns);
@@ -280,6 +364,7 @@ export async function runSkill(
           type: "skill_complete",
           totalSessions: sessionIndex + 1,
           totalTurns,
+          costUsd: estimatedCostUsd,
         });
 
         return;

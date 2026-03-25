@@ -13,6 +13,19 @@ import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runSkill, resumeSkill } from "./orchestrator.js";
 import type { GaryClawConfig, OrchestratorEvent } from "./types.js";
 
+// ── ANSI colors ─────────────────────────────────────────────────
+
+const DIM = "\x1b[2m";
+const BOLD = "\x1b[1m";
+const RESET = "\x1b[0m";
+const CYAN = "\x1b[36m";
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const RED = "\x1b[31m";
+const MAGENTA = "\x1b[35m";
+
+// ── Arg parsing ─────────────────────────────────────────────────
+
 function parseArgs(argv: string[]): {
   command: string;
   skill?: string;
@@ -49,86 +62,171 @@ function parseArgs(argv: string[]): {
   return { command, skill, projectDir, maxTurns, threshold, checkpointDir, maxSessions };
 }
 
+// ── Event formatting ────────────────────────────────────────────
+
 function formatEvent(event: OrchestratorEvent): string {
   switch (event.type) {
     case "segment_start":
-      return `[Session ${event.sessionIndex}] Segment ${event.segmentIndex} starting...`;
+      return `${DIM}[Session ${event.sessionIndex}] Segment ${event.segmentIndex} starting...${RESET}`;
+
     case "segment_end":
-      return `[Session ${event.sessionIndex}] Segment ${event.segmentIndex} complete (${event.numTurns} turns)`;
+      return `${DIM}[Session ${event.sessionIndex}] Segment ${event.segmentIndex} complete (${event.numTurns} turns)${RESET}`;
+
     case "turn_usage": {
       const pct = event.contextWindow
         ? ` (${((event.contextSize / event.contextWindow) * 100).toFixed(1)}%)`
         : "";
-      return `  Turn ${event.turn}: ${(event.contextSize / 1000).toFixed(0)}K context${pct}`;
+      const color = event.contextWindow && event.contextSize / event.contextWindow > 0.7 ? YELLOW : DIM;
+      return `${color}  Turn ${event.turn}: ${(event.contextSize / 1000).toFixed(0)}K context${pct}${RESET}`;
     }
+
     case "relay_triggered":
-      return `\n>>> RELAY TRIGGERED [Session ${event.sessionIndex}]: ${event.reason}\n    Context: ${(event.contextSize / 1000).toFixed(0)}K tokens`;
+      return `\n${YELLOW}${BOLD}>>> RELAY TRIGGERED${RESET}${YELLOW} [Session ${event.sessionIndex}]: ${event.reason}\n    Context: ${(event.contextSize / 1000).toFixed(0)}K tokens${RESET}`;
+
     case "relay_complete":
-      return `>>> RELAY COMPLETE — starting session ${event.newSessionIndex}`;
+      return `${GREEN}>>> RELAY COMPLETE${RESET} — starting session ${event.newSessionIndex}`;
+
     case "ask_user":
-      return `\n? ${event.question}`;
+      return `\n${MAGENTA}?${RESET} ${event.question}`;
+
     case "skill_complete":
-      return `\nSKILL COMPLETE: ${event.totalSessions} session(s), ${event.totalTurns} turn(s)`;
+      return `\n${GREEN}${BOLD}SKILL COMPLETE${RESET}: ${event.totalSessions} session(s), ${event.totalTurns} turn(s), $${event.costUsd.toFixed(3)}`;
+
     case "error":
-      return `\nERROR${event.recoverable ? " (recoverable)" : ""}: ${event.message}`;
+      return `\n${RED}${event.recoverable ? "WARNING" : "ERROR"}${RESET}: ${event.message}`;
+
     case "checkpoint_saved":
-      return `  Checkpoint saved: ${event.path}`;
+      return `${DIM}  Checkpoint saved: ${event.path}${RESET}`;
+
+    case "assistant_text":
+      return `${CYAN}${event.text}${RESET}`;
+
+    case "tool_use":
+      return `${DIM}  -> ${event.toolName}${event.inputSummary ? ` ${event.inputSummary}` : ""}${RESET}`;
+
+    case "tool_result":
+      return `${DIM}  <- ${event.toolName}${RESET}`;
+
+    case "cost_update":
+      return `${DIM}  Cost: $${event.costUsd.toFixed(3)} (session ${event.sessionIndex})${RESET}`;
   }
 }
+
+// ── AskUserQuestion readline ────────────────────────────────────
 
 async function askUserViaReadline(
   question: string,
   options: { label: string; description: string }[],
+  multiSelect: boolean,
 ): Promise<string> {
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
-  return new Promise<string>((resolve) => {
-    console.log(`\n? ${question}\n`);
+  return new Promise<string>((resolvePromise) => {
+    console.log(`\n${MAGENTA}${BOLD}?${RESET} ${BOLD}${question}${RESET}\n`);
+
     options.forEach((opt, i) => {
-      console.log(`  ${i + 1}. ${opt.label} — ${opt.description}`);
+      console.log(`  ${CYAN}${i + 1}.${RESET} ${BOLD}${opt.label}${RESET} ${DIM}— ${opt.description}${RESET}`);
     });
+    console.log(`  ${CYAN}${options.length + 1}.${RESET} ${BOLD}Other${RESET} ${DIM}— Type a custom answer${RESET}`);
     console.log("");
 
-    rl.question("Choose (number or label): ", (answer) => {
+    const promptText = multiSelect
+      ? `${MAGENTA}Choose (comma-separated numbers or labels): ${RESET}`
+      : `${MAGENTA}Choose (number or label): ${RESET}`;
+
+    rl.question(promptText, (answer) => {
       rl.close();
-      const num = parseInt(answer, 10);
-      if (num >= 1 && num <= options.length) {
-        resolve(options[num - 1].label);
+
+      if (multiSelect) {
+        resolvePromise(parseMultiSelectAnswer(answer, options));
       } else {
-        // Try matching by label
-        const match = options.find(
-          (o) => o.label.toLowerCase() === answer.trim().toLowerCase(),
-        );
-        resolve(match?.label ?? options[0].label);
+        resolvePromise(parseSingleAnswer(answer, options));
       }
     });
   });
 }
 
+function parseSingleAnswer(
+  answer: string,
+  options: { label: string; description: string }[],
+): string {
+  const trimmed = answer.trim();
+  const num = parseInt(trimmed, 10);
+
+  // "Other" option (last number)
+  if (num === options.length + 1) {
+    return trimmed; // User will type their answer next prompt — for now return the raw input
+  }
+
+  // Number selection
+  if (num >= 1 && num <= options.length) {
+    return options[num - 1].label;
+  }
+
+  // Label match (case-insensitive)
+  const match = options.find(
+    (o) => o.label.toLowerCase() === trimmed.toLowerCase(),
+  );
+  if (match) return match.label;
+
+  // Free text — treat as "Other"
+  return trimmed || options[0].label;
+}
+
+function parseMultiSelectAnswer(
+  answer: string,
+  options: { label: string; description: string }[],
+): string {
+  const parts = answer.split(",").map((s) => s.trim()).filter(Boolean);
+  const selected: string[] = [];
+
+  for (const part of parts) {
+    const num = parseInt(part, 10);
+    if (num >= 1 && num <= options.length) {
+      selected.push(options[num - 1].label);
+    } else {
+      const match = options.find(
+        (o) => o.label.toLowerCase() === part.toLowerCase(),
+      );
+      if (match) {
+        selected.push(match.label);
+      } else {
+        selected.push(part); // Free text
+      }
+    }
+  }
+
+  return selected.length > 0 ? selected.join(", ") : options[0].label;
+}
+
+// ── Usage ───────────────────────────────────────────────────────
+
 function printUsage(): void {
   console.log(`
-GaryClaw — Context-infinite skill orchestration
+${BOLD}GaryClaw${RESET} — Context-infinite skill orchestration
 
-Usage:
+${BOLD}Usage:${RESET}
   garyclaw run <skill>     Run a gstack skill with context relay
   garyclaw resume          Resume from last checkpoint
 
-Options:
+${BOLD}Options:${RESET}
   --project-dir <dir>      Project directory (default: cwd)
   --max-turns <n>          Max turns per segment (default: 15)
   --threshold <ratio>      Relay threshold ratio (default: 0.85)
   --checkpoint-dir <dir>   Checkpoint directory (default: .garyclaw)
   --max-sessions <n>       Max relay sessions (default: 10)
 
-Examples:
+${BOLD}Examples:${RESET}
   garyclaw run qa
   garyclaw run design-review --threshold 0.80
   garyclaw resume --checkpoint-dir .garyclaw
 `);
 }
+
+// ── Main ────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   const parsed = parseArgs(process.argv);
@@ -140,7 +238,7 @@ async function main(): Promise<void> {
 
   if (parsed.command === "run") {
     if (!parsed.skill) {
-      console.error("Error: skill name required. Usage: garyclaw run <skill>");
+      console.error(`${RED}Error:${RESET} skill name required. Usage: garyclaw run <skill>`);
       process.exit(1);
     }
 
@@ -156,15 +254,18 @@ async function main(): Promise<void> {
       maxRelaySessions: parsed.maxSessions,
     };
 
-    console.log(`GaryClaw — running /${config.skillName}`);
-    console.log(`  Project: ${config.projectDir}`);
-    console.log(`  Max turns/segment: ${config.maxTurnsPerSegment}`);
-    console.log(`  Relay threshold: ${(config.relayThresholdRatio * 100).toFixed(0)}%`);
-    console.log(`  Max sessions: ${config.maxRelaySessions}`);
+    console.log(`${BOLD}GaryClaw${RESET} — running ${CYAN}/${config.skillName}${RESET}`);
+    console.log(`${DIM}  Project:          ${config.projectDir}${RESET}`);
+    console.log(`${DIM}  Max turns/segment: ${config.maxTurnsPerSegment}${RESET}`);
+    console.log(`${DIM}  Relay threshold:   ${(config.relayThresholdRatio * 100).toFixed(0)}%${RESET}`);
+    console.log(`${DIM}  Max sessions:      ${config.maxRelaySessions}${RESET}`);
     console.log("");
 
     await runSkill(config, {
-      onEvent: (event) => console.log(formatEvent(event)),
+      onEvent: (event) => {
+        const formatted = formatEvent(event);
+        if (formatted) console.log(formatted);
+      },
       onAskUser: askUserViaReadline,
     });
 
@@ -187,23 +288,26 @@ async function main(): Promise<void> {
       maxRelaySessions: parsed.maxSessions,
     };
 
-    console.log(`GaryClaw — resuming from ${checkpointDir}`);
+    console.log(`${BOLD}GaryClaw${RESET} — resuming from ${CYAN}${checkpointDir}${RESET}`);
     console.log("");
 
     await resumeSkill(checkpointDir, config, {
-      onEvent: (event) => console.log(formatEvent(event)),
+      onEvent: (event) => {
+        const formatted = formatEvent(event);
+        if (formatted) console.log(formatted);
+      },
       onAskUser: askUserViaReadline,
     });
 
     return;
   }
 
-  console.error(`Unknown command: ${parsed.command}`);
+  console.error(`${RED}Unknown command:${RESET} ${parsed.command}`);
   printUsage();
   process.exit(1);
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  console.error(`${RED}Fatal error:${RESET}`, err);
   process.exit(1);
 });

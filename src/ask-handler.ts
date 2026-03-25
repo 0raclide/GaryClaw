@@ -1,19 +1,30 @@
 /**
  * Ask handler — canUseTool callback for AskUserQuestion interception.
  *
- * Phase 1a: Passthrough to human via onAskUser callback.
+ * Phase 1a: Single-question passthrough to human via callback.
+ * Phase 1b: Multi-question, multi-select, "Other" free text, decision logging.
  * Phase 2 (future): Route to Decision Oracle.
  */
 
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
 import type { Decision, CanUseToolResult } from "./types.js";
+
+export interface AskQuestion {
+  question: string;
+  options: { label: string; description: string }[];
+  multiSelect: boolean;
+}
 
 export interface AskHandlerConfig {
   onAskUser: (
     question: string,
     options: { label: string; description: string }[],
+    multiSelect: boolean,
   ) => Promise<string>;
   askTimeoutMs: number;
   sessionIndex: number;
+  decisionLogPath?: string;
 }
 
 export interface AskHandler {
@@ -36,10 +47,11 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
       return { behavior: "allow" };
     }
 
-    // Extract question and options from AskUserQuestion input
+    // Extract questions array
     const questions = input.questions as
       | Array<{
           question: string;
+          header?: string;
           options: { label: string; description: string }[];
           multiSelect?: boolean;
         }>
@@ -49,35 +61,45 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
       return { behavior: "allow" };
     }
 
-    const q = questions[0];
-    const questionText = q.question;
-    const options = q.options ?? [];
-
     try {
-      // Call the human/oracle with timeout
-      const chosenLabel = await withTimeout(
-        config.onAskUser(questionText, options),
-        config.askTimeoutMs,
-      );
+      // Answer all questions in the array
+      const answers: Record<string, string> = {};
 
-      // Record the decision
-      decisions.push({
-        timestamp: new Date().toISOString(),
-        sessionIndex: config.sessionIndex,
-        question: questionText,
-        options,
-        chosen: chosenLabel,
-        confidence: 10, // Human decision = max confidence
-        rationale: "Human decision",
-        principle: "Human override",
-      });
+      for (const q of questions) {
+        const questionText = q.question;
+        const options = q.options ?? [];
+        const multiSelect = q.multiSelect ?? false;
 
-      // Build updatedInput with pre-filled answer
+        const chosenLabel = await withTimeout(
+          config.onAskUser(questionText, options, multiSelect),
+          config.askTimeoutMs,
+        );
+
+        answers[questionText] = chosenLabel;
+
+        // Record the decision
+        const decision: Decision = {
+          timestamp: new Date().toISOString(),
+          sessionIndex: config.sessionIndex,
+          question: questionText,
+          options,
+          chosen: chosenLabel,
+          confidence: 10, // Human decision = max confidence
+          rationale: "Human decision",
+          principle: "Human override",
+        };
+        decisions.push(decision);
+
+        // Write to audit log if configured
+        if (config.decisionLogPath) {
+          writeDecisionLog(config.decisionLogPath, decision);
+        }
+      }
+
+      // Build updatedInput with pre-filled answers
       const updatedInput = {
         ...input,
-        answers: {
-          [questionText]: chosenLabel,
-        },
+        answers,
       };
 
       return { behavior: "allow", updatedInput };
@@ -97,6 +119,15 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
   }
 
   return { canUseTool, getDecisions };
+}
+
+function writeDecisionLog(path: string, decision: Decision): void {
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, JSON.stringify(decision) + "\n", "utf-8");
+  } catch {
+    // Non-fatal — don't crash on log write failure
+  }
 }
 
 class TimeoutError extends Error {

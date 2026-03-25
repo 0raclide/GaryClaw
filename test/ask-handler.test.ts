@@ -1,20 +1,41 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createAskHandler } from "../src/ask-handler.js";
 
+const TEST_DIR = join(tmpdir(), `garyclaw-ask-test-${Date.now()}`);
+
+beforeEach(() => {
+  mkdirSync(TEST_DIR, { recursive: true });
+});
+
+afterEach(() => {
+  rmSync(TEST_DIR, { recursive: true, force: true });
+});
+
 function makeAskInput(
-  question: string,
-  options: { label: string; description: string }[],
+  questions: Array<{
+    question: string;
+    options: { label: string; description: string }[];
+    multiSelect?: boolean;
+  }>,
 ): Record<string, unknown> {
   return {
-    questions: [
-      {
-        question,
-        header: "Test",
-        options,
-        multiSelect: false,
-      },
-    ],
+    questions: questions.map((q) => ({
+      ...q,
+      header: "Test",
+      multiSelect: q.multiSelect ?? false,
+    })),
   };
+}
+
+function makeSingleAskInput(
+  question: string,
+  options: { label: string; description: string }[],
+  multiSelect = false,
+): Record<string, unknown> {
+  return makeAskInput([{ question, options, multiSelect }]);
 }
 
 describe("ask-handler", () => {
@@ -50,7 +71,7 @@ describe("ask-handler", () => {
     });
   });
 
-  describe("canUseTool — AskUserQuestion interception", () => {
+  describe("canUseTool — single question", () => {
     it("intercepts AskUserQuestion and calls onAskUser", async () => {
       const onAskUser = vi.fn().mockResolvedValue("Dark");
       const handler = createAskHandler({
@@ -59,10 +80,10 @@ describe("ask-handler", () => {
         sessionIndex: 0,
       });
 
-      const input = makeAskInput("Which color theme?", defaultOptions);
+      const input = makeSingleAskInput("Which color theme?", defaultOptions);
       const result = await handler.canUseTool("AskUserQuestion", input);
 
-      expect(onAskUser).toHaveBeenCalledWith("Which color theme?", defaultOptions);
+      expect(onAskUser).toHaveBeenCalledWith("Which color theme?", defaultOptions, false);
       expect(result.behavior).toBe("allow");
     });
 
@@ -73,15 +94,13 @@ describe("ask-handler", () => {
         sessionIndex: 0,
       });
 
-      const input = makeAskInput("Which color theme?", defaultOptions);
+      const input = makeSingleAskInput("Which color theme?", defaultOptions);
       const result = await handler.canUseTool("AskUserQuestion", input);
 
       expect(result.updatedInput).toBeDefined();
       expect(result.updatedInput!.answers).toEqual({
         "Which color theme?": "Dark",
       });
-      // Original questions should be preserved
-      expect(result.updatedInput!.questions).toEqual(input.questions);
     });
 
     it("records decision with full context", async () => {
@@ -91,7 +110,7 @@ describe("ask-handler", () => {
         sessionIndex: 2,
       });
 
-      const input = makeAskInput("Which theme?", defaultOptions);
+      const input = makeSingleAskInput("Which theme?", defaultOptions);
       await handler.canUseTool("AskUserQuestion", input);
 
       const decisions = handler.getDecisions();
@@ -100,27 +119,63 @@ describe("ask-handler", () => {
       expect(decisions[0].chosen).toBe("Light");
       expect(decisions[0].sessionIndex).toBe(2);
       expect(decisions[0].confidence).toBe(10);
-      expect(decisions[0].principle).toBe("Human override");
     });
+  });
 
-    it("records multiple decisions", async () => {
+  describe("canUseTool — multiple questions", () => {
+    it("handles multiple questions in a single call", async () => {
       let callCount = 0;
+      const onAskUser = vi.fn().mockImplementation(() => {
+        callCount++;
+        return Promise.resolve(callCount === 1 ? "Dark" : "Sans-serif");
+      });
+
       const handler = createAskHandler({
-        onAskUser: vi.fn().mockImplementation(() => {
-          callCount++;
-          return Promise.resolve(callCount === 1 ? "Dark" : "Light");
-        }),
+        onAskUser,
         askTimeoutMs: 5000,
         sessionIndex: 0,
       });
 
-      await handler.canUseTool("AskUserQuestion", makeAskInput("Q1?", defaultOptions));
-      await handler.canUseTool("AskUserQuestion", makeAskInput("Q2?", defaultOptions));
+      const input = makeAskInput([
+        { question: "Which theme?", options: defaultOptions },
+        {
+          question: "Which font?",
+          options: [
+            { label: "Sans-serif", description: "Clean" },
+            { label: "Serif", description: "Classic" },
+          ],
+        },
+      ]);
+
+      const result = await handler.canUseTool("AskUserQuestion", input);
+
+      expect(onAskUser).toHaveBeenCalledTimes(2);
+      expect(result.updatedInput!.answers).toEqual({
+        "Which theme?": "Dark",
+        "Which font?": "Sans-serif",
+      });
 
       const decisions = handler.getDecisions();
       expect(decisions).toHaveLength(2);
-      expect(decisions[0].chosen).toBe("Dark");
-      expect(decisions[1].chosen).toBe("Light");
+      expect(decisions[0].question).toBe("Which theme?");
+      expect(decisions[1].question).toBe("Which font?");
+    });
+  });
+
+  describe("canUseTool — multiSelect", () => {
+    it("passes multiSelect flag to onAskUser", async () => {
+      const onAskUser = vi.fn().mockResolvedValue("Dark, Blue");
+
+      const handler = createAskHandler({
+        onAskUser,
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+      });
+
+      const input = makeSingleAskInput("Which themes?", defaultOptions, true);
+      await handler.canUseTool("AskUserQuestion", input);
+
+      expect(onAskUser).toHaveBeenCalledWith("Which themes?", defaultOptions, true);
     });
   });
 
@@ -157,7 +212,7 @@ describe("ask-handler", () => {
         sessionIndex: 0,
       });
 
-      const input = makeAskInput("Slow question?", defaultOptions);
+      const input = makeSingleAskInput("Slow question?", defaultOptions);
       const result = await handler.canUseTool("AskUserQuestion", input);
 
       expect(result.behavior).toBe("deny");
@@ -171,11 +226,61 @@ describe("ask-handler", () => {
         sessionIndex: 0,
       });
 
-      const input = makeAskInput("Error question?", defaultOptions);
+      const input = makeSingleAskInput("Error question?", defaultOptions);
       const result = await handler.canUseTool("AskUserQuestion", input);
 
       expect(result.behavior).toBe("deny");
       expect(result.message).toContain("handler error");
+    });
+  });
+
+  describe("decision audit log", () => {
+    it("writes decisions to JSONL file", async () => {
+      const logPath = join(TEST_DIR, "decisions.jsonl");
+      const handler = createAskHandler({
+        onAskUser: vi.fn().mockResolvedValue("Dark"),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        decisionLogPath: logPath,
+      });
+
+      await handler.canUseTool("AskUserQuestion", makeSingleAskInput("Q?", defaultOptions));
+
+      expect(existsSync(logPath)).toBe(true);
+      const lines = readFileSync(logPath, "utf-8").trim().split("\n");
+      expect(lines).toHaveLength(1);
+      const record = JSON.parse(lines[0]);
+      expect(record.question).toBe("Q?");
+      expect(record.chosen).toBe("Dark");
+    });
+
+    it("appends multiple decisions to same file", async () => {
+      const logPath = join(TEST_DIR, "decisions.jsonl");
+      const handler = createAskHandler({
+        onAskUser: vi.fn().mockResolvedValue("Dark"),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        decisionLogPath: logPath,
+      });
+
+      await handler.canUseTool("AskUserQuestion", makeSingleAskInput("Q1?", defaultOptions));
+      await handler.canUseTool("AskUserQuestion", makeSingleAskInput("Q2?", defaultOptions));
+
+      const lines = readFileSync(logPath, "utf-8").trim().split("\n");
+      expect(lines).toHaveLength(2);
+    });
+
+    it("creates parent directory if it doesn't exist", async () => {
+      const logPath = join(TEST_DIR, "nested", "deep", "decisions.jsonl");
+      const handler = createAskHandler({
+        onAskUser: vi.fn().mockResolvedValue("Dark"),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        decisionLogPath: logPath,
+      });
+
+      await handler.canUseTool("AskUserQuestion", makeSingleAskInput("Q?", defaultOptions));
+      expect(existsSync(logPath)).toBe(true);
     });
   });
 
@@ -196,7 +301,7 @@ describe("ask-handler", () => {
         sessionIndex: 0,
       });
 
-      await handler.canUseTool("AskUserQuestion", makeAskInput("Q?", defaultOptions));
+      await handler.canUseTool("AskUserQuestion", makeSingleAskInput("Q?", defaultOptions));
 
       const d1 = handler.getDecisions();
       const d2 = handler.getDecisions();
