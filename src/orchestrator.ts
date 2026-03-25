@@ -118,6 +118,17 @@ export async function runSkill(
   config: GaryClawConfig,
   callbacks: OrchestratorCallbacks,
 ): Promise<void> {
+  return runSkillInternal(config, callbacks);
+}
+
+/**
+ * Internal: run a skill with an optional initial prompt override.
+ */
+async function runSkillInternal(
+  config: GaryClawConfig,
+  callbacks: OrchestratorCallbacks,
+  initialPromptOverride?: string,
+): Promise<void> {
   const runId = `garyclaw-${Date.now()}-${randomBytes(3).toString("hex")}`;
   const startTime = new Date().toISOString();
   const decisionLogPath = join(config.checkpointDir, "decisions.jsonl");
@@ -141,8 +152,9 @@ export async function runSkill(
   let sessionId = "";
   let estimatedCostUsd = 0;
 
-  // Initial prompt — just the skill name, SKILL.md loaded via settingSources
-  let currentPrompt = `Run the /${config.skillName} skill. Follow all SKILL.md instructions completely.`;
+  // Initial prompt — use override if provided (pipeline context handoff), else default
+  let currentPrompt = initialPromptOverride
+    ?? `Run the /${config.skillName} skill. Follow all SKILL.md instructions completely.`;
 
   // 2. Session loop
   for (
@@ -435,6 +447,18 @@ export async function runSkill(
     message: `Reached max relay sessions (${config.maxRelaySessions}). Run \`garyclaw resume\` to continue.`,
     recoverable: true,
   });
+}
+
+/**
+ * Run a skill with a custom initial prompt (used by pipeline for context handoff).
+ * Same as runSkill but overrides the default "Run the /skill..." prompt.
+ */
+export async function runSkillWithInitialPrompt(
+  config: GaryClawConfig,
+  callbacks: OrchestratorCallbacks,
+  initialPrompt: string,
+): Promise<void> {
+  return runSkillInternal(config, callbacks, initialPrompt);
 }
 
 /**

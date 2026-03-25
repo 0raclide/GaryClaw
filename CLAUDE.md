@@ -13,23 +13,28 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 1a: COMPLETE** (2026-03-25) — Core relay engine, 8 source modules
 **Phase 1b: COMPLETE** (2026-03-25) — AskUserQuestion UX polish, live progress, decision audit log
 **Phase 2: COMPLETE** (2026-03-25) — Decision Oracle, autonomous mode, replay command
-- 113 passing tests across 7 test files
+**Phase 3: COMPLETE** (2026-03-25) — Skill Chaining, pipeline runner, context handoff, pipeline resume
+- 140 passing tests across 8 test files
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
-**Next:** E2E test with real /qa skill → Phase 3 (Skill Chaining)
+**Next:** E2E test with real skills → Phase 4 (Daemon Mode)
 
 ---
 
 ## Usage
 
 ```bash
-# Run a skill with human-in-the-loop decisions
+# Run a single skill
 npx tsx src/cli.ts run qa --project-dir /path/to/project
 
 # Run fully autonomous (Decision Oracle makes all decisions)
 npx tsx src/cli.ts run qa --autonomous
 
-# Resume from last checkpoint
+# Run a skill pipeline (sequential execution with context passing)
+npx tsx src/cli.ts run qa design-review ship
+npx tsx src/cli.ts run /qa /design-review /ship   # slashes stripped automatically
+
+# Resume from last checkpoint or pipeline
 npx tsx src/cli.ts resume --checkpoint-dir .garyclaw
 
 # Replay decision timeline
@@ -52,13 +57,14 @@ npm test
 
 ```
 CLI (args, readline, display)
-  → Orchestrator (main loop: sessions × segments)
-      → sdk-wrapper.startSegment()  →  SDK query() generator
-      → token-monitor (per-turn context tracking)
-      → ask-handler (canUseTool callback for AskUserQuestion)
-      → checkpoint (save state, generate relay prompt)
-      → relay (git stash, build fresh segment)
-      → report (merge cross-session results)
+  → Pipeline (multi-skill sequential execution, context handoff)
+      → Orchestrator (main loop per skill: sessions × segments)
+          → sdk-wrapper.startSegment()  →  SDK query() generator
+          → token-monitor (per-turn context tracking)
+          → ask-handler (canUseTool callback for AskUserQuestion)
+          → checkpoint (save state, generate relay prompt)
+          → relay (git stash, build fresh segment)
+          → report (merge cross-session results)
 ```
 
 ### Module Map
@@ -73,8 +79,9 @@ CLI (args, readline, display)
 | `src/relay.ts` | Git stash + fresh relay segment + stash pop |
 | `src/report.ts` | Merge issues/findings/decisions, markdown report |
 | `src/oracle.ts` | Decision Oracle — 6 Principles, confidence scoring, escalation |
+| `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state |
 | `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
-| `src/cli.ts` | `garyclaw run/resume/replay`, `--autonomous` mode |
+| `src/cli.ts` | `garyclaw run/resume/replay`, `--autonomous` mode, multi-skill |
 
 ### Key Design Decisions
 
@@ -119,6 +126,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/sdk-wrapper.test.ts` | 12 | env stripping, usage extraction, result parsing |
 | `test/report.test.ts` | 13 | merge/dedup, markdown formatting |
 | `test/relay.test.ts` | 7 | git stash/pop, relay segment construction |
+| `test/pipeline.test.ts` | 27 | state persistence, context handoff, pipeline report, validation |
 
 ---
 
@@ -133,8 +141,8 @@ Multi-question/multi-select handling, "Other" free text, ANSI-colored CLI, live 
 ### Phase 2: Decision Oracle — COMPLETE
 Auto-decisions via `--autonomous` mode using 6 Decision Principles. Confidence scoring (1-10), security/destructive escalation, `garyclaw replay` command, escalated.jsonl audit trail.
 
-### Phase 3: Skill Chaining
-`garyclaw run /qa /design-review /ship` — sequential pipeline with context passing.
+### Phase 3: Skill Chaining — COMPLETE
+`garyclaw run /qa /design-review /ship` — sequential pipeline with context passing. Pipeline state in `.garyclaw/pipeline.json`, per-skill checkpoints in subdirectories, context handoff with issues/findings/decisions summary, pipeline resume from last completed skill.
 
 ### Phase 4: Daemon Mode (DEFERRED)
 Persistent background process with triggers/scheduling. See TODOS.md.

@@ -12,7 +12,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runSkill, resumeSkill } from "./orchestrator.js";
-import type { GaryClawConfig, OrchestratorEvent } from "./types.js";
+import { runPipeline, resumePipeline, readPipelineState } from "./pipeline.js";
+import type { GaryClawConfig, OrchestratorCallbacks, OrchestratorEvent } from "./types.js";
 
 // ── ANSI colors ─────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ const MAGENTA = "\x1b[35m";
 
 function parseArgs(argv: string[]): {
   command: string;
-  skill?: string;
+  skills: string[];
   projectDir: string;
   maxTurns: number;
   threshold: number;
@@ -39,7 +40,7 @@ function parseArgs(argv: string[]): {
 } {
   const args = argv.slice(2);
   const command = args[0] ?? "help";
-  const skill = command === "run" ? args[1] : undefined;
+  const skills: string[] = [];
 
   let projectDir = process.cwd();
   let maxTurns = 15;
@@ -48,23 +49,49 @@ function parseArgs(argv: string[]): {
   let maxSessions = 10;
   let autonomous = false;
 
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--project-dir" && args[i + 1]) {
-      projectDir = resolve(args[++i]);
-    } else if (args[i] === "--max-turns" && args[i + 1]) {
-      maxTurns = parseInt(args[++i], 10);
-    } else if (args[i] === "--threshold" && args[i + 1]) {
-      threshold = parseFloat(args[++i]);
-    } else if (args[i] === "--checkpoint-dir" && args[i + 1]) {
-      checkpointDir = resolve(args[++i]);
-    } else if (args[i] === "--max-sessions" && args[i + 1]) {
-      maxSessions = parseInt(args[++i], 10);
-    } else if (args[i] === "--autonomous") {
-      autonomous = true;
+  // Collect skills (positional args after "run") and flags
+  if (command === "run") {
+    for (let i = 1; i < args.length; i++) {
+      if (args[i].startsWith("--")) {
+        // Handle flags
+        if (args[i] === "--project-dir" && args[i + 1]) {
+          projectDir = resolve(args[++i]);
+        } else if (args[i] === "--max-turns" && args[i + 1]) {
+          maxTurns = parseInt(args[++i], 10);
+        } else if (args[i] === "--threshold" && args[i + 1]) {
+          threshold = parseFloat(args[++i]);
+        } else if (args[i] === "--checkpoint-dir" && args[i + 1]) {
+          checkpointDir = resolve(args[++i]);
+        } else if (args[i] === "--max-sessions" && args[i + 1]) {
+          maxSessions = parseInt(args[++i], 10);
+        } else if (args[i] === "--autonomous") {
+          autonomous = true;
+        }
+      } else {
+        // Positional arg = skill name (strip leading / if present)
+        skills.push(args[i].replace(/^\//, ""));
+      }
+    }
+  } else {
+    // Non-run commands: parse flags only
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === "--project-dir" && args[i + 1]) {
+        projectDir = resolve(args[++i]);
+      } else if (args[i] === "--max-turns" && args[i + 1]) {
+        maxTurns = parseInt(args[++i], 10);
+      } else if (args[i] === "--threshold" && args[i + 1]) {
+        threshold = parseFloat(args[++i]);
+      } else if (args[i] === "--checkpoint-dir" && args[i + 1]) {
+        checkpointDir = resolve(args[++i]);
+      } else if (args[i] === "--max-sessions" && args[i + 1]) {
+        maxSessions = parseInt(args[++i], 10);
+      } else if (args[i] === "--autonomous") {
+        autonomous = true;
+      }
     }
   }
 
-  return { command, skill, projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous };
+  return { command, skills, projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -114,6 +141,15 @@ function formatEvent(event: OrchestratorEvent): string {
 
     case "cost_update":
       return `${DIM}  Cost: $${event.costUsd.toFixed(3)} (session ${event.sessionIndex})${RESET}`;
+
+    case "pipeline_skill_start":
+      return `\n${BOLD}${CYAN}>>> PIPELINE [${event.skillIndex + 1}/${event.totalSkills}]${RESET} Starting ${CYAN}/${event.skillName}${RESET}`;
+
+    case "pipeline_skill_complete":
+      return `${GREEN}${BOLD}>>> PIPELINE [${event.skillIndex + 1}/${event.totalSkills}]${RESET} ${GREEN}/${event.skillName} complete ($${event.costUsd.toFixed(3)})${RESET}`;
+
+    case "pipeline_complete":
+      return `\n${GREEN}${BOLD}PIPELINE COMPLETE${RESET}: ${event.totalSkills} skill(s), $${event.totalCostUsd.toFixed(3)} total`;
   }
 }
 
@@ -214,9 +250,9 @@ function printUsage(): void {
 ${BOLD}GaryClaw${RESET} — Context-infinite skill orchestration
 
 ${BOLD}Usage:${RESET}
-  garyclaw run <skill>     Run a gstack skill with context relay
-  garyclaw resume          Resume from last checkpoint
-  garyclaw replay          Replay decision log as timeline
+  garyclaw run <skill> [skill2 ...]   Run one or more skills (pipeline if multiple)
+  garyclaw resume                     Resume from last checkpoint or pipeline
+  garyclaw replay                     Replay decision log as timeline
 
 ${BOLD}Options:${RESET}
   --project-dir <dir>      Project directory (default: cwd)
@@ -229,6 +265,8 @@ ${BOLD}Options:${RESET}
 ${BOLD}Examples:${RESET}
   garyclaw run qa
   garyclaw run qa --autonomous
+  garyclaw run qa design-review ship          # skill pipeline
+  garyclaw run /qa /design-review /ship       # same (slashes stripped)
   garyclaw run design-review --threshold 0.80
   garyclaw resume --checkpoint-dir .garyclaw
   garyclaw replay
@@ -246,38 +284,68 @@ async function main(): Promise<void> {
   }
 
   if (parsed.command === "run") {
-    if (!parsed.skill) {
-      console.error(`${RED}Error:${RESET} skill name required. Usage: garyclaw run <skill>`);
+    if (parsed.skills.length === 0) {
+      console.error(`${RED}Error:${RESET} skill name required. Usage: garyclaw run <skill> [skill2 ...]`);
       process.exit(1);
     }
 
-    const config: GaryClawConfig = {
-      skillName: parsed.skill,
-      projectDir: parsed.projectDir,
-      maxTurnsPerSegment: parsed.maxTurns,
-      relayThresholdRatio: parsed.threshold,
-      checkpointDir: parsed.checkpointDir ?? join(parsed.projectDir, ".garyclaw"),
-      settingSources: ["project"],
-      env: buildSdkEnv(process.env as Record<string, string>),
-      askTimeoutMs: 5 * 60 * 1000, // 5 minutes
-      maxRelaySessions: parsed.maxSessions,
-      autonomous: parsed.autonomous,
-    };
-
-    console.log(`${BOLD}GaryClaw${RESET} — running ${CYAN}/${config.skillName}${RESET}${config.autonomous ? ` ${YELLOW}[AUTONOMOUS]${RESET}` : ""}`);
-    console.log(`${DIM}  Project:          ${config.projectDir}${RESET}`);
-    console.log(`${DIM}  Max turns/segment: ${config.maxTurnsPerSegment}${RESET}`);
-    console.log(`${DIM}  Relay threshold:   ${(config.relayThresholdRatio * 100).toFixed(0)}%${RESET}`);
-    console.log(`${DIM}  Max sessions:      ${config.maxRelaySessions}${RESET}`);
-    console.log("");
-
-    await runSkill(config, {
+    const cbs: OrchestratorCallbacks = {
       onEvent: (event) => {
         const formatted = formatEvent(event);
         if (formatted) console.log(formatted);
       },
       onAskUser: askUserViaReadline,
-    });
+    };
+
+    if (parsed.skills.length === 1) {
+      // Single skill — run directly
+      const config: GaryClawConfig = {
+        skillName: parsed.skills[0],
+        projectDir: parsed.projectDir,
+        maxTurnsPerSegment: parsed.maxTurns,
+        relayThresholdRatio: parsed.threshold,
+        checkpointDir: parsed.checkpointDir ?? join(parsed.projectDir, ".garyclaw"),
+        settingSources: ["project"],
+        env: buildSdkEnv(process.env as Record<string, string>),
+        askTimeoutMs: 5 * 60 * 1000,
+        maxRelaySessions: parsed.maxSessions,
+        autonomous: parsed.autonomous,
+      };
+
+      console.log(`${BOLD}GaryClaw${RESET} — running ${CYAN}/${config.skillName}${RESET}${config.autonomous ? ` ${YELLOW}[AUTONOMOUS]${RESET}` : ""}`);
+      console.log(`${DIM}  Project:          ${config.projectDir}${RESET}`);
+      console.log(`${DIM}  Max turns/segment: ${config.maxTurnsPerSegment}${RESET}`);
+      console.log(`${DIM}  Relay threshold:   ${(config.relayThresholdRatio * 100).toFixed(0)}%${RESET}`);
+      console.log(`${DIM}  Max sessions:      ${config.maxRelaySessions}${RESET}`);
+      console.log("");
+
+      await runSkill(config, cbs);
+    } else {
+      // Multiple skills — run as pipeline
+      const config: GaryClawConfig = {
+        skillName: parsed.skills[0], // First skill (pipeline will override per-skill)
+        projectDir: parsed.projectDir,
+        maxTurnsPerSegment: parsed.maxTurns,
+        relayThresholdRatio: parsed.threshold,
+        checkpointDir: parsed.checkpointDir ?? join(parsed.projectDir, ".garyclaw"),
+        settingSources: ["project"],
+        env: buildSdkEnv(process.env as Record<string, string>),
+        askTimeoutMs: 5 * 60 * 1000,
+        maxRelaySessions: parsed.maxSessions,
+        autonomous: parsed.autonomous,
+      };
+
+      const skillList = parsed.skills.map((s) => `/${s}`).join(" → ");
+      console.log(`${BOLD}GaryClaw Pipeline${RESET} — ${CYAN}${skillList}${RESET}${config.autonomous ? ` ${YELLOW}[AUTONOMOUS]${RESET}` : ""}`);
+      console.log(`${DIM}  Skills:           ${parsed.skills.length}${RESET}`);
+      console.log(`${DIM}  Project:          ${config.projectDir}${RESET}`);
+      console.log(`${DIM}  Max turns/segment: ${config.maxTurnsPerSegment}${RESET}`);
+      console.log(`${DIM}  Relay threshold:   ${(config.relayThresholdRatio * 100).toFixed(0)}%${RESET}`);
+      console.log(`${DIM}  Max sessions:      ${config.maxRelaySessions}${RESET}`);
+      console.log("");
+
+      await runPipeline(parsed.skills, config, cbs);
+    }
 
     return;
   }
@@ -299,16 +367,30 @@ async function main(): Promise<void> {
       autonomous: parsed.autonomous,
     };
 
-    console.log(`${BOLD}GaryClaw${RESET} — resuming from ${CYAN}${checkpointDir}${RESET}`);
-    console.log("");
-
-    await resumeSkill(checkpointDir, config, {
+    const cbs: OrchestratorCallbacks = {
       onEvent: (event) => {
         const formatted = formatEvent(event);
         if (formatted) console.log(formatted);
       },
       onAskUser: askUserViaReadline,
-    });
+    };
+
+    // Check for pipeline state first, then fall back to single-skill checkpoint
+    const pipelineState = readPipelineState(checkpointDir);
+    if (pipelineState) {
+      const skillList = pipelineState.skills.map((s) => `/${s.skillName}`).join(" → ");
+      const completed = pipelineState.skills.filter((s) => s.status === "complete").length;
+      console.log(`${BOLD}GaryClaw Pipeline${RESET} — resuming ${CYAN}${skillList}${RESET}`);
+      console.log(`${DIM}  Completed: ${completed}/${pipelineState.skills.length}${RESET}`);
+      console.log("");
+
+      await resumePipeline(checkpointDir, config, cbs);
+    } else {
+      console.log(`${BOLD}GaryClaw${RESET} — resuming from ${CYAN}${checkpointDir}${RESET}`);
+      console.log("");
+
+      await resumeSkill(checkpointDir, config, cbs);
+    }
 
     return;
   }

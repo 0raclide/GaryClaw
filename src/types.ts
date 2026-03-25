@@ -115,7 +115,10 @@ export type OrchestratorEvent =
   | { type: "assistant_text"; text: string }
   | { type: "tool_use"; toolName: string; inputSummary: string }
   | { type: "tool_result"; toolName: string }
-  | { type: "cost_update"; costUsd: number; sessionIndex: number };
+  | { type: "cost_update"; costUsd: number; sessionIndex: number }
+  | { type: "pipeline_skill_start"; skillName: string; skillIndex: number; totalSkills: number }
+  | { type: "pipeline_skill_complete"; skillName: string; skillIndex: number; totalSkills: number; costUsd: number }
+  | { type: "pipeline_complete"; totalSkills: number; totalCostUsd: number };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;
@@ -143,6 +146,41 @@ export interface RunReport {
   findings: Finding[];
   decisions: Decision[];
   relayPoints: RelayPoint[];
+}
+
+// ── Pipeline (multi-skill chaining) ─────────────────────────────
+
+export type PipelineSkillStatus = "pending" | "running" | "complete" | "failed";
+
+export interface PipelineSkillEntry {
+  skillName: string;
+  status: PipelineSkillStatus;
+  startTime?: string;
+  endTime?: string;
+  report?: RunReport;
+}
+
+export interface PipelineState {
+  version: 1;
+  pipelineId: string;
+  skills: PipelineSkillEntry[];
+  currentSkillIndex: number;
+  startTime: string;
+  totalCostUsd: number;
+  autonomous: boolean;
+}
+
+export interface PipelineReport {
+  pipelineId: string;
+  startTime: string;
+  endTime: string;
+  skills: PipelineSkillEntry[];
+  totalSessions: number;
+  totalTurns: number;
+  totalCostUsd: number;
+  issues: Issue[];
+  findings: Finding[];
+  decisions: Decision[];
 }
 
 // ── SDK message types (loosely typed for pre-1.0 safety) ────────
