@@ -309,4 +309,120 @@ describe("ask-handler", () => {
       expect(d1).toEqual(d2);
     });
   });
+
+  describe("autonomous escalation", () => {
+    const escalationOptions = [
+      { label: "Delete all", description: "Delete all data" },
+      { label: "Keep", description: "Keep existing data" },
+    ];
+
+    function makeOracleConfig(overrides: Partial<{
+      escalate: boolean;
+      confidence: number;
+      choice: string;
+    }> = {}) {
+      const escalate = overrides.escalate ?? true;
+      const confidence = overrides.confidence ?? 3;
+      const choice = overrides.choice ?? "Keep";
+
+      return {
+        askOracle: vi.fn().mockResolvedValue({
+          choice,
+          confidence,
+          rationale: "Data safety",
+          principle: "Safety first",
+          escalate,
+          isTaste: false,
+        }),
+        config: { model: "test-model" as const },
+        skillName: "qa",
+      };
+    }
+
+    it("uses oracle's choice and does NOT call onAskUser in autonomous mode", async () => {
+      const onAskUser = vi.fn().mockResolvedValue("Delete all");
+      const handler = createAskHandler({
+        onAskUser,
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: makeOracleConfig({ escalate: true, choice: "Keep", confidence: 3 }),
+        escalatedLogPath: join(TEST_DIR, "escalated.jsonl"),
+      });
+
+      const input = makeSingleAskInput("Delete everything?", escalationOptions);
+      const result = await handler.canUseTool("AskUserQuestion", input);
+
+      expect(onAskUser).not.toHaveBeenCalled();
+      expect(result.behavior).toBe("allow");
+      expect(result.updatedInput!.answers).toEqual({
+        "Delete everything?": "Keep",
+      });
+    });
+
+    it("logs escalation to escalated.jsonl in autonomous mode", async () => {
+      const escalatedPath = join(TEST_DIR, "escalated.jsonl");
+      const handler = createAskHandler({
+        onAskUser: vi.fn(),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: makeOracleConfig({ escalate: true, confidence: 2 }),
+        escalatedLogPath: escalatedPath,
+      });
+
+      await handler.canUseTool(
+        "AskUserQuestion",
+        makeSingleAskInput("Delete everything?", escalationOptions),
+      );
+
+      expect(existsSync(escalatedPath)).toBe(true);
+      const record = JSON.parse(readFileSync(escalatedPath, "utf-8").trim());
+      expect(record.oracleConfidence).toBe(2);
+      expect(record.escalateReason).toBe("security_concern");
+    });
+
+    it("falls through to onAskUser in non-autonomous mode (existing behavior)", async () => {
+      const onAskUser = vi.fn().mockResolvedValue("Delete all");
+      const handler = createAskHandler({
+        onAskUser,
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: false,
+        oracle: makeOracleConfig({ escalate: true, choice: "Keep", confidence: 3 }),
+        escalatedLogPath: join(TEST_DIR, "escalated.jsonl"),
+      });
+
+      const input = makeSingleAskInput("Delete everything?", escalationOptions);
+      const result = await handler.canUseTool("AskUserQuestion", input);
+
+      // Non-autonomous: onAskUser IS called for escalated questions
+      expect(onAskUser).toHaveBeenCalled();
+      expect(result.updatedInput!.answers).toEqual({
+        "Delete everything?": "Delete all",
+      });
+    });
+
+    it("preserves oracle's confidence (not 10) in autonomous mode", async () => {
+      const handler = createAskHandler({
+        onAskUser: vi.fn(),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: makeOracleConfig({ escalate: true, confidence: 4, choice: "Keep" }),
+        escalatedLogPath: join(TEST_DIR, "escalated.jsonl"),
+      });
+
+      await handler.canUseTool(
+        "AskUserQuestion",
+        makeSingleAskInput("Delete everything?", escalationOptions),
+      );
+
+      const decisions = handler.getDecisions();
+      expect(decisions).toHaveLength(1);
+      expect(decisions[0].confidence).toBe(4);
+      expect(decisions[0].chosen).toBe("Keep");
+      expect(decisions[0].principle).toBe("Safety first");
+    });
+  });
 });

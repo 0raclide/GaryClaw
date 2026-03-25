@@ -104,7 +104,7 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
 
             // If human callback available and not in fully autonomous mode,
             // ask the human instead
-            if (config.onAskUser) {
+            if (!config.autonomous && config.onAskUser) {
               try {
                 const humanChoice = await withTimeout(
                   config.onAskUser(
