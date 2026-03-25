@@ -10,12 +10,12 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 
 ## Current Status
 
-**Phase 1a: COMPLETE** (2026-03-25)
-- 8 source modules + CLI entry point
-- 93 passing tests across 6 test files
+**Phase 1a: COMPLETE** (2026-03-25) — Core relay engine, 8 source modules
+**Phase 1b: COMPLETE** (2026-03-25) — AskUserQuestion UX polish, live progress, decision audit log
+- 97 passing tests across 6 test files
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
-**Next:** Phase 1b (AskUserQuestion UX polish) → E2E with real /qa → Phase 2 (Decision Oracle)
+**Next:** E2E test with real /qa skill → Phase 2 (Decision Oracle)
 
 ---
 
@@ -105,7 +105,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 |-----------|-------|----------|
 | `test/token-monitor.test.ts` | 24 | recordTurnUsage, shouldRelay, growthRate, edge cases |
 | `test/checkpoint.test.ts` | 25 | write/read/rotation, relay prompt tiering, token budget |
-| `test/ask-handler.test.ts` | 12 | AskUserQuestion interception, timeout→deny, passthrough |
+| `test/ask-handler.test.ts` | 16 | Multi-question, multi-select, decision audit log, timeout→deny |
 | `test/sdk-wrapper.test.ts` | 12 | env stripping, usage extraction, result parsing |
 | `test/report.test.ts` | 13 | merge/dedup, markdown formatting |
 | `test/relay.test.ts` | 7 | git stash/pop, relay segment construction |
@@ -117,8 +117,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 ### Phase 1a: Core Relay — COMPLETE
 SDK harness, token tracking, checkpoint/relay, report generation. Solves context exhaustion.
 
-### Phase 1b: AskUserQuestion UX Polish — NEXT
-Improve readline UX, multi-select handling, progress display during execution.
+### Phase 1b: AskUserQuestion UX Polish — COMPLETE
+Multi-question/multi-select handling, "Other" free text, ANSI-colored CLI, live progress feed (assistant text + tool calls), decision audit log (`.garyclaw/decisions.jsonl`), cost tracking display.
 
 ### Phase 2: Decision Oracle
 Auto-decisions via separate Opus API call using 6 Decision Principles from /autoplan. Confidence scoring, audit trail, `garyclaw replay`.
