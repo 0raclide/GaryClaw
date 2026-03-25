@@ -1,0 +1,29 @@
+{
+  "name": "garyclaw",
+  "version": "0.1.0",
+  "description": "Context-infinite orchestration harness for Claude Code skills",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "bin": {
+    "garyclaw": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "spike:1": "tsx src/spikes/spike-1-can-use-tool.ts",
+    "spike:2": "tsx src/spikes/spike-2-token-tracking.ts",
+    "spike:3": "tsx src/spikes/spike-3-env-passthrough.ts",
+    "spike:4": "tsx src/spikes/spike-4-relay-prompt-size.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.2.83"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
