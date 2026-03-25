@@ -148,6 +148,9 @@ function formatEvent(event: OrchestratorEvent): string {
     case "pipeline_skill_complete":
       return `${GREEN}${BOLD}>>> PIPELINE [${event.skillIndex + 1}/${event.totalSkills}]${RESET} ${GREEN}/${event.skillName} complete ($${event.costUsd.toFixed(3)})${RESET}`;
 
+    case "issue_extracted":
+      return `  ${GREEN}✓${RESET} ${BOLD}${event.issue.id}${RESET}: ${event.issue.description}${event.issue.filePath ? ` ${DIM}(${event.issue.filePath})${RESET}` : ""}`;
+
     case "pipeline_complete":
       return `\n${GREEN}${BOLD}PIPELINE COMPLETE${RESET}: ${event.totalSkills} skill(s), $${event.totalCostUsd.toFixed(3)} total`;
   }

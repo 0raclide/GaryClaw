@@ -14,10 +14,11 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 1b: COMPLETE** (2026-03-25) — AskUserQuestion UX polish, live progress, decision audit log
 **Phase 2: COMPLETE** (2026-03-25) — Decision Oracle, autonomous mode, replay command
 **Phase 3: COMPLETE** (2026-03-25) — Skill Chaining, pipeline runner, context handoff, pipeline resume
-- 140 passing tests across 8 test files
+**Structured Issue Extraction: COMPLETE** (2026-03-25) — Real-time + git log hybrid extraction
+- 178 passing tests across 9 test files
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
-**Next:** E2E test with real skills → Phase 4 (Daemon Mode)
+**Next:** Phase 4 (Daemon Mode)
 
 ---
 
@@ -62,6 +63,7 @@ CLI (args, readline, display)
           → sdk-wrapper.startSegment()  →  SDK query() generator
           → token-monitor (per-turn context tracking)
           → ask-handler (canUseTool callback for AskUserQuestion)
+          → issue-extractor (real-time + git log issue extraction)
           → checkpoint (save state, generate relay prompt)
           → relay (git stash, build fresh segment)
           → report (merge cross-session results)
@@ -79,6 +81,7 @@ CLI (args, readline, display)
 | `src/relay.ts` | Git stash + fresh relay segment + stash pop |
 | `src/report.ts` | Merge issues/findings/decisions, markdown report |
 | `src/oracle.ts` | Decision Oracle — 6 Principles, confidence scoring, escalation |
+| `src/issue-extractor.ts` | Hybrid issue extraction from SDK stream + git log |
 | `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state |
 | `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
 | `src/cli.ts` | `garyclaw run/resume/replay`, `--autonomous` mode, multi-skill |
@@ -127,6 +130,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/report.test.ts` | 13 | merge/dedup, markdown formatting |
 | `test/relay.test.ts` | 7 | git stash/pop, relay segment construction |
 | `test/pipeline.test.ts` | 27 | state persistence, context handoff, pipeline report, validation |
+| `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |
 
 ---
 
@@ -143,6 +147,9 @@ Auto-decisions via `--autonomous` mode using 6 Decision Principles. Confidence s
 
 ### Phase 3: Skill Chaining — COMPLETE
 `garyclaw run /qa /design-review /ship` — sequential pipeline with context passing. Pipeline state in `.garyclaw/pipeline.json`, per-skill checkpoints in subdirectories, context handoff with issues/findings/decisions summary, pipeline resume from last completed skill.
+
+### Structured Issue Extraction — COMPLETE
+Hybrid extraction from SDK message stream (git commit tool_use blocks) + post-hoc git log verification. `IssueTracker` class, `parseCommitMessage()`, severity inference, file path association. Real-time `issue_extracted` events in CLI. See `docs/designs/structured-issue-extraction.md`.
 
 ### Phase 4: Daemon Mode (DEFERRED)
 Persistent background process with triggers/scheduling. See TODOS.md.

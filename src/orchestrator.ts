@@ -41,6 +41,8 @@ import { askOracle, createSdkOracleQueryFn } from "./oracle.js";
 import { executeRelay, finalizeRelay } from "./relay.js";
 import { buildReport, formatReportMarkdown } from "./report.js";
 
+import { IssueTracker, extractAllToolUse, parseGitLog } from "./issue-extractor.js";
+
 import type {
   GaryClawConfig,
   OrchestratorCallbacks,
@@ -148,6 +150,7 @@ async function runSkillInternal(
 
   const checkpoints: Checkpoint[] = [];
   const relayPoints: RelayPoint[] = [];
+  const issueTracker = new IssueTracker(config.skillName);
   let totalTurns = 0;
   let sessionId = "";
   let estimatedCostUsd = 0;
@@ -226,6 +229,18 @@ async function runSkillInternal(
           });
         }
 
+        // Issue extraction: feed all tool_use blocks to tracker
+        const allToolUses = extractAllToolUse(msg);
+        for (const tu of allToolUses) {
+          issueTracker.trackToolUse(tu.toolName, tu.input);
+          if (tu.toolName === "Bash" && typeof tu.input.command === "string") {
+            const extracted = issueTracker.trackCommit(tu.input.command);
+            if (extracted) {
+              callbacks.onEvent({ type: "issue_extracted", issue: extracted });
+            }
+          }
+        }
+
         // Per-turn monitoring
         const turnUsage = extractTurnUsage(msg);
         if (turnUsage) {
@@ -291,6 +306,7 @@ async function runSkillInternal(
           askHandler.getDecisions(),
           sessionIndex,
           checkpoints,
+          issueTracker,
         );
         writeCheckpoint(checkpoint, config.checkpointDir);
         checkpoints.push(checkpoint);
@@ -365,6 +381,7 @@ async function runSkillInternal(
           askHandler.getDecisions(),
           sessionIndex,
           checkpoints,
+          issueTracker,
         );
         writeCheckpoint(checkpoint, config.checkpointDir);
         checkpoints.push(checkpoint);
@@ -418,6 +435,7 @@ async function runSkillInternal(
           askHandler.getDecisions(),
           sessionIndex,
           checkpoints,
+          issueTracker,
         );
         writeCheckpoint(checkpoint, config.checkpointDir);
         checkpoints.push(checkpoint);
@@ -496,6 +514,7 @@ function buildCheckpoint(
   decisions: ReturnType<typeof createAskHandler>["getDecisions"] extends () => infer R ? R : never,
   sessionIndex: number,
   previousCheckpoints: Checkpoint[],
+  issueTracker: IssueTracker,
 ): Checkpoint {
   const usageSnapshot = buildUsageSnapshot(monitor, sessionIndex + 1);
 
@@ -520,12 +539,21 @@ function buildCheckpoint(
     // Non-fatal — may not be in a git repo
   }
 
+  // Git log verification: catch commits missed by stream parsing
+  const prevHead = previousCheckpoints.length > 0
+    ? previousCheckpoints[previousCheckpoints.length - 1].gitHead
+    : null;
+  if (prevHead && prevHead !== "unknown" && gitHead !== "unknown") {
+    const gitLogIssues = parseGitLog(prevHead, gitHead, config.projectDir, config.skillName);
+    issueTracker.mergeGitLogIssues(gitLogIssues);
+  }
+
   return {
     version: 1,
     timestamp: new Date().toISOString(),
     runId,
     skillName: config.skillName,
-    issues: prevIssues, // TODO: parse from skill output in Phase 2
+    issues: [...prevIssues, ...issueTracker.getIssues()],
     findings: prevFindings,
     decisions: [...prevDecisions, ...decisions],
     gitBranch,

@@ -116,6 +116,7 @@ export type OrchestratorEvent =
   | { type: "tool_use"; toolName: string; inputSummary: string }
   | { type: "tool_result"; toolName: string }
   | { type: "cost_update"; costUsd: number; sessionIndex: number }
+  | { type: "issue_extracted"; issue: Issue }
   | { type: "pipeline_skill_start"; skillName: string; skillIndex: number; totalSkills: number }
   | { type: "pipeline_skill_complete"; skillName: string; skillIndex: number; totalSkills: number; costUsd: number }
   | { type: "pipeline_complete"; totalSkills: number; totalCostUsd: number };
