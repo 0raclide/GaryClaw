@@ -4,7 +4,7 @@
  */
 
 import { writeFileSync, readFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Checkpoint, Issue, Decision } from "./types.js";
 
@@ -166,7 +166,6 @@ function buildPromptText(
   recentDecisions: Decision[],
   olderDecisions: Decision[],
 ): string {
-  const totalFixed = recentFixed.length + olderFixed.length;
   let text = `# GaryClaw Relay — Continuing ${checkpoint.skillName} Run
 
 ## Session Context
