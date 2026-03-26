@@ -54,8 +54,10 @@ export function createIPCServer(socketPath: string, handler: IPCHandler): Server
 
     conn.on("data", (chunk) => {
       data += chunk.toString();
-      handleRequest().catch(() => {
+      handleRequest().catch((err) => {
         // Prevent unhandled promise rejection from crashing the daemon
+        // but log the error for debuggability
+        console.error("[IPC] Unexpected error handling request:", err instanceof Error ? err.message : String(err));
       });
     });
 
@@ -63,8 +65,9 @@ export function createIPCServer(socketPath: string, handler: IPCHandler): Server
       // If we haven't processed yet (e.g., no newline), try with what we have
       if (!handled && data.length > 0) {
         data += "\n"; // Treat end-of-stream as delimiter
-        handleRequest().catch(() => {
+        handleRequest().catch((err) => {
           // Prevent unhandled promise rejection from crashing the daemon
+          console.error("[IPC] Unexpected error handling request on end:", err instanceof Error ? err.message : String(err));
         });
       }
     });
