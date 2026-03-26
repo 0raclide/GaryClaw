@@ -91,10 +91,11 @@ describe("Job Runner", () => {
       const config = createTestConfig({ budget: { dailyCostLimitUsd: 100, perJobCostLimitUsd: 10, maxJobsPerDay: 2 } });
       const runner = createJobRunner(config, TEST_DIR, createMockDeps());
 
-      // Manually set the daily job count to the limit
-      const state = runner.getState();
-      state.dailyCost.jobCount = 2;
+      // Enqueue 2 jobs (the daily limit)
+      runner.enqueue(["skill-a"], "manual", "t1");
+      runner.enqueue(["skill-b"], "manual", "t2");
 
+      // 3rd should be rejected by maxJobsPerDay
       const id = runner.enqueue(["qa"], "manual", "trigger");
       expect(id).toBeNull();
     });

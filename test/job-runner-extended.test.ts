@@ -166,25 +166,34 @@ describe("Job Runner — Extended", () => {
   // ── updateBudget ─────────────────────────────────────────────
 
   describe("updateBudget", () => {
-    it("updates budget limits for future enqueues", () => {
+    it("updates budget limits for future enqueues", async () => {
       const deps = createMockDeps();
-      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const config = createTestConfig({
+        budget: { dailyCostLimitUsd: 5, perJobCostLimitUsd: 1, maxJobsPerDay: 3 },
+      });
+      const runner = createJobRunner(config, TEST_DIR, deps);
 
-      // Fill up to the original limit of 10
-      for (let i = 0; i < 10; i++) {
-        runner.enqueue([`skill-${i}`], "manual", "test");
-      }
-      // 11th should be rejected
+      // Fill up to the original limit of 3
+      runner.enqueue(["skill-a"], "manual", "test");
+      runner.enqueue(["skill-b"], "manual", "test");
+      runner.enqueue(["skill-c"], "manual", "test");
+
+      // Process them so they complete (no longer queued/running → no dedup block)
+      await runner.processNext();
+      await runner.processNext();
+      await runner.processNext();
+
+      // 4th should be rejected by maxJobsPerDay (daily cost tracks completed jobs)
       expect(runner.enqueue(["overflow"], "manual", "test")).toBeNull();
 
-      // Update budget to allow 20 per day
+      // Update budget to allow 10 per day
       runner.updateBudget({
         dailyCostLimitUsd: 10,
         perJobCostLimitUsd: 2,
-        maxJobsPerDay: 20,
+        maxJobsPerDay: 10,
       });
 
-      // 11th should now work
+      // 4th should now work
       const id = runner.enqueue(["overflow"], "manual", "test");
       expect(id).toBeTruthy();
     });
