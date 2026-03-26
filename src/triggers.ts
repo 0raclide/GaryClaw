@@ -5,7 +5,7 @@
  * Phase 4b will add: Cron trigger.
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import type { GitPollTrigger } from "./types.js";
 
 export interface GitPoller {
@@ -109,7 +109,7 @@ export function createGitPoller(
 export function getGitHead(projectDir: string, branch?: string): string | null {
   try {
     const ref = branch ? `refs/heads/${branch}` : "HEAD";
-    return execSync(`git rev-parse ${ref}`, {
+    return execFileSync("git", ["rev-parse", ref], {
       cwd: projectDir,
       encoding: "utf-8",
       timeout: 5000,
