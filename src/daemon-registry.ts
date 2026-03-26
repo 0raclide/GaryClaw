@@ -12,7 +12,7 @@
  *   .garyclaw/global-budget.json
  */
 
-import { readdirSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readdirSync, existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
 import type { GlobalBudget, InstanceInfo, DaemonState } from "./types.js";
@@ -160,6 +160,10 @@ export function updateGlobalBudget(
 /**
  * Check if a set of skills is already queued or running in ANY daemon instance.
  * Scans all instance daemon-state.json files.
+ *
+ * Dedup key is order-sensitive: ["qa","ship"] ≠ ["ship","qa"]. This is intentional —
+ * skill order matters in pipelines (context flows left→right). A job with a designDoc
+ * also won't match a plain skill set because the designDoc changes execution behavior.
  */
 export function isSkillSetActive(
   checkpointDir: string,
@@ -231,7 +235,8 @@ export function migrateToInstanceDir(checkpointDir: string): boolean {
       try {
         const content = readFileSync(oldPath, "utf-8");
         writeFileSync(newPath, content, "utf-8");
-        // Don't delete old files — let the daemon clean them up on next start
+        // Clean up old file after successful copy to avoid orphaned duplicates
+        try { unlinkSync(oldPath); } catch { /* best-effort cleanup */ }
         migrated = true;
       } catch {
         // Non-fatal — migration is best-effort

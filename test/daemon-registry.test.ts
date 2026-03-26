@@ -435,12 +435,15 @@ describe("Daemon Registry", () => {
       expect(result).toBe(false);
     });
 
-    it("preserves old files after migration", () => {
+    it("cleans up old files after successful migration", () => {
       writeFileSync(join(TEST_DIR, "daemon.pid"), "12345", "utf-8");
       migrateToInstanceDir(TEST_DIR);
 
-      // Old file should still exist (cleanup is separate concern)
-      expect(existsSync(join(TEST_DIR, "daemon.pid"))).toBe(true);
+      // Old file should be deleted after successful copy to avoid orphaned duplicates
+      expect(existsSync(join(TEST_DIR, "daemon.pid"))).toBe(false);
+      // New file should exist
+      const defaultDir = join(TEST_DIR, "daemons", "default");
+      expect(existsSync(join(defaultDir, "daemon.pid"))).toBe(true);
     });
   });
 });
