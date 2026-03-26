@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createAskHandler } from "../src/ask-handler.js";
+import type { OracleMemoryFiles } from "../src/types.js";
 
 const TEST_DIR = join(tmpdir(), `garyclaw-ask-test-${Date.now()}`);
 
@@ -423,6 +424,200 @@ describe("ask-handler", () => {
       expect(decisions[0].confidence).toBe(4);
       expect(decisions[0].chosen).toBe("Keep");
       expect(decisions[0].principle).toBe("Safety first");
+    });
+  });
+
+  describe("otherProposal handling", () => {
+    const optionsWithOther = [
+      { label: "Fix it", description: "Standard fix" },
+      { label: "Other", description: "Custom approach" },
+    ];
+
+    it("uses otherProposal as answer when oracle chooses Other", async () => {
+      const handler = createAskHandler({
+        onAskUser: vi.fn(),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: {
+          askOracle: vi.fn().mockResolvedValue({
+            choice: "Other",
+            confidence: 7,
+            rationale: "Custom approach needed",
+            principle: "Pragmatic",
+            escalate: false,
+            isTaste: false,
+            otherProposal: "Use a hybrid approach combining linting and manual review",
+          }),
+          config: { model: "test-model" as const },
+          skillName: "qa",
+        },
+      });
+
+      const input = makeSingleAskInput("How should we fix?", optionsWithOther);
+      const result = await handler.canUseTool("AskUserQuestion", input);
+
+      expect(result.updatedInput!.answers).toEqual({
+        "How should we fix?": "Use a hybrid approach combining linting and manual review",
+      });
+    });
+
+    it("records decision.chosen as 'Other' even when answer uses proposal", async () => {
+      const handler = createAskHandler({
+        onAskUser: vi.fn(),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: {
+          askOracle: vi.fn().mockResolvedValue({
+            choice: "Other",
+            confidence: 7,
+            rationale: "Custom approach",
+            principle: "Pragmatic",
+            escalate: false,
+            isTaste: false,
+            otherProposal: "Custom answer text",
+          }),
+          config: { model: "test-model" as const },
+          skillName: "qa",
+        },
+      });
+
+      const input = makeSingleAskInput("Q?", optionsWithOther);
+      await handler.canUseTool("AskUserQuestion", input);
+
+      const decisions = handler.getDecisions();
+      expect(decisions[0].chosen).toBe("Other");
+    });
+
+    it("falls back to 'Other' label when otherProposal is missing", async () => {
+      const handler = createAskHandler({
+        onAskUser: vi.fn(),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: {
+          askOracle: vi.fn().mockResolvedValue({
+            choice: "Other",
+            confidence: 7,
+            rationale: "test",
+            principle: "test",
+            escalate: false,
+            isTaste: false,
+            // no otherProposal
+          }),
+          config: { model: "test-model" as const },
+          skillName: "qa",
+        },
+      });
+
+      const input = makeSingleAskInput("Q?", optionsWithOther);
+      const result = await handler.canUseTool("AskUserQuestion", input);
+
+      // Without otherProposal, answer should be the choice label itself
+      expect(result.updatedInput!.answers).toEqual({ "Q?": "Other" });
+    });
+
+    it("uses choice label when not Other, even if otherProposal present", async () => {
+      const handler = createAskHandler({
+        onAskUser: vi.fn(),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: {
+          askOracle: vi.fn().mockResolvedValue({
+            choice: "Fix it",
+            confidence: 9,
+            rationale: "Standard fix works",
+            principle: "Pragmatic",
+            escalate: false,
+            isTaste: false,
+            otherProposal: "This should be ignored",
+          }),
+          config: { model: "test-model" as const },
+          skillName: "qa",
+        },
+      });
+
+      const input = makeSingleAskInput("Q?", optionsWithOther);
+      const result = await handler.canUseTool("AskUserQuestion", input);
+
+      expect(result.updatedInput!.answers).toEqual({ "Q?": "Fix it" });
+    });
+  });
+
+  describe("oracle memory passing", () => {
+    it("passes memory to oracle call", async () => {
+      const mockAskOracle = vi.fn().mockResolvedValue({
+        choice: "Dark",
+        confidence: 8,
+        rationale: "Matches taste",
+        principle: "Pragmatic",
+        escalate: false,
+        isTaste: false,
+      });
+
+      const memory: OracleMemoryFiles = {
+        taste: "Prefer dark themes",
+        domainExpertise: null,
+        decisionOutcomes: null,
+        memoryMd: null,
+      };
+
+      const handler = createAskHandler({
+        onAskUser: vi.fn(),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: {
+          askOracle: mockAskOracle,
+          config: { model: "test-model" as const },
+          skillName: "qa",
+          memory,
+        },
+      });
+
+      const input = makeSingleAskInput("Theme?", [
+        { label: "Dark", description: "Dark theme" },
+        { label: "Light", description: "Light theme" },
+      ]);
+      await handler.canUseTool("AskUserQuestion", input);
+
+      const oracleInput = mockAskOracle.mock.calls[0][0];
+      expect(oracleInput.memory).toBe(memory);
+      expect(oracleInput.memory.taste).toBe("Prefer dark themes");
+    });
+
+    it("passes undefined memory when not configured", async () => {
+      const mockAskOracle = vi.fn().mockResolvedValue({
+        choice: "Dark",
+        confidence: 8,
+        rationale: "test",
+        principle: "test",
+        escalate: false,
+        isTaste: false,
+      });
+
+      const handler = createAskHandler({
+        onAskUser: vi.fn(),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: {
+          askOracle: mockAskOracle,
+          config: { model: "test-model" as const },
+          skillName: "qa",
+          // no memory field
+        },
+      });
+
+      const input = makeSingleAskInput("Theme?", [
+        { label: "Dark", description: "Dark theme" },
+      ]);
+      await handler.canUseTool("AskUserQuestion", input);
+
+      const oracleInput = mockAskOracle.mock.calls[0][0];
+      expect(oracleInput.memory).toBeUndefined();
     });
   });
 });

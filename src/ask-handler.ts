@@ -8,7 +8,7 @@
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Decision, CanUseToolResult } from "./types.js";
+import type { Decision, CanUseToolResult, OracleMemoryFiles } from "./types.js";
 import type { OracleOutput, OracleConfig, OracleInput } from "./oracle.js";
 
 export interface AskHandlerConfig {
@@ -28,6 +28,7 @@ export interface AskHandlerConfig {
     config: OracleConfig;
     skillName: string;
     projectContext?: string;
+    memory?: OracleMemoryFiles;
   };
   escalatedLogPath?: string;
 }
@@ -83,9 +84,17 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
               skillName: config.oracle.skillName,
               decisionHistory: decisions,
               projectContext: config.oracle.projectContext,
+              memory: config.oracle.memory,
             },
             config.oracle.config,
           );
+
+          // When oracle chooses "Other" with a proposal, use the proposal as
+          // the free-text answer so the skill sees custom input, not just "Other".
+          const answerText =
+            oracleResult.choice.toLowerCase() === "other" && oracleResult.otherProposal
+              ? oracleResult.otherProposal
+              : oracleResult.choice;
 
           decision = {
             timestamp: new Date().toISOString(),
@@ -105,7 +114,7 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
             writeEscalatedLog(config.escalatedLogPath, decision, oracleResult);
           }
 
-          answers[questionText] = decision.chosen;
+          answers[questionText] = answerText;
         } else {
           // Human mode
           const chosenLabel = await withTimeout(
