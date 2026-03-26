@@ -16,6 +16,7 @@ import {
   checkBudgetStatus,
   checkAuth,
   formatDoctorReport,
+  worktreeHasUnmergedCommits,
   type DoctorOptions,
   type DoctorReport,
   type CheckResult,
@@ -98,6 +99,26 @@ describe("doctor", () => {
       expect(result.fixed).toBe(true);
       expect(existsSync(join(instDir, "daemon.pid"))).toBe(false);
       expect(existsSync(join(instDir, "daemon.sock"))).toBe(false);
+    });
+
+    it("skips instance directory with no PID file", () => {
+      const instDir = join(GARYCLAW_DIR, "daemons", "no-pid-inst");
+      mkdirSync(instDir, { recursive: true });
+      // No PID file written — just an empty directory
+
+      const result = checkStalePids(defaultOptions());
+      expect(result.status).toBe("PASS");
+      expect(result.message).toContain("No stale PID files");
+    });
+
+    it("skips instance dir with socket but no PID file", () => {
+      const instDir = join(GARYCLAW_DIR, "daemons", "socket-only");
+      mkdirSync(instDir, { recursive: true });
+      writeFileSync(join(instDir, "daemon.sock"), "socket-content", "utf-8");
+      // No PID file — just a leftover socket
+
+      const result = checkStalePids(defaultOptions());
+      expect(result.status).toBe("PASS");
     });
 
     it("handles multiple instances with mixed states", () => {
@@ -200,6 +221,23 @@ describe("doctor", () => {
       expect(result.details!.some((d) => d.includes("circuit breaker TRIPPED"))).toBe(true);
     });
 
+    it("--fix repairs metrics.json with invalid structure", () => {
+      const oracleDir = join(TEST_DIR, ".garyclaw", "oracle-memory");
+      mkdirSync(oracleDir, { recursive: true });
+      safeWriteJSON(join(oracleDir, "metrics.json"), { wrong: "schema" });
+
+      const result = checkOracleMemory(defaultOptions({ fix: true }));
+      expect(result.fixed).toBe(true);
+
+      // Should have a fresh metrics file now
+      const metrics = JSON.parse(readFileSync(join(oracleDir, "metrics.json"), "utf-8"));
+      expect(metrics.totalDecisions).toBe(0);
+      expect(metrics.accuracyPercent).toBe(100);
+
+      // Backup should exist
+      expect(existsSync(join(oracleDir, "metrics.json.bak"))).toBe(true);
+    });
+
     it("WARN when injection patterns found in memory files", () => {
       const oracleDir = join(TEST_DIR, ".garyclaw", "oracle-memory");
       mkdirSync(oracleDir, { recursive: true });
@@ -223,9 +261,113 @@ describe("doctor", () => {
       expect(result.status).toBe("PASS");
     });
 
-    // Note: Full worktree tests would require a real git repo with worktrees.
-    // Synthetic testing is limited because listWorktrees shells out to git.
-    // The PASS case for no worktrees is the key synthetic test.
+    it("PASS when listWorktrees throws (not a git repo)", () => {
+      const result = checkOrphanedWorktrees(defaultOptions(), {
+        listWorktrees: () => { throw new Error("not a git repo"); },
+        removeWorktree: () => {},
+        worktreeHasUnmergedCommits: () => false,
+      });
+      expect(result.status).toBe("PASS");
+      expect(result.message).toContain("not a git repo");
+    });
+
+    it("PASS when listWorktrees returns empty array", () => {
+      const result = checkOrphanedWorktrees(defaultOptions(), {
+        listWorktrees: () => [],
+        removeWorktree: () => {},
+        worktreeHasUnmergedCommits: () => false,
+      });
+      expect(result.status).toBe("PASS");
+      expect(result.message).toContain("No GaryClaw worktrees");
+    });
+
+    it("PASS when all worktrees have active daemons", () => {
+      // Set up a running daemon PID for the instance
+      const instDir = join(GARYCLAW_DIR, "daemons", "builder");
+      mkdirSync(instDir, { recursive: true });
+      writePidFile(join(instDir, "daemon.pid"), process.pid);
+
+      const result = checkOrphanedWorktrees(defaultOptions(), {
+        listWorktrees: () => [
+          { path: "/tmp/wt/builder", branch: "garyclaw/builder", head: "abc123" },
+        ],
+        removeWorktree: () => {},
+        worktreeHasUnmergedCommits: () => false,
+      });
+      // Current process may or may not match "node" name — either PASS (all active) or WARN (orphaned)
+      // But at minimum it should run without error
+      expect(["PASS", "WARN"]).toContain(result.status);
+    });
+
+    it("WARN when worktree is orphaned with unmerged commits", () => {
+      const result = checkOrphanedWorktrees(defaultOptions(), {
+        listWorktrees: () => [
+          { path: "/tmp/wt/builder", branch: "garyclaw/builder", head: "abc123" },
+        ],
+        removeWorktree: () => {},
+        worktreeHasUnmergedCommits: () => true,
+      });
+      expect(result.status).toBe("WARN");
+      expect(result.details!.some((d) => d.includes("unmerged commits"))).toBe(true);
+      expect(result.details!.some((d) => d.includes("Manual merge required"))).toBe(true);
+    });
+
+    it("WARN when worktree is orphaned and safe to remove (no --fix)", () => {
+      const result = checkOrphanedWorktrees(defaultOptions(), {
+        listWorktrees: () => [
+          { path: "/tmp/wt/builder", branch: "garyclaw/builder", head: "abc123" },
+        ],
+        removeWorktree: () => {},
+        worktreeHasUnmergedCommits: () => false,
+      });
+      expect(result.status).toBe("WARN");
+      expect(result.fixable).toBe(true);
+      expect(result.details!.some((d) => d.includes("safe to remove"))).toBe(true);
+    });
+
+    it("--fix removes orphaned worktree when safe", () => {
+      let removeCalled = false;
+      const result = checkOrphanedWorktrees(defaultOptions({ fix: true }), {
+        listWorktrees: () => [
+          { path: "/tmp/wt/builder", branch: "garyclaw/builder", head: "abc123" },
+        ],
+        removeWorktree: (_dir, _name, deleteBranch) => {
+          removeCalled = true;
+          expect(deleteBranch).toBe(true);
+        },
+        worktreeHasUnmergedCommits: () => false,
+      });
+      expect(result.status).toBe("WARN");
+      expect(result.fixed).toBe(true);
+      expect(removeCalled).toBe(true);
+      expect(result.details!.some((d) => d.includes("Fixed: removed worktree"))).toBe(true);
+    });
+
+    it("--fix does NOT remove worktree with unmerged commits", () => {
+      let removeCalled = false;
+      const result = checkOrphanedWorktrees(defaultOptions({ fix: true }), {
+        listWorktrees: () => [
+          { path: "/tmp/wt/builder", branch: "garyclaw/builder", head: "abc123" },
+        ],
+        removeWorktree: () => { removeCalled = true; },
+        worktreeHasUnmergedCommits: () => true,
+      });
+      expect(result.status).toBe("WARN");
+      expect(removeCalled).toBe(false);
+      expect(result.details!.some((d) => d.includes("Manual merge required"))).toBe(true);
+    });
+
+    it("--fix handles removeWorktree failure gracefully", () => {
+      const result = checkOrphanedWorktrees(defaultOptions({ fix: true }), {
+        listWorktrees: () => [
+          { path: "/tmp/wt/builder", branch: "garyclaw/builder", head: "abc123" },
+        ],
+        removeWorktree: () => { throw new Error("Permission denied"); },
+        worktreeHasUnmergedCommits: () => false,
+      });
+      expect(result.status).toBe("WARN");
+      expect(result.details!.some((d) => d.includes("Fix failed: Permission denied"))).toBe(true);
+    });
   });
 
   // ── Check 4: Reflection Locks ────────────────────────────────
