@@ -230,6 +230,7 @@ export function findRelatedIssue(
 
   // Check for description keyword overlap (at least 3 words matching)
   for (const issue of issues) {
+    if (!issue.description) continue; // Guard against corrupt/missing description
     const issueWords = new Set(
       issue.description.toLowerCase().split(/\s+/).filter((w) => w.length > 3),
     );
