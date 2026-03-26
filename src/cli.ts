@@ -25,6 +25,7 @@ import {
   listInstances,
   readGlobalBudget,
 } from "./daemon-registry.js";
+import { getWorktreePath, listWorktrees, worktreeDir, removeWorktree } from "./worktree.js";
 import type { GaryClawConfig, OrchestratorCallbacks, OrchestratorEvent, InstanceInfo } from "./types.js";
 
 // ── ANSI colors ─────────────────────────────────────────────────
@@ -130,6 +131,7 @@ export function parseArgs(argv: string[]): {
   researchTopic?: string;
   name?: string;
   all: boolean;
+  cleanup: boolean;
 } {
   const args = argv.slice(2);
   const command = args[0] ?? "help";
@@ -150,6 +152,7 @@ export function parseArgs(argv: string[]): {
   let researchTopic: string | undefined;
   let name: string | undefined;
   let all = false;
+  let cleanup = false;
 
   // Collect skills (positional args after "run") and flags
   let shared: SharedFlags = { projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, designDoc };
@@ -197,6 +200,8 @@ export function parseArgs(argv: string[]): {
           name = args[++i];
         } else if (args[i] === "--all") {
           all = true;
+        } else if (args[i] === "--cleanup") {
+          cleanup = true;
         } else if (args[i] === "--tail" && args[i + 1]) {
           const parsed = parseInt(args[++i], 10);
           if (Number.isNaN(parsed) || parsed < 1) {
@@ -243,7 +248,7 @@ export function parseArgs(argv: string[]): {
   // Merge shared flags back into return value
   ({ projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, designDoc } = shared);
 
-  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, tailLines, designDoc, force, researchTopic, name, all };
+  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, tailLines, designDoc, force, researchTopic, name, all, cleanup };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -419,6 +424,7 @@ ${BOLD}Usage:${RESET}
   garyclaw oracle init                Initialize oracle memory directories + templates
   garyclaw daemon start [--name <n>]   Start background daemon instance
   garyclaw daemon stop [--name <n>]   Stop running daemon instance
+  garyclaw daemon stop [--name <n>] --cleanup  Stop + remove worktree/branch
   garyclaw daemon stop --all          Stop all running instances
   garyclaw daemon status [--name <n>] Show daemon instance status
   garyclaw daemon status --all        Show all instances (alias: daemon list)
@@ -437,6 +443,7 @@ ${BOLD}Options:${RESET}
   --config <path>          Daemon config file (default: .garyclaw/daemon.json)
   --name <instance>        Daemon instance name (default: "default")
   --all                    Apply to all daemon instances (stop --all, status --all)
+  --cleanup                Remove worktree + branch on daemon stop (named instances)
   --force                  Force re-research even if topic is fresh (research command)
 
 ${BOLD}Examples:${RESET}
@@ -761,11 +768,16 @@ async function main(): Promise<void> {
       const logPath = join(instDir, "daemon.log");
 
       const instanceLabel = instName !== "default" ? ` [${instName}]` : "";
+      const wtPath = instName !== "default" ? worktreeDir(parsed.projectDir, instName) : null;
       console.log(`${BOLD}GaryClaw Daemon${instanceLabel}${RESET} — starting...`);
       console.log(`${DIM}  Instance:  ${instName}${RESET}`);
       console.log(`${DIM}  Config:    ${configPath}${RESET}`);
       console.log(`${DIM}  Log:       ${logPath}${RESET}`);
       console.log(`${DIM}  Dir:       ${instDir}${RESET}`);
+      if (wtPath) {
+        console.log(`${DIM}  Worktree:  ${wtPath}${RESET}`);
+        console.log(`${DIM}  Branch:    garyclaw/${instName}${RESET}`);
+      }
 
       const forkArgs = ["--start", checkpointDir, "--instance", instName];
       const child = fork(daemonScript, forkArgs, {
@@ -822,13 +834,24 @@ async function main(): Promise<void> {
       console.log(`Stopping daemon [${instName}] (PID ${pid})...`);
       process.kill(pid, "SIGTERM");
       console.log(`${GREEN}SIGTERM sent${RESET} — daemon will shut down gracefully`);
+
+      // --cleanup: remove worktree + branch after stop
+      if (parsed.cleanup && instName !== "default") {
+        console.log(`${DIM}Removing worktree and branch for [${instName}]...${RESET}`);
+        try {
+          removeWorktree(parsed.projectDir, instName, true);
+          console.log(`${GREEN}Worktree and branch garyclaw/${instName} removed${RESET}`);
+        } catch (err) {
+          console.log(`${YELLOW}Failed to remove worktree: ${err instanceof Error ? err.message : String(err)}${RESET}`);
+        }
+      }
       return;
     }
 
     if (parsed.subcommand === "status") {
       // --all or "list" subcommand: show all instances
       if (parsed.all) {
-        displayAllInstances(checkpointDir);
+        displayAllInstances(checkpointDir, parsed.projectDir);
         return;
       }
 
@@ -931,7 +954,7 @@ async function main(): Promise<void> {
   process.exit(1);
 }
 
-function displayAllInstances(checkpointDir: string): void {
+function displayAllInstances(checkpointDir: string, projectDir?: string): void {
   const instances = listInstances(checkpointDir);
   const globalBudget = readGlobalBudget(checkpointDir);
 
@@ -939,6 +962,10 @@ function displayAllInstances(checkpointDir: string): void {
     console.log(`${DIM}No daemon instances found${RESET}`);
     return;
   }
+
+  // Look up active worktrees for display
+  const activeWorktrees = projectDir ? listWorktrees(projectDir) : [];
+  const worktreeByBranch = new Map(activeWorktrees.map((w) => [w.branch, w]));
 
   console.log(`${BOLD}GaryClaw Daemon Instances${RESET}\n`);
   console.log(`  ${BOLD}${"NAME".padEnd(16)}${"PID".padEnd(10)}${"STATUS".padEnd(12)}DAILY COST${RESET}`);
@@ -949,6 +976,14 @@ function displayAllInstances(checkpointDir: string): void {
     const instBudget = globalBudget.byInstance[inst.name];
     const cost = instBudget ? `$${instBudget.totalUsd.toFixed(3)}` : "$0.000";
     console.log(`  ${inst.name.padEnd(16)}${String(inst.pid).padEnd(10)}${statusPad.padEnd(12)}${cost}`);
+
+    // Show worktree info for named instances
+    if (inst.name !== "default") {
+      const wt = worktreeByBranch.get(`garyclaw/${inst.name}`);
+      if (wt) {
+        console.log(`  ${DIM}  ↳ worktree: ${wt.path}  branch: ${wt.branch}${RESET}`);
+      }
+    }
   }
 
   console.log(`${"".padEnd(48)}${"─".repeat(10)}`);
