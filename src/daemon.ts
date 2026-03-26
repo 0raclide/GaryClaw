@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { createIPCServer, type IPCHandler } from "./daemon-ipc.js";
 import { createJobRunner, type JobRunner } from "./job-runner.js";
 import { createGitPoller, type GitPoller } from "./triggers.js";
-import type { DaemonConfig, IPCRequest, IPCResponse, DaemonState } from "./types.js";
+import type { DaemonConfig, IPCRequest, IPCResponse } from "./types.js";
 import type { Server } from "node:net";
 
 const PID_FILE = "daemon.pid";
