@@ -142,3 +142,103 @@
 | Security | 10% | 95 | API key stripping good; git log injection deferred |
 
 **Final Score: 99/100**
+
+---
+
+# QA Report — GaryClaw (Run 3: Test Coverage Deep-Dive)
+
+**Date:** 2026-03-26
+**Branch:** main
+**Mode:** Test suite analysis (no web UI)
+**Tier:** Standard
+**Duration:** ~15 min
+**Test Framework:** Vitest 3.2.4
+
+---
+
+## Summary
+
+| Metric | Before (Run 2) | After (Run 3) |
+|--------|-----------------|----------------|
+| **Test files** | 16 | 22 |
+| **Tests** | 322 | 516 |
+| **Passing** | 322/322 (100%) | 516/516 (100%) |
+| **Modules with test coverage** | 14/17 | 17/17 |
+| **New tests written** | — | 194 |
+| **Source bugs found** | — | 1 (ISSUE-016) |
+
+---
+
+## Issue Found & Fixed
+
+### ISSUE-016: maxJobsPerDay counted only completed jobs, not enqueued
+
+- **Severity:** High
+- **Category:** Functional — budget enforcement
+- **Status:** ✅ verified
+- **Commit:** `7ad554d`
+- **Files Changed:** `src/job-runner.ts`, `test/job-runner.test.ts`
+- **Description:** `enqueue()` checked `state.dailyCost.jobCount` to enforce `maxJobsPerDay`, but `jobCount` only increments after a job completes in `processNext()`. This allowed unlimited jobs to be enqueued before any finished — the budget gate was effectively open during the first batch.
+- **Fix:** Count all jobs enqueued today (`state.jobs.filter(j => j.enqueuedAt.startsWith(today)).length`) instead of relying on the completion counter.
+- **Regression test:** `test/job-runner.regression-2.test.ts` (3 tests)
+
+---
+
+## Coverage Gaps Identified & Fixed
+
+### Critical — Previously untested modules
+
+| Module | Gap | Tests Added | File |
+|--------|-----|-------------|------|
+| `src/cli.ts` | **No test file at all** — arg parsing, event formatting, answer parsing, uptime formatting | 63 | `test/cli.test.ts` |
+| `src/orchestrator.ts` | Internal helpers: `extractAssistantText`, `extractToolUse`, `summarizeToolInput`, `truncate`, `deduplicateIssues` | 38 | `test/orchestrator-helpers.test.ts` |
+
+### Important — Under-tested modules
+
+| Module | Gap | Tests Added | File |
+|--------|-----|-------------|------|
+| `src/daemon.ts` | Logger rotation, buildIPCHandler edge cases, config validation, PID helpers | 41 | `test/daemon-extended.test.ts` |
+| `src/oracle.ts` | Prompt construction, response parsing, confidence clamping, security keywords | 32 | `test/oracle-extended.test.ts` |
+| `src/job-runner.ts` | `pruneOldJobs`, `updateBudget`, per-job cost enforcement, stale recovery | 17 | `test/job-runner-extended.test.ts` |
+
+### Source changes for testability
+
+Exported pure functions (no behavior change):
+- `src/cli.ts`: `parseArgs`, `formatEvent`, `parseSingleAnswer`, `parseMultiSelectAnswer`, `formatUptime`
+- `src/orchestrator.ts`: `extractAssistantText`, `extractToolUse`, `summarizeToolInput`, `truncate`, `deduplicateIssues`
+
+---
+
+## Remaining Coverage Gaps (Deferred)
+
+| Module | Gap | Reason |
+|--------|-----|--------|
+| `src/daemon.ts` | `startDaemon()` full lifecycle | Requires process fork + signal handling — integration test |
+| `src/cli.ts` | `main()`, `askUserViaReadline()` | Uses `process.exit()`, `readline` — needs integration harness |
+| `src/sdk-wrapper.ts` | Real SDK integration | By design — all unit tests use synthetic data |
+| `src/relay.ts` | Git merge conflict scenario | Needs real git repo with conflicting changes |
+
+---
+
+## Commits (Run 3)
+
+| SHA | Message |
+|-----|---------|
+| `7ad554d` | `fix(qa): ISSUE-001 — maxJobsPerDay counted completions not enqueues` |
+| `91c635b` | `test(qa): comprehensive test coverage expansion — 191 new tests` |
+
+---
+
+## Health Score
+
+| Category | Weight | Score | Notes |
+|----------|--------|-------|-------|
+| Functional | 30% | 100 | All logic bugs fixed |
+| Robustness | 25% | 100 | Error handling solid |
+| Code Quality | 20% | 100 | Clean TS, pure functions exported |
+| Test Coverage | 15% | 95 | 516 tests, all 17 modules covered; integration tests deferred |
+| Security | 10% | 95 | API key stripping good; git injection deferred |
+
+**Final Score: 99/100**
+
+**PR Summary:** QA Run 3 found 1 bug (budget enforcement gap in job runner), fixed it, and expanded test coverage from 322 → 516 tests across 22 files. All 17 source modules now have dedicated test coverage.

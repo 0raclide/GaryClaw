@@ -10,7 +10,7 @@
 
 **Cons:** Low urgency — the daemon works fine for short sessions. Only matters for always-on deployment.
 
-**Context:** Phase 4a completed 2026-03-25. Hardening fixes completed 2026-03-26. Log rotation (ISSUE-005) and job pruning (ISSUE-006) fixed by /qa on main, 2026-03-26. Remaining: stale PID cleanup.
+**Context:** Phase 4a completed 2026-03-25. Hardening fixes completed 2026-03-26. Log rotation (ISSUE-005) and job pruning (ISSUE-006) fixed by /qa on main, 2026-03-26. maxJobsPerDay enforcement gap (ISSUE-016) fixed by /qa Run 3 on main, 2026-03-26. Remaining: stale PID cleanup.
 
 **Effort:** XS (human: ~1 day / CC: ~15 min)
 **Depends on:** Phase 4a (complete)
