@@ -167,6 +167,29 @@ describe("notifyJobError", () => {
     expect(script).toContain("[deploy-bot]");
     expect(script).toContain("Job Failed");
   });
+
+  it("includes failure category in error notification", () => {
+    const job = createTestJob({ status: "failed", error: "Auth expired", failureCategory: "auth-issue" });
+    const config = createTestConfig();
+    notifyJobError(job, config);
+
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    expect(script).toContain("[auth-issue]");
+    expect(script).toContain("Auth expired");
+  });
+
+  it("omits category tag when failureCategory is undefined", () => {
+    const job = createTestJob({ status: "failed", error: "generic error" });
+    const config = createTestConfig();
+    notifyJobError(job, config);
+
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    // Should not have brackets around a category
+    expect(script).not.toMatch(/\[.*-.*\]/);
+    expect(script).toContain("generic error");
+  });
 });
 
 describe("notifyEscalation", () => {
@@ -289,6 +312,35 @@ describe("writeSummary", () => {
     const content = readFileSync(join(jobDir, "summary.md"), "utf-8");
     expect(content).toContain("## Error");
     expect(content).toContain("Segment error: timeout");
+  });
+
+  it("includes failure category and retryable in error section", () => {
+    const job = createTestJob({
+      status: "failed",
+      error: "ENOSPC: no space left",
+      failureCategory: "infra-issue",
+      retryable: true,
+    });
+    const jobDir = join(TEST_DIR, "job-infra");
+    writeSummary(job, jobDir);
+
+    const content = readFileSync(join(jobDir, "summary.md"), "utf-8");
+    expect(content).toContain("**Category:** infra-issue (retryable)");
+  });
+
+  it("omits retryable label when retryable is false", () => {
+    const job = createTestJob({
+      status: "failed",
+      error: "test failed",
+      failureCategory: "project-bug",
+      retryable: false,
+    });
+    const jobDir = join(TEST_DIR, "job-proj");
+    writeSummary(job, jobDir);
+
+    const content = readFileSync(join(jobDir, "summary.md"), "utf-8");
+    expect(content).toContain("**Category:** project-bug");
+    expect(content).not.toContain("retryable");
   });
 
   it("includes report path when present", () => {

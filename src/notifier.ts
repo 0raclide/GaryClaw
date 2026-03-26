@@ -30,7 +30,8 @@ export function notifyJobError(job: Job, config: DaemonConfig): void {
 
   const instanceLabel = config.name ? ` [${config.name}]` : "";
   const title = `GaryClaw${instanceLabel} Job Failed`;
-  const message = `/${job.skills.join(" → /")} failed: ${job.error ?? "unknown error"}`;
+  const categoryTag = job.failureCategory ? ` [${job.failureCategory}]` : "";
+  const message = `/${job.skills.join(" → /")} failed${categoryTag}: ${job.error ?? "unknown error"}`;
   sendNotification(title, message);
 }
 
@@ -65,6 +66,7 @@ export function writeSummary(job: Job, jobDir: string): void {
   if (job.error) {
     lines.push("");
     lines.push(`## Error`);
+    if (job.failureCategory) lines.push(`**Category:** ${job.failureCategory}${job.retryable ? " (retryable)" : ""}`);
     lines.push(job.error);
   }
 
