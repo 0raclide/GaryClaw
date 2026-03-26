@@ -20,7 +20,6 @@ import type {
   DaemonConfig,
   DaemonState,
   Job,
-  JobStatus,
   GaryClawConfig,
   OrchestratorCallbacks,
   OrchestratorEvent,
