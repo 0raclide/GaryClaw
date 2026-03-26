@@ -38,6 +38,78 @@ const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
 const MAGENTA = "\x1b[35m";
 
+// ── Shared flag parsing ──────────────────────────────────────────
+
+interface SharedFlags {
+  projectDir: string;
+  maxTurns: number;
+  threshold: number;
+  checkpointDir?: string;
+  maxSessions: number;
+  autonomous: boolean;
+  noMemory: boolean;
+  designDoc?: string;
+}
+
+/**
+ * Parse flags shared across `run` and fallback command branches.
+ * Returns the parsed values and how many args were consumed at each index
+ * (so callers can skip consumed args). Mutates nothing — returns a fresh object.
+ *
+ * @param arg  Current arg string
+ * @param next Next arg string (for value flags)
+ * @param current Current flag values to update
+ * @returns consumed count (0 = not recognized, 1 = flag-only, 2 = flag+value)
+ */
+export function parseSharedFlag(
+  arg: string,
+  next: string | undefined,
+  current: SharedFlags,
+): { consumed: number; updated: SharedFlags } {
+  const updated = { ...current };
+  if (arg === "--project-dir" && next) {
+    updated.projectDir = resolve(next);
+    return { consumed: 2, updated };
+  } else if (arg === "--max-turns" && next) {
+    const parsed = parseInt(next, 10);
+    if (Number.isNaN(parsed) || parsed < 1) {
+      console.error(`Invalid --max-turns value: ${next}. Must be a positive integer.`);
+      process.exit(1);
+    }
+    updated.maxTurns = parsed;
+    return { consumed: 2, updated };
+  } else if (arg === "--threshold" && next) {
+    const parsed = parseFloat(next);
+    if (Number.isNaN(parsed) || parsed <= 0 || parsed > 1) {
+      console.error(`Invalid --threshold value: ${next}. Must be between 0 and 1.`);
+      process.exit(1);
+    }
+    updated.threshold = parsed;
+    return { consumed: 2, updated };
+  } else if (arg === "--checkpoint-dir" && next) {
+    updated.checkpointDir = resolve(next);
+    return { consumed: 2, updated };
+  } else if (arg === "--max-sessions" && next) {
+    const parsed = parseInt(next, 10);
+    if (Number.isNaN(parsed) || parsed < 1) {
+      console.error(`Invalid --max-sessions value: ${next}. Must be a positive integer.`);
+      process.exit(1);
+    }
+    updated.maxSessions = parsed;
+    return { consumed: 2, updated };
+  } else if (arg === "--autonomous") {
+    updated.autonomous = true;
+    return { consumed: 1, updated };
+  } else if (arg === "--no-memory") {
+    updated.noMemory = true;
+    return { consumed: 1, updated };
+  } else if (arg === "--design-doc" && next) {
+    updated.designDoc = next;
+    return { consumed: 2, updated };
+  }
+  return { consumed: 0, updated: current };
+}
+
 // ── Arg parsing ─────────────────────────────────────────────────
 
 export function parseArgs(argv: string[]): {
@@ -80,41 +152,15 @@ export function parseArgs(argv: string[]): {
   let all = false;
 
   // Collect skills (positional args after "run") and flags
+  let shared: SharedFlags = { projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, designDoc };
+
   if (command === "run") {
     for (let i = 1; i < args.length; i++) {
       if (args[i].startsWith("--")) {
-        // Handle flags
-        if (args[i] === "--project-dir" && args[i + 1]) {
-          projectDir = resolve(args[++i]);
-        } else if (args[i] === "--max-turns" && args[i + 1]) {
-          const parsed = parseInt(args[++i], 10);
-          if (Number.isNaN(parsed) || parsed < 1) {
-            console.error(`Invalid --max-turns value: ${args[i]}. Must be a positive integer.`);
-            process.exit(1);
-          }
-          maxTurns = parsed;
-        } else if (args[i] === "--threshold" && args[i + 1]) {
-          const parsed = parseFloat(args[++i]);
-          if (Number.isNaN(parsed) || parsed <= 0 || parsed > 1) {
-            console.error(`Invalid --threshold value: ${args[i]}. Must be between 0 and 1.`);
-            process.exit(1);
-          }
-          threshold = parsed;
-        } else if (args[i] === "--checkpoint-dir" && args[i + 1]) {
-          checkpointDir = resolve(args[++i]);
-        } else if (args[i] === "--max-sessions" && args[i + 1]) {
-          const parsed = parseInt(args[++i], 10);
-          if (Number.isNaN(parsed) || parsed < 1) {
-            console.error(`Invalid --max-sessions value: ${args[i]}. Must be a positive integer.`);
-            process.exit(1);
-          }
-          maxSessions = parsed;
-        } else if (args[i] === "--autonomous") {
-          autonomous = true;
-        } else if (args[i] === "--no-memory") {
-          noMemory = true;
-        } else if (args[i] === "--design-doc" && args[i + 1]) {
-          designDoc = args[++i];
+        const { consumed, updated } = parseSharedFlag(args[i], args[i + 1], shared);
+        if (consumed > 0) {
+          shared = updated;
+          if (consumed === 2) i++; // skip value arg
         }
       } else {
         // Positional arg = skill name (strip leading / if present)
@@ -125,9 +171,13 @@ export function parseArgs(argv: string[]): {
     // oracle subcommand: init
     subcommand = args[1] ?? "";
     for (let i = 2; i < args.length; i++) {
-      if (args[i] === "--project-dir" && args[i + 1]) {
-        projectDir = resolve(args[++i]);
-      } else if (!args[i].startsWith("--")) {
+      if (args[i].startsWith("--")) {
+        const { consumed, updated } = parseSharedFlag(args[i], args[i + 1], shared);
+        if (consumed > 0) {
+          shared = updated;
+          if (consumed === 2) i++;
+        }
+      } else {
         skills.push(args[i]);
       }
     }
@@ -135,26 +185,27 @@ export function parseArgs(argv: string[]): {
     // daemon subcommand: start, stop, status, trigger, log, list
     subcommand = args[1] ?? "";
     for (let i = 2; i < args.length; i++) {
-      if (args[i] === "--project-dir" && args[i + 1]) {
-        projectDir = resolve(args[++i]);
-      } else if (args[i] === "--checkpoint-dir" && args[i + 1]) {
-        checkpointDir = resolve(args[++i]);
-      } else if (args[i] === "--config" && args[i + 1]) {
-        configPath = resolve(args[++i]);
-      } else if (args[i] === "--name" && args[i + 1]) {
-        name = args[++i];
-      } else if (args[i] === "--all") {
-        all = true;
-      } else if (args[i] === "--tail" && args[i + 1]) {
-        const parsed = parseInt(args[++i], 10);
-        if (Number.isNaN(parsed) || parsed < 1) {
-          console.error(`Invalid --tail value: ${args[i]}. Must be a positive integer.`);
-          process.exit(1);
+      if (args[i].startsWith("--")) {
+        // Try shared flags first (--project-dir, --checkpoint-dir, --design-doc, etc.)
+        const { consumed, updated } = parseSharedFlag(args[i], args[i + 1], shared);
+        if (consumed > 0) {
+          shared = updated;
+          if (consumed === 2) i++;
+        } else if (args[i] === "--config" && args[i + 1]) {
+          configPath = resolve(args[++i]);
+        } else if (args[i] === "--name" && args[i + 1]) {
+          name = args[++i];
+        } else if (args[i] === "--all") {
+          all = true;
+        } else if (args[i] === "--tail" && args[i + 1]) {
+          const parsed = parseInt(args[++i], 10);
+          if (Number.isNaN(parsed) || parsed < 1) {
+            console.error(`Invalid --tail value: ${args[i]}. Must be a positive integer.`);
+            process.exit(1);
+          }
+          tailLines = parsed;
         }
-        tailLines = parsed;
-      } else if (args[i] === "--design-doc" && args[i + 1]) {
-        designDoc = args[++i];
-      } else if (!args[i].startsWith("--")) {
+      } else {
         // Positional args after subcommand = skill names for trigger
         skills.push(args[i].replace(/^\//, ""));
       }
@@ -163,50 +214,34 @@ export function parseArgs(argv: string[]): {
     // research <topic> [--force] [--project-dir <dir>]
     const topicParts: string[] = [];
     for (let i = 1; i < args.length; i++) {
-      if (args[i] === "--project-dir" && args[i + 1]) {
-        projectDir = resolve(args[++i]);
-      } else if (args[i] === "--force") {
-        force = true;
-      } else if (!args[i].startsWith("--")) {
+      if (args[i].startsWith("--")) {
+        const { consumed, updated } = parseSharedFlag(args[i], args[i + 1], shared);
+        if (consumed > 0) {
+          shared = updated;
+          if (consumed === 2) i++;
+        } else if (args[i] === "--force") {
+          force = true;
+        }
+      } else {
         topicParts.push(args[i]);
       }
     }
     researchTopic = topicParts.join(" ") || undefined;
   } else {
-    // Non-run commands: parse flags only
+    // Non-run commands: parse shared flags only
     for (let i = 1; i < args.length; i++) {
-      if (args[i] === "--project-dir" && args[i + 1]) {
-        projectDir = resolve(args[++i]);
-      } else if (args[i] === "--max-turns" && args[i + 1]) {
-        const parsed = parseInt(args[++i], 10);
-        if (Number.isNaN(parsed) || parsed < 1) {
-          console.error(`Invalid --max-turns value: ${args[i]}. Must be a positive integer.`);
-          process.exit(1);
+      if (args[i].startsWith("--")) {
+        const { consumed, updated } = parseSharedFlag(args[i], args[i + 1], shared);
+        if (consumed > 0) {
+          shared = updated;
+          if (consumed === 2) i++; // skip value arg
         }
-        maxTurns = parsed;
-      } else if (args[i] === "--threshold" && args[i + 1]) {
-        const parsed = parseFloat(args[++i]);
-        if (Number.isNaN(parsed) || parsed <= 0 || parsed > 1) {
-          console.error(`Invalid --threshold value: ${args[i]}. Must be between 0 and 1.`);
-          process.exit(1);
-        }
-        threshold = parsed;
-      } else if (args[i] === "--checkpoint-dir" && args[i + 1]) {
-        checkpointDir = resolve(args[++i]);
-      } else if (args[i] === "--max-sessions" && args[i + 1]) {
-        const parsed = parseInt(args[++i], 10);
-        if (Number.isNaN(parsed) || parsed < 1) {
-          console.error(`Invalid --max-sessions value: ${args[i]}. Must be a positive integer.`);
-          process.exit(1);
-        }
-        maxSessions = parsed;
-      } else if (args[i] === "--autonomous") {
-        autonomous = true;
-      } else if (args[i] === "--no-memory") {
-        noMemory = true;
       }
     }
   }
+
+  // Merge shared flags back into return value
+  ({ projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, designDoc } = shared);
 
   return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, tailLines, designDoc, force, researchTopic, name, all };
 }
