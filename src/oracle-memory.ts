@@ -372,7 +372,15 @@ export function truncateToTokenBudget(content: string, maxTokens: number): strin
     lines.shift();
   }
 
-  return lines.join("\n");
+  // If a single remaining line still exceeds budget, truncate by characters.
+  // estimateTokens uses chars/4 heuristic, so maxTokens * 4 chars ≈ budget.
+  const result = lines.join("\n");
+  if (estimateTokens(result) > maxTokens) {
+    const maxChars = maxTokens * 4;
+    return result.slice(0, maxChars);
+  }
+
+  return result;
 }
 
 function defaultMetrics(): OracleMetrics {
