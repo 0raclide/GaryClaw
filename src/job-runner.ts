@@ -20,6 +20,11 @@ import {
 import {
   PerJobCostExceededError,
 } from "./types.js";
+import {
+  classifyError,
+  buildFailureRecord,
+  appendFailureRecord,
+} from "./failure-taxonomy.js";
 import type {
   BudgetConfig,
   DaemonConfig,
@@ -226,9 +231,18 @@ export function createJobRunner(
       nextJob.completedAt = new Date().toISOString();
       nextJob.error = err instanceof Error ? err.message : String(err);
 
+      // Classify the failure
+      const classification = classifyError(err);
+      nextJob.failureCategory = classification.category;
+      nextJob.retryable = classification.retryable;
+
+      // Append structured failure record
+      const record = buildFailureRecord(err, nextJob.id, nextJob.skills, resolvedInstanceName);
+      appendFailureRecord(record, checkpointDir);
+
       d.writeSummary(nextJob, jobDir);
       d.notifyJobError(nextJob, jobConfig);
-      d.log("error", `Failed ${nextJob.id}: ${nextJob.error}`);
+      d.log("error", `Failed ${nextJob.id} [${classification.category}]: ${nextJob.error}`);
     }
 
     // Prune old completed/failed jobs to prevent unbounded growth
