@@ -264,6 +264,32 @@ Called by `job-runner.ts` before the existing local dedup check. Local dedup rem
 
 ---
 
+## Git State Coordination
+
+**Observed in production (2026-03-26):** When two pipelines ran in parallel — one reviewing daemon hardening, the other reviewing the Creative Oracle — the hardening pipeline's `/qa` committed 20+ fixes while the Creative Oracle pipeline's CEO review was still analyzing the pre-fix codebase. The CEO review spent 181 turns analyzing bugs that were already fixed.
+
+This is a real coordination problem with three dimensions:
+
+1. **Stale context within a pipeline** — Skills 2 and 3 should know what happened since the pipeline started. A git HEAD check between skills would catch this.
+
+2. **Cross-pipeline interference** — Two `/qa` runs modifying the same files simultaneously will cause merge conflicts or one overwriting the other's work.
+
+3. **Review invalidation** — A review's findings become stale the moment another pipeline commits. The eng review found "shell injection in notifier.ts" but by the time `/qa` runs, it's already fixed.
+
+### Minimal Fix
+
+Check `git rev-parse HEAD` at each skill boundary in the pipeline. If HEAD changed since the last skill, inject that context into the handoff: "Note: N commits landed since the previous skill ran. Review the diff before proceeding."
+
+**Implementation:** In `src/pipeline.ts`, before starting each skill:
+1. Record `gitHead` at pipeline start
+2. Before each skill transition, compare current HEAD to recorded HEAD
+3. If changed, add a context note to the handoff with the diff summary
+4. Update recorded HEAD
+
+This ties directly into cross-instance coordination — the daemon registry should track git HEAD per instance, and cross-instance dedup should consider whether the codebase has changed since a review was started.
+
+---
+
 ## Verification
 
 1. `npm test` — all 273 existing + ~55 new tests pass

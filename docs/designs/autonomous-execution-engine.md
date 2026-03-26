@@ -437,9 +437,9 @@ Setup: `claude setup-token` → export `CLAUDE_CODE_OAUTH_TOKEN=<token>`
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 3 | CLEAR | 6 proposals, 5 accepted, 1 deferred (Brain-First Roadmap SELECTIVE EXPANSION) |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 4 | OPEN | 5 issues, 0 critical gaps (1 commit stale) |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 5 | CLEAR | 3 issues, 0 critical gaps (proper-lockfile, croner, format docs) |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
 
 - **OUTSIDE VOICE:** 3 sessions total. Latest: Brain-First Roadmap challenge — 10 findings, 3 cross-model tensions resolved (reflection ground truth, sequencing validation gate, concurrent reflection lock).
 - **UNRESOLVED:** 0
-- **VERDICT:** CEO CLEARED. Eng review recommended for Brain-First Roadmap scope before implementation.
+- **VERDICT:** CEO + ENG CLEARED — Brain-First Roadmap ready to implement.
