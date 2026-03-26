@@ -189,7 +189,7 @@ async function runSkillInternal(
     const oracleMemory = (() => {
       if (!config.autonomous || config.noMemory) return undefined;
       try {
-        const memConfig = defaultMemoryConfig(config.projectDir);
+        const memConfig = defaultMemoryConfig(config.mainRepoDir ?? config.projectDir);
         // Check circuit breaker — if tripped, disable memory and notify
         if (isCircuitBreakerTripped(memConfig)) {
           sendNotification(

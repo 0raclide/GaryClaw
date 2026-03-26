@@ -110,6 +110,8 @@ export interface GaryClawConfig {
   abortSignal?: AbortSignal;
   designDoc?: string;
   noMemory?: boolean;
+  /** Main repo dir for oracle memory when projectDir points to a worktree. */
+  mainRepoDir?: string;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────

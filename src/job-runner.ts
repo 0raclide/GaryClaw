@@ -273,6 +273,8 @@ function buildGaryClawConfig(
     maxRelaySessions: config.orchestrator.maxRelaySessions,
     autonomous: true,
     designDoc: job.designDoc,
+    // Oracle memory always reads from the main repo, not the worktree
+    mainRepoDir: config.worktreePath ? config.projectDir : undefined,
   };
 }
 

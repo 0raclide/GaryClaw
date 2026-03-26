@@ -36,7 +36,7 @@ export function worktreeDir(repoDir: string, instanceName: string): string {
 /**
  * Branch name convention for an instance.
  */
-function branchName(instanceName: string): string {
+export function branchName(instanceName: string): string {
   return `garyclaw/${instanceName}`;
 }
 
@@ -252,6 +252,26 @@ export function mergeWorktreeBranch(
 
   if (commitCount === 0) {
     return { merged: true, commitCount: 0, reason: "Already up to date" };
+  }
+
+  // Ensure we're on the base branch before merging
+  try {
+    const currentBranch = execFileSync(
+      "git", ["rev-parse", "--abbrev-ref", "HEAD"],
+      { cwd: repoDir, stdio: "pipe", encoding: "utf-8" },
+    ).trim();
+    if (currentBranch !== baseBranch) {
+      execFileSync("git", ["checkout", baseBranch], {
+        cwd: repoDir,
+        stdio: "pipe",
+      });
+    }
+  } catch {
+    return {
+      merged: false,
+      commitCount,
+      reason: `Cannot checkout ${baseBranch} — working tree may have uncommitted changes`,
+    };
   }
 
   // Attempt fast-forward merge

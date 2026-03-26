@@ -10,7 +10,7 @@
 
 import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { runSkill } from "./orchestrator.js";
@@ -113,6 +113,56 @@ export function buildContextHandoff(
   lines.push("");
 
   lines.push(`Now run the /${nextSkillName} skill. Follow all SKILL.md instructions completely.`);
+
+  return lines.join("\n");
+}
+
+// ── Office hours prompt for pipeline ────────────────────────────
+
+/**
+ * Build a prompt for /office-hours when it appears in a pipeline.
+ * Reads priority.md (from prioritize skill) and primes office-hours
+ * with the chosen item as context. Instructs it to write the design
+ * doc to docs/designs/ so implement can auto-discover it.
+ */
+function buildOfficeHoursPrompt(projectDir: string): string {
+  const lines: string[] = [];
+
+  // Read priority.md if it exists
+  const priorityPath = join(projectDir, ".garyclaw", "priority.md");
+  let priorityContent: string | null = null;
+  if (existsSync(priorityPath)) {
+    try {
+      priorityContent = readFileSync(priorityPath, "utf-8");
+    } catch { /* ignore */ }
+  }
+
+  lines.push("Run the /office-hours skill in builder mode.");
+  lines.push("");
+
+  if (priorityContent) {
+    lines.push("## Context: Priority Pick from Backlog");
+    lines.push("");
+    lines.push("The prioritize skill selected this item as the highest-impact work to do next:");
+    lines.push("");
+    lines.push(priorityContent);
+    lines.push("");
+    lines.push("Use this as the problem statement for office-hours. Skip the initial \"what's your goal?\" question — the goal is to design a solution for the priority pick above.");
+    lines.push("Select builder mode (Phase 2B) automatically.");
+  } else {
+    lines.push("Read TODOS.md and CLAUDE.md to understand the project, then design the highest-impact improvement.");
+  }
+
+  lines.push("");
+  lines.push("## Important: Design Doc Location");
+  lines.push("");
+  lines.push("Write the design doc to `docs/designs/` in the project directory (NOT to ~/.gstack/projects/).");
+  lines.push("The implement skill auto-discovers the most recently modified file in docs/designs/.");
+  lines.push("Use filename format: `docs/designs/{topic-slug}.md`");
+  lines.push("");
+  lines.push("## Autonomous Mode");
+  lines.push("");
+  lines.push("This is running autonomously in a daemon pipeline. Answer all AskUserQuestion prompts yourself using your best judgment. Do not wait for human input.");
 
   return lines.join("\n");
 }
@@ -249,6 +299,11 @@ async function executePipelineFrom(
         const prevSkills = state.skills.slice(0, i);
         const priorityPrompt = await buildPrioritizePrompt(config, prevSkills, config.projectDir);
         await runSkillWithPrompt(skillConfig, callbacks, priorityPrompt);
+      } else if (skillName === "office-hours") {
+        // office-hours runs as a gstack skill (SKILL.md loaded by SDK).
+        // We prime it with context from priority.md so it designs the right thing.
+        const officeHoursPrompt = buildOfficeHoursPrompt(config.projectDir);
+        await runSkillWithPrompt(skillConfig, callbacks, officeHoursPrompt);
       } else if (skillName === "implement") {
         const { buildImplementPrompt } = await import("./implement.js");
         const prevSkills = state.skills.slice(0, i);

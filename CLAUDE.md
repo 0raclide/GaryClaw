@@ -1,10 +1,10 @@
 # GaryClaw
 
-**Context-infinite orchestration harness for Claude Code skills.**
+**A learning development daemon that gets smarter every run.**
 
-GaryClaw solves the #1 pain point of long-running gstack skills (`/qa`, `/design-review`, `/autoplan`): context window exhaustion. These skills are iterative fix loops (find → fix → verify → screenshot → commit → repeat) that consume context rapidly. With autocompact OFF, you hit end-of-context. With autocompact ON, the skill's own instructions get compressed away and quality degrades.
+Push code. Go to sleep. GaryClaw runs QA, remembers what failed last Tuesday, applies your taste preferences, draws on researched domain knowledge, and makes decisions a senior engineer would respect. You wake up to results that feel like *your* work, not automation output.
 
-GaryClaw wraps Claude Code in an external harness that monitors context usage, checkpoints state, and automatically relays work across fresh sessions — making skills effectively context-infinite.
+GaryClaw wraps Claude Code in an external harness that monitors context usage, checkpoints state, and automatically relays work across fresh sessions — making skills effectively context-infinite. On top of that foundation, it adds autonomous decision-making (Oracle with 7 principles + memory), a persistent background daemon with parallel instances, and a self-improvement loop that prioritizes its own backlog, designs solutions, implements them, reviews the implementation, and fixes bugs — all without human intervention.
 
 ---
 

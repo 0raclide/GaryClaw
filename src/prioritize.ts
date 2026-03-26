@@ -10,9 +10,9 @@
  */
 
 import { join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
-import { safeReadText } from "./safe-json.js";
+import { safeReadText, safeReadJSON } from "./safe-json.js";
 import { readOracleMemory, readMetrics, defaultMemoryConfig } from "./oracle-memory.js";
 import { estimateTokens } from "./checkpoint.js";
 import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics } from "./types.js";
@@ -191,6 +191,93 @@ export function formatPipelineContext(skills: PipelineSkillEntry[]): string {
   return lines.join("\n").trim();
 }
 
+// ── Unresolved review findings ──────────────────────────────────
+
+export interface ReviewFinding {
+  jobId: string;
+  skillName: string;
+  question: string;
+  accepted: string;
+  confidence: number;
+}
+
+/**
+ * Scan recent pipeline reports for eng/CEO review decisions that accepted
+ * fixes ("fix", "implement", "add", "build") but were never implemented.
+ *
+ * Checks: if a decision says "Fix X" and no commit since then mentions X,
+ * it's probably unresolved. We use a simple heuristic: decisions from review
+ * skills in the last 5 jobs that contain action keywords.
+ */
+export function loadUnresolvedReviewFindings(checkpointDir: string): ReviewFinding[] {
+  const findings: ReviewFinding[] = [];
+  const actionKeywords = /\bfix\b|\bimplement\b|\badd\b|\bbuild now\b|\bextract\b|\bvalidate\b|\breplace\b/i;
+  const reviewSkills = ["plan-eng-review", "plan-ceo-review"];
+
+  // Scan all instance job dirs
+  const daemonsDir = join(checkpointDir, "daemons");
+  const jobDirs: string[] = [];
+
+  // Check both old flat layout and new instance layout
+  const flatJobsDir = join(checkpointDir, "jobs");
+  if (existsSync(flatJobsDir)) {
+    try {
+      for (const d of readdirSync(flatJobsDir)) {
+        jobDirs.push(join(flatJobsDir, d));
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (existsSync(daemonsDir)) {
+    try {
+      for (const inst of readdirSync(daemonsDir)) {
+        const instJobsDir = join(daemonsDir, inst, "jobs");
+        if (!existsSync(instJobsDir)) continue;
+        try {
+          for (const d of readdirSync(instJobsDir)) {
+            jobDirs.push(join(instJobsDir, d));
+          }
+        } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Sort by dir name (contains timestamp) descending, take last 10
+  // (more than 5 because old flat jobs may outnumber recent instance jobs)
+  jobDirs.sort().reverse();
+  const recentDirs = jobDirs.slice(0, 10);
+
+  for (const jobDir of recentDirs) {
+    const reportPath = join(jobDir, "pipeline-report.md");
+    const report = safeReadText(reportPath);
+    if (!report) continue;
+
+    const jobId = jobDir.split("/").pop() ?? "unknown";
+
+    // Extract decisions from the markdown report
+    // Format: - **Q:** question → **A:** answer (N/10)
+    const decisionPattern = /\*\*Q:\*\*\s*(.*?)\s*→\s*\*\*A:\*\*\s*(.*?)\s*\((\d+)\/10\)/g;
+    let match;
+    while ((match = decisionPattern.exec(report)) !== null) {
+      const question = match[1];
+      const answer = match[2];
+      const confidence = parseInt(match[3], 10);
+
+      // Only include decisions from review skills that accepted an action
+      const isFromReview = reviewSkills.some((s) => report.includes(`/${s}`));
+      if (!isFromReview) continue;
+      if (!actionKeywords.test(answer)) continue;
+
+      // Skip decisions that are meta (about running the next skill, committing, etc.)
+      if (/run \/|ready to implement|commit my changes|skip|proceed/i.test(answer)) continue;
+
+      findings.push({ jobId, skillName: "eng-review", question, accepted: answer, confidence });
+    }
+  }
+
+  return findings;
+}
+
 // ── Prompt builder ──────────────────────────────────────────────
 
 const PRIORITIZE_RULES = `## Scoring Rubric
@@ -277,7 +364,8 @@ Then STOP. Do not pick an item below the threshold.
 - Do NOT pick items larger than M effort (suggest splitting in priority.md, write the split to TODOS.md)
 - Do NOT pick P4 items when P2/P3 items exist
 - Do NOT modify any source code — you are read-only except for .garyclaw/priority.md (and TODOS.md for splits)
-- Do NOT invent backlog items — only score what's in TODOS.md`;
+- Do NOT invent backlog items — only score what's in TODOS.md or Unresolved Review Findings
+- DO give a +2 scoring bonus to unresolved review findings — they are pre-reviewed and pre-approved, zero design work needed`;
 
 const WORKED_EXAMPLE = `## Worked Example
 
@@ -396,6 +484,22 @@ export async function buildPrioritizePrompt(
     lines.push("### Previous Skill Findings");
     lines.push("");
     lines.push(pipelineCtx);
+    lines.push("");
+  }
+
+  // Unresolved review findings (accepted fixes from recent eng/CEO reviews)
+  const gcDir = join(projectDir, ".garyclaw");
+  const reviewFindings = loadUnresolvedReviewFindings(gcDir);
+  if (reviewFindings.length > 0) {
+    lines.push("### Unresolved Review Findings");
+    lines.push("");
+    lines.push("These fixes were accepted in recent eng/CEO reviews but never implemented.");
+    lines.push("**Score these with a +2 bonus** on 'Autonomous run quality' because they are pre-reviewed and approved.");
+    lines.push("");
+    for (const f of reviewFindings) {
+      lines.push(`- **${f.accepted}** (confidence: ${f.confidence}/10, from ${f.jobId})`);
+      lines.push(`  Context: ${f.question.slice(0, 200)}${f.question.length > 200 ? "..." : ""}`);
+    }
     lines.push("");
   }
 

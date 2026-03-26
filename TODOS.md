@@ -1,6 +1,70 @@
 # TODOS
 
-## P2: Daemon Hardening (Phase 4b) — PARTIALLY FIXED
+## P2: garyclaw doctor — Self-Diagnostic Command
+
+**What:** A `garyclaw doctor` command that checks in 5 seconds: stale PID files, corrupt oracle memory, orphaned worktrees, stuck reflection locks, exhausted global budget, valid auth. Prints PASS/WARN/FAIL per check. Includes shared PID liveness utility with process-name verification (prevents PID reuse false positives).
+
+**Why:** When the daemon won't start or behaves oddly, there's no diagnostic tool. Users read raw logs. Doctor gives instant triage. Also subsumes the P2 "stale PID cleanup" TODO.
+
+**Pros:** 5-second diagnostic for all common failure modes. Self-healing (offers to fix stale PIDs, stuck locks).
+
+**Cons:** None significant — reads existing state files, no side effects except optional cleanup.
+
+**Context:** Identified in CEO review battle-test dogfood plan (2026-03-26). Accepted as cherry-pick #2. Eng review approved with: auth check needs 10s timeout (WARN on timeout, FAIL on actual error), shared PID utility with process-name check.
+
+**Effort:** S (human: ~2 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** /plan-ceo-review on 2026-03-26
+
+## P2: Failure Taxonomy in Job Runner
+
+**What:** When a daemon job fails, classify the error into: `garyclaw-bug` (harness issue), `skill-bug` (gstack skill misbehavior), `project-bug` (target project issue), `sdk-bug` (Agent SDK issue), `auth-issue` (token/login), `infra-issue` (disk/network/OOM). Store as structured JSON in `.garyclaw/failures.jsonl`.
+
+**Why:** Right now when a job fails, the error message is whatever the exception says. Classification enables: auto-retry for infra issues, skip for project bugs, escalate for GaryClaw bugs. Makes overnight runs resilient instead of fragile.
+
+**Pros:** Structured failure data. Enables smart retry logic. Makes debugging overnight runs trivial.
+
+**Cons:** Classification heuristic may misclassify edge cases.
+
+**Context:** Identified in CEO review battle-test dogfood plan (2026-03-26). Eng review: classify in job-runner.ts where all errors converge (single classification point).
+
+**Effort:** S (human: ~2 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** /plan-ceo-review on 2026-03-26
+
+## P2: Dogfood Dashboard
+
+**What:** After each daemon job completes, auto-generate a health dashboard at `.garyclaw/dogfood-report.md`: jobs run, decisions made, issues found/fixed, relay count, oracle accuracy, cost. One glance tells you if GaryClaw is healthy.
+
+**Why:** Without it, you're reading raw logs to understand if overnight runs were productive.
+
+**Pros:** Instant visibility into daemon health. Extends existing report.ts.
+
+**Cons:** None significant.
+
+**Context:** Identified in CEO review battle-test dogfood plan (2026-03-26). Eng review: wire into job-runner completion, not a separate subcommand. Add `garyclaw dashboard` read-only command.
+
+**Effort:** S (human: ~2 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** /plan-ceo-review on 2026-03-26
+
+## P1: Spike — Verify GIT_COMMITTER_EMAIL Propagation Through SDK
+
+**What:** Run a 5-minute spike to confirm that setting `GIT_COMMITTER_EMAIL` in the env passed to `query()` propagates through to Claude's `git commit` calls. The dogfood plan's recursive loop prevention relies on this.
+
+**Why:** If the SDK strips or overrides env vars before they reach Claude's Bash tool, the entire loop prevention strategy (env var marker → poller checks committer email) fails silently. The spike is the cheapest way to de-risk the most critical safety feature in the dogfood plan.
+
+**Pros:** 5-minute de-risk for a blocking safety feature.
+
+**Cons:** Might be unnecessary if env passthrough already covers this (spike 3 proved general env passthrough, but git committer email is a special case).
+
+**Context:** Identified in eng review failure modes analysis (2026-03-26). The CEO review chose env var marker over git hooks for loop prevention. This spike validates the approach before implementation.
+
+**Effort:** XS (human: ~30 min / CC: ~5 min)
+**Depends on:** Nothing
+**Added by:** /plan-eng-review on 2026-03-26
+
+## P4: Daemon Hardening (Phase 4b) — SUBSUMED BY DOCTOR
 
 **What:** Remaining hardening for the daemon: ~~log rotation (size-based, 10MB threshold)~~, ~~job state pruning~~, stale PID cleanup on startup.
 
@@ -10,7 +74,7 @@
 
 **Cons:** Low urgency — the daemon works fine for short sessions. Only matters for always-on deployment.
 
-**Context:** Phase 4a completed 2026-03-25. Hardening fixes completed 2026-03-26. Log rotation (ISSUE-005) and job pruning (ISSUE-006) fixed by /qa on main, 2026-03-26. maxJobsPerDay enforcement gap (ISSUE-016) fixed by /qa Run 3. Shell injection in triggers.ts (ISSUE-002) and resumeSkill checkpoint discard (ISSUE-003) fixed by /qa Run 4 on main, 2026-03-26. Remaining: stale PID cleanup.
+**Context:** Phase 4a completed 2026-03-25. Hardening fixes completed 2026-03-26. Log rotation (ISSUE-005) and job pruning (ISSUE-006) fixed by /qa on main, 2026-03-26. maxJobsPerDay enforcement gap (ISSUE-016) fixed by /qa Run 3. Shell injection in triggers.ts (ISSUE-002) and resumeSkill checkpoint discard (ISSUE-003) fixed by /qa Run 4 on main, 2026-03-26. Remaining: stale PID cleanup → **subsumed by `garyclaw doctor` in battle-test dogfood plan** (detects AND fixes stale PIDs as check #1).
 
 **Effort:** XS (human: ~1 day / CC: ~15 min)
 **Depends on:** Phase 4a (complete)
@@ -61,7 +125,7 @@
 **Context:** Identified during CEO review cherry-pick ceremony (2026-03-26, SELECTIVE EXPANSION). Deferred because it requires enough job history data to learn from. Ship static cron (Phase 4b) first, layer adaptive triggers when data exists.
 
 **Effort:** M (human: ~1 week / CC: ~1 hour)
-**Depends on:** Phase 5b (quality metrics), Phase 4b (cron baseline)
+**Depends on:** Phase 5b (quality metrics, DONE), Phase 4b (cron baseline, DONE), 50+ jobs of history (NOT YET — currently ~16 jobs)
 **Added by:** /plan-ceo-review on 2026-03-26
 
 ## P4: Daemon Shutdown AbortSignal Improvement
@@ -96,7 +160,7 @@
 **Depends on:** Phase 5a (memory Oracle working)
 **Added by:** /plan-ceo-review on 2026-03-26
 
-## P3: Implement Step Tracking Across Relays
+## P3: Implement Step Tracking Across Relays — INCLUDED IN DOGFOOD PLAN
 
 **What:** Track which implementation steps from the design doc's "Implementation Order" have been completed, so that after a checkpoint/relay the fresh session knows where to resume instead of re-reading the full design doc from scratch.
 
