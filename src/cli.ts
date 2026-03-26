@@ -380,6 +380,16 @@ ${BOLD}Examples:${RESET}
   garyclaw daemon trigger qa design-review    # enqueue skills
   garyclaw daemon status                      # check daemon state
   garyclaw daemon log --tail 100              # view recent log
+
+${BOLD}Daemon Config (daemon.json triggers):${RESET}
+  Git poll:  { "type": "git_poll", "intervalSeconds": 60, "skills": ["qa"] }
+  Cron:      { "type": "cron", "expression": "0 2 * * *", "skills": ["qa"] }
+  Cron examples:
+    "0 2 * * *"     — 2am daily
+    "*/15 * * * *"  — every 15 minutes
+    "0 9 * * 1-5"   — 9am weekdays
+    "0 0 1 * *"     — midnight on the 1st of each month
+  Reload config without restart: kill -HUP <daemon-pid>
 `);
 }
 
