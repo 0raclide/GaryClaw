@@ -331,8 +331,11 @@ export async function startDaemon(checkpointDir: string): Promise<void> {
     process.exit(0);
   }
 
-  process.on("SIGTERM", () => { shutdown("SIGTERM").catch((e) => { console.error("Shutdown error:", e); process.exit(1); }); });
-  process.on("SIGINT", () => { shutdown("SIGINT").catch((e) => { console.error("Shutdown error:", e); process.exit(1); }); });
+  const handleSignal = (sig: string) => {
+    shutdown(sig).catch((e) => { console.error("Shutdown error:", e); process.exit(1); });
+  };
+  process.on("SIGTERM", () => handleSignal("SIGTERM"));
+  process.on("SIGINT", () => handleSignal("SIGINT"));
 
   configLog("info", "Daemon ready");
 }

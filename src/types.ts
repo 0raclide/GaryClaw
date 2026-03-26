@@ -3,6 +3,15 @@
  * Every other module imports from here.
  */
 
+// ── Errors ──────────────────────────────────────────────────────
+
+export class PerJobCostExceededError extends Error {
+  constructor(cost: number, limit: number) {
+    super(`Per-job cost limit exceeded: $${cost.toFixed(3)} > $${limit.toFixed(3)}`);
+    this.name = "PerJobCostExceededError";
+  }
+}
+
 // ── Issue tracking ──────────────────────────────────────────────
 
 export type IssueSeverity = "critical" | "high" | "medium" | "low" | "cosmetic";

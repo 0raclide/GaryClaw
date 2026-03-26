@@ -12,6 +12,9 @@ import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runPipeline } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
 import { notifyJobComplete, notifyJobError, writeSummary } from "./notifier.js";
+import {
+  PerJobCostExceededError,
+} from "./types.js";
 import type {
   BudgetConfig,
   DaemonConfig,
@@ -22,6 +25,9 @@ import type {
   OrchestratorCallbacks,
   OrchestratorEvent,
 } from "./types.js";
+
+// Re-export for backwards compatibility
+export { PerJobCostExceededError };
 
 const STATE_FILE = "daemon-state.json";
 
@@ -115,7 +121,7 @@ export function createJobRunner(
       triggeredBy,
       triggerDetail,
       skills,
-      projectDir: config.projectDir,
+      projectDir: currentConfig.projectDir,
       status: "queued",
       enqueuedAt: new Date().toISOString(),
       costUsd: 0,
@@ -217,28 +223,22 @@ function buildGaryClawConfig(
   };
 }
 
-export class PerJobCostExceededError extends Error {
-  constructor(cost: number, limit: number) {
-    super(`Per-job cost limit exceeded: $${cost.toFixed(3)} > $${limit.toFixed(3)}`);
-    this.name = "PerJobCostExceededError";
-  }
-}
-
 function buildCallbacks(job: Job, config: DaemonConfig, deps: JobRunnerDeps): OrchestratorCallbacks {
   return {
     onEvent: (event: OrchestratorEvent) => {
-      // Track cost from events
+      // Track cost from events and enforce per-job cost limit.
+      // Only check on cost-related events to avoid throwing mid-checkpoint-write.
       if (event.type === "cost_update") {
         job.costUsd = Math.max(job.costUsd, event.costUsd);
-      }
-      if (event.type === "skill_complete") {
+      } else if (event.type === "skill_complete") {
         job.costUsd = Math.max(job.costUsd, event.costUsd);
-      }
-      if (event.type === "pipeline_complete") {
+      } else if (event.type === "pipeline_complete") {
         job.costUsd = Math.max(job.costUsd, event.totalCostUsd);
       }
-      // Enforce per-job cost limit
-      if (job.costUsd > config.budget.perJobCostLimitUsd) {
+      if (
+        (event.type === "cost_update" || event.type === "skill_complete" || event.type === "pipeline_complete") &&
+        job.costUsd > config.budget.perJobCostLimitUsd
+      ) {
         throw new PerJobCostExceededError(job.costUsd, config.budget.perJobCostLimitUsd);
       }
       // Log key events

@@ -40,6 +40,7 @@ import { createAskHandler } from "./ask-handler.js";
 import { askOracle, createSdkOracleQueryFn } from "./oracle.js";
 import { executeRelay, finalizeRelay } from "./relay.js";
 import { buildReport, formatReportMarkdown } from "./report.js";
+import { PerJobCostExceededError } from "./types.js";
 
 import { IssueTracker, extractAllToolUse, parseGitLog } from "./issue-extractor.js";
 
@@ -231,101 +232,119 @@ async function runSkillInternal(
       let segmentResult: SegmentResult | null = null;
 
       // 4. Process messages
-      for await (const msg of segment) {
-        // Live progress: assistant text
-        const text = extractAssistantText(msg);
-        if (text) {
-          callbacks.onEvent({ type: "assistant_text", text });
-        }
-
-        // Live progress: tool use
-        const toolUse = extractToolUse(msg);
-        if (toolUse) {
-          callbacks.onEvent({
-            type: "tool_use",
-            toolName: toolUse.toolName,
-            inputSummary: toolUse.inputSummary,
-          });
-        }
-
-        // Issue extraction: feed all tool_use blocks to tracker
-        const allToolUses = extractAllToolUse(msg);
-        for (const tu of allToolUses) {
-          issueTracker.trackToolUse(tu.toolName, tu.input);
-          if (tu.toolName === "Bash" && typeof tu.input.command === "string") {
-            const extracted = issueTracker.trackCommit(tu.input.command);
-            if (extracted) {
-              callbacks.onEvent({ type: "issue_extracted", issue: extracted });
-            }
+      // Wrapped in try/catch to save checkpoint if PerJobCostExceededError
+      // is thrown from callbacks.onEvent (per-job budget enforcement).
+      try {
+        for await (const msg of segment) {
+          // Live progress: assistant text
+          const text = extractAssistantText(msg);
+          if (text) {
+            callbacks.onEvent({ type: "assistant_text", text });
           }
-        }
 
-        // Per-turn monitoring
-        const turnUsage = extractTurnUsage(msg);
-        if (turnUsage) {
-          const contextSize = recordTurnUsage(monitor, turnUsage);
-          if (contextSize !== null) {
-            totalTurns++;
+          // Live progress: tool use
+          const toolUse = extractToolUse(msg);
+          if (toolUse) {
             callbacks.onEvent({
-              type: "turn_usage",
-              sessionIndex,
-              turn: monitor.turnCounter,
-              contextSize,
-              contextWindow: monitor.contextWindow,
-            });
-
-            // Check relay threshold (deferred — just set flag)
-            const decision = shouldRelay(monitor, config.relayThresholdRatio);
-            if (decision.relay && !relayFlag) {
-              relayFlag = true;
-              relayReason = decision.reason;
-              relayContextSize = decision.contextSize;
-            }
-          }
-        }
-
-        // Result message — segment complete
-        const result = extractResultData(msg);
-        if (result) {
-          segmentResult = result;
-          sessionId = result.sessionId;
-
-          // Set context window denominator
-          setContextWindow(monitor, result.modelUsage);
-
-          // Re-check relay now that contextWindow is known
-          // (shouldRelay returns false when contextWindow is null,
-          // which is the case during assistant message processing
-          // before the first result message arrives)
-          if (!relayFlag) {
-            const decision = shouldRelay(monitor, config.relayThresholdRatio);
-            if (decision.relay) {
-              relayFlag = true;
-              relayReason = decision.reason;
-              relayContextSize = decision.contextSize;
-            }
-          }
-
-          // Update cost
-          if (result.totalCostUsd > 0) {
-            setCost(monitor, result.totalCostUsd);
-            estimatedCostUsd = result.totalCostUsd;
-            callbacks.onEvent({
-              type: "cost_update",
-              costUsd: estimatedCostUsd,
-              sessionIndex,
+              type: "tool_use",
+              toolName: toolUse.toolName,
+              inputSummary: toolUse.inputSummary,
             });
           }
 
-          totalTurns = Math.max(totalTurns, result.numTurns);
+          // Issue extraction: feed all tool_use blocks to tracker
+          const allToolUses = extractAllToolUse(msg);
+          for (const tu of allToolUses) {
+            issueTracker.trackToolUse(tu.toolName, tu.input);
+            if (tu.toolName === "Bash" && typeof tu.input.command === "string") {
+              const extracted = issueTracker.trackCommit(tu.input.command);
+              if (extracted) {
+                callbacks.onEvent({ type: "issue_extracted", issue: extracted });
+              }
+            }
+          }
 
+          // Per-turn monitoring
+          const turnUsage = extractTurnUsage(msg);
+          if (turnUsage) {
+            const contextSize = recordTurnUsage(monitor, turnUsage);
+            if (contextSize !== null) {
+              totalTurns++;
+              callbacks.onEvent({
+                type: "turn_usage",
+                sessionIndex,
+                turn: monitor.turnCounter,
+                contextSize,
+                contextWindow: monitor.contextWindow,
+              });
+
+              // Check relay threshold (deferred — just set flag)
+              const decision = shouldRelay(monitor, config.relayThresholdRatio);
+              if (decision.relay && !relayFlag) {
+                relayFlag = true;
+                relayReason = decision.reason;
+                relayContextSize = decision.contextSize;
+              }
+            }
+          }
+
+          // Result message — segment complete
+          const result = extractResultData(msg);
+          if (result) {
+            segmentResult = result;
+            sessionId = result.sessionId;
+
+            // Set context window denominator
+            setContextWindow(monitor, result.modelUsage);
+
+            // Update cost before relay re-check so checkpoint has accurate data
+            if (result.totalCostUsd > 0) {
+              setCost(monitor, result.totalCostUsd);
+              estimatedCostUsd = result.totalCostUsd;
+              callbacks.onEvent({
+                type: "cost_update",
+                costUsd: estimatedCostUsd,
+                sessionIndex,
+              });
+            }
+
+            // Re-check relay now that contextWindow is known
+            // (shouldRelay returns false when contextWindow is null,
+            // which is the case during assistant message processing
+            // before the first result message arrives)
+            if (!relayFlag) {
+              const decision = shouldRelay(monitor, config.relayThresholdRatio);
+              if (decision.relay) {
+                relayFlag = true;
+                relayReason = decision.reason;
+                relayContextSize = decision.contextSize;
+              }
+            }
+
+            totalTurns = Math.max(totalTurns, result.numTurns);
+
+            callbacks.onEvent({
+              type: "segment_end",
+              sessionIndex,
+              segmentIndex,
+              numTurns: result.numTurns,
+            });
+          }
+        }
+      } catch (err) {
+        if (err instanceof PerJobCostExceededError) {
+          // Save checkpoint before propagating so work can be resumed
+          const checkpoint = buildCheckpoint(
+            runId, config, monitor, askHandler.getDecisions(),
+            sessionIndex, checkpoints, issueTracker,
+          );
+          writeCheckpoint(checkpoint, config.checkpointDir);
           callbacks.onEvent({
-            type: "segment_end",
-            sessionIndex,
-            segmentIndex,
-            numTurns: result.numTurns,
+            type: "checkpoint_saved",
+            path: join(config.checkpointDir, "checkpoint.json"),
           });
         }
+        throw err;
       }
 
       // 5. Post-segment decisions
