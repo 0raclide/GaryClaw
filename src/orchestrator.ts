@@ -17,7 +17,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -662,11 +662,11 @@ function buildCheckpoint(
   let gitBranch = "unknown";
   let gitHead = "unknown";
   try {
-    gitBranch = execSync("git rev-parse --abbrev-ref HEAD", {
+    gitBranch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
       cwd: config.projectDir,
       encoding: "utf-8",
     }).trim();
-    gitHead = execSync("git rev-parse HEAD", {
+    gitHead = execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: config.projectDir,
       encoding: "utf-8",
     }).trim();
