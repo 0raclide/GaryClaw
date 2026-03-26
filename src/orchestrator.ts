@@ -518,10 +518,14 @@ function buildCheckpoint(
 ): Checkpoint {
   const usageSnapshot = buildUsageSnapshot(monitor, sessionIndex + 1);
 
-  // Merge issues/findings from previous checkpoints
-  const prevIssues = previousCheckpoints.flatMap((cp) => cp.issues);
-  const prevFindings = previousCheckpoints.flatMap((cp) => cp.findings);
-  const prevDecisions = previousCheckpoints.flatMap((cp) => cp.decisions);
+  // Use last checkpoint's accumulated data (each checkpoint already contains all
+  // prior data). Using flatMap across all checkpoints would grow quadratically.
+  const lastCheckpoint = previousCheckpoints.length > 0
+    ? previousCheckpoints[previousCheckpoints.length - 1]
+    : null;
+  const prevIssues = lastCheckpoint?.issues ?? [];
+  const prevFindings = lastCheckpoint?.findings ?? [];
+  const prevDecisions = lastCheckpoint?.decisions ?? [];
 
   // Get git state
   let gitBranch = "unknown";
