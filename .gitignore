@@ -2,3 +2,4 @@ node_modules/
 dist/
 .garyclaw/
 *.tsbuildinfo
+.test-*-tmp*/
