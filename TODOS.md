@@ -1,18 +1,18 @@
 # TODOS
 
-## P2: Daemon Hardening (Phase 4b)
+## P2: Daemon Hardening (Phase 4b) — PARTIALLY FIXED
 
-**What:** Remaining hardening for the daemon: log rotation (size-based, 10MB threshold), job state pruning (retainDays, max 10 per cycle), stale PID cleanup on startup.
+**What:** Remaining hardening for the daemon: ~~log rotation (size-based, 10MB threshold)~~, ~~job state pruning~~, stale PID cleanup on startup.
 
-**Why:** Phase 4a daemon MVP is complete and working — runs jobs, enforces budgets, sends notifications. But log files grow unbounded, completed job state accumulates, and stale PID files from crashes aren't cleaned up.
+**Why:** Phase 4a daemon MVP is complete and working — runs jobs, enforces budgets, sends notifications. Stale PID files from crashes still aren't cleaned up.
 
 **Pros:** Production-readiness for long-running daemon instances.
 
 **Cons:** Low urgency — the daemon works fine for short sessions. Only matters for always-on deployment.
 
-**Context:** Phase 4a completed 2026-03-25 (daemon lifecycle, IPC, job queue, git poll, notifications). Hardening fixes completed 2026-03-26 (shell injection, AbortSignal, per-job cost enforcement, checkpoint quadratic fix, orchestrator tests, eng review follow-ups). Cron scheduling deferred indefinitely — `/loop` is sufficient.
+**Context:** Phase 4a completed 2026-03-25. Hardening fixes completed 2026-03-26. Log rotation (ISSUE-005) and job pruning (ISSUE-006) fixed by /qa on main, 2026-03-26. Remaining: stale PID cleanup.
 
-**Effort:** S (human: ~3 days / CC: ~30 min)
+**Effort:** XS (human: ~1 day / CC: ~15 min)
 **Depends on:** Phase 4a (complete)
 **Added by:** /plan-eng-review on 2026-03-26
 
