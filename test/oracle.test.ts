@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { askOracle, DECISION_PRINCIPLES } from "../src/oracle.js";
+import { askOracle, DECISION_PRINCIPLES, buildOraclePrompt, parseOracleResponse } from "../src/oracle.js";
 import type { OracleConfig, OracleInput } from "../src/oracle.js";
+import type { OracleMemoryFiles } from "../src/types.js";
 
 function makeInput(overrides: Partial<OracleInput> = {}): OracleInput {
   return {
@@ -282,13 +283,270 @@ describe("oracle", () => {
   });
 
   describe("DECISION_PRINCIPLES", () => {
-    it("contains all 6 principles", () => {
+    it("contains all 7 principles", () => {
       expect(DECISION_PRINCIPLES).toContain("Choose completeness");
       expect(DECISION_PRINCIPLES).toContain("Boil lakes");
       expect(DECISION_PRINCIPLES).toContain("Pragmatic");
       expect(DECISION_PRINCIPLES).toContain("DRY");
       expect(DECISION_PRINCIPLES).toContain("Explicit over clever");
       expect(DECISION_PRINCIPLES).toContain("Bias toward action");
+      expect(DECISION_PRINCIPLES).toContain("Local evidence trumps general knowledge");
+    });
+
+    it("includes conflict resolution hierarchy", () => {
+      expect(DECISION_PRINCIPLES).toContain("CEO phases");
+      expect(DECISION_PRINCIPLES).toContain("Eng phases");
+      expect(DECISION_PRINCIPLES).toContain("Design phases");
+    });
+  });
+
+  describe("buildOraclePrompt — memory injection", () => {
+    it("includes taste.md when provided", () => {
+      const memory: OracleMemoryFiles = {
+        taste: "- Prefer explicit code",
+        domainExpertise: null,
+        decisionOutcomes: null,
+        memoryMd: null,
+      };
+
+      const prompt = buildOraclePrompt(makeInput({ memory }));
+      expect(prompt).toContain("Taste Profile");
+      expect(prompt).toContain("Prefer explicit code");
+    });
+
+    it("includes domain expertise when provided", () => {
+      const memory: OracleMemoryFiles = {
+        taste: null,
+        domainExpertise: "# React\nUse hooks for state management",
+        decisionOutcomes: null,
+        memoryMd: null,
+      };
+
+      const prompt = buildOraclePrompt(makeInput({ memory }));
+      expect(prompt).toContain("Domain Expertise");
+      expect(prompt).toContain("Use hooks for state management");
+    });
+
+    it("includes decision outcomes with P7 reference", () => {
+      const memory: OracleMemoryFiles = {
+        taste: null,
+        domainExpertise: null,
+        decisionOutcomes: "### d-001\nApproach X failed",
+        memoryMd: null,
+      };
+
+      const prompt = buildOraclePrompt(makeInput({ memory }));
+      expect(prompt).toContain("Decision Outcomes");
+      expect(prompt).toContain("P7 applies");
+      expect(prompt).toContain("Approach X failed");
+    });
+
+    it("includes MEMORY.md when provided", () => {
+      const memory: OracleMemoryFiles = {
+        taste: null,
+        domainExpertise: null,
+        decisionOutcomes: null,
+        memoryMd: "# Project State\nPhase 5a in progress",
+      };
+
+      const prompt = buildOraclePrompt(makeInput({ memory }));
+      expect(prompt).toContain("Project Memory");
+      expect(prompt).toContain("Phase 5a in progress");
+    });
+
+    it("includes all memory sections when all provided", () => {
+      const memory: OracleMemoryFiles = {
+        taste: "Be explicit",
+        domainExpertise: "Use TypeScript",
+        decisionOutcomes: "Prior: success",
+        memoryMd: "State: active",
+      };
+
+      const prompt = buildOraclePrompt(makeInput({ memory }));
+      expect(prompt).toContain("Taste Profile");
+      expect(prompt).toContain("Domain Expertise");
+      expect(prompt).toContain("Decision Outcomes");
+      expect(prompt).toContain("Project Memory");
+    });
+
+    it("omits memory sections when all null", () => {
+      const memory: OracleMemoryFiles = {
+        taste: null,
+        domainExpertise: null,
+        decisionOutcomes: null,
+        memoryMd: null,
+      };
+
+      const prompt = buildOraclePrompt(makeInput({ memory }));
+      expect(prompt).not.toContain("Taste Profile");
+      expect(prompt).not.toContain("Domain Expertise");
+    });
+
+    it("omits memory sections entirely when memory not provided", () => {
+      const prompt = buildOraclePrompt(makeInput());
+      expect(prompt).not.toContain("Taste Profile");
+      expect(prompt).not.toContain("Domain Expertise");
+      expect(prompt).not.toContain("Decision Outcomes");
+      expect(prompt).not.toContain("Project Memory");
+    });
+
+    it("adds taste consideration note when taste is present", () => {
+      const memory: OracleMemoryFiles = {
+        taste: "Be concise",
+        domainExpertise: null,
+        decisionOutcomes: null,
+        memoryMd: null,
+      };
+
+      const prompt = buildOraclePrompt(makeInput({ memory }));
+      expect(prompt).toContain("Taste Profile preferences");
+    });
+
+    it("memory injects between principles and recent decisions", () => {
+      const memory: OracleMemoryFiles = {
+        taste: "TASTE_CONTENT",
+        domainExpertise: null,
+        decisionOutcomes: null,
+        memoryMd: null,
+      };
+
+      const input = makeInput({
+        memory,
+        decisionHistory: [{
+          timestamp: "2026-03-25T10:00:00Z",
+          sessionIndex: 0,
+          question: "Previous?",
+          options: [],
+          chosen: "Yes",
+          confidence: 9,
+          rationale: "test",
+          principle: "DRY",
+        }],
+      });
+
+      const prompt = buildOraclePrompt(input);
+      const principlesIdx = prompt.indexOf("Decision Principles");
+      const tasteIdx = prompt.indexOf("TASTE_CONTENT");
+      const recentIdx = prompt.indexOf("Recent Decisions");
+
+      expect(principlesIdx).toBeLessThan(tasteIdx);
+      expect(tasteIdx).toBeLessThan(recentIdx);
+    });
+  });
+
+  describe("parseOracleResponse — otherProposal", () => {
+    it("extracts otherProposal when choice is Other", () => {
+      const raw = JSON.stringify({
+        choice: "Other",
+        confidence: 7,
+        rationale: "Custom approach needed",
+        principle: "Pragmatic",
+        otherProposal: "Use a hybrid approach combining A and B",
+      });
+
+      const options = [
+        { label: "Approach A", description: "First" },
+        { label: "Other", description: "Custom" },
+      ];
+
+      const result = parseOracleResponse(raw, options);
+      expect(result.choice).toBe("Other");
+      expect(result.otherProposal).toBe("Use a hybrid approach combining A and B");
+    });
+
+    it("does not extract otherProposal when choice is not Other", () => {
+      const raw = JSON.stringify({
+        choice: "Approach A",
+        confidence: 8,
+        rationale: "test",
+        principle: "test",
+        otherProposal: "should be ignored",
+      });
+
+      const options = [
+        { label: "Approach A", description: "First" },
+        { label: "Other", description: "Custom" },
+      ];
+
+      const result = parseOracleResponse(raw, options);
+      expect(result.choice).toBe("Approach A");
+      expect(result.otherProposal).toBeUndefined();
+    });
+
+    it("otherProposal is undefined when not in response", () => {
+      const raw = JSON.stringify({
+        choice: "Approach A",
+        confidence: 8,
+        rationale: "test",
+        principle: "test",
+      });
+
+      const result = parseOracleResponse(raw, [
+        { label: "Approach A", description: "First" },
+      ]);
+      expect(result.otherProposal).toBeUndefined();
+    });
+  });
+
+  describe("buildOraclePrompt — Other option handling", () => {
+    it("includes otherProposal instruction when Other option exists", () => {
+      const input = makeInput({
+        options: [
+          { label: "Fix it", description: "Fix the bug" },
+          { label: "Other", description: "Custom approach" },
+        ],
+      });
+
+      const prompt = buildOraclePrompt(input);
+      expect(prompt).toContain("otherProposal");
+    });
+
+    it("omits otherProposal instruction when no Other option", () => {
+      const prompt = buildOraclePrompt(makeInput());
+      expect(prompt).not.toContain("otherProposal");
+    });
+  });
+
+  describe("askOracle — memory integration", () => {
+    it("passes memory to prompt builder", async () => {
+      const queryFn = vi.fn().mockResolvedValue(
+        JSON.stringify({
+          choice: "Approach A",
+          confidence: 8,
+          rationale: "Matches taste",
+          principle: "Pragmatic",
+        }),
+      );
+
+      const memory: OracleMemoryFiles = {
+        taste: "Prefer simple solutions",
+        domainExpertise: null,
+        decisionOutcomes: null,
+        memoryMd: null,
+      };
+
+      await askOracle(
+        makeInput({ memory }),
+        { queryFn, escalateThreshold: 6 },
+      );
+
+      const prompt = queryFn.mock.calls[0][0] as string;
+      expect(prompt).toContain("Prefer simple solutions");
+    });
+
+    it("works without memory (backward compatible)", async () => {
+      const config = makeConfig(
+        JSON.stringify({
+          choice: "Approach A",
+          confidence: 9,
+          rationale: "test",
+          principle: "test",
+        }),
+      );
+
+      const result = await askOracle(makeInput(), config);
+      expect(result.choice).toBe("Approach A");
+      expect(result.confidence).toBe(9);
     });
   });
 });

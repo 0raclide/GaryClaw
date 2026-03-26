@@ -1,14 +1,19 @@
 /**
  * Decision Oracle — auto-decides AskUserQuestion prompts using Claude API
- * and the 6 Decision Principles from /autoplan.
+ * and the 7 Decision Principles from /autoplan.
  *
  * Makes a single-turn SDK query per question. Returns structured decision
  * with confidence scoring and escalation detection.
+ *
+ * Phase 5a: Oracle memory injection — when OracleMemory is provided, taste.md,
+ * domain-expertise.md, decision-outcomes.md, and MEMORY.md are injected into
+ * the prompt between principles and recent decisions. When absent, existing
+ * behavior is preserved (full backward compatibility).
  */
 
-import type { Decision } from "./types.js";
+import type { Decision, OracleMemoryFiles } from "./types.js";
 
-// ── The 6 Decision Principles ───────────────────────────────────
+// ── The 7 Decision Principles ───────────────────────────────────
 
 export const DECISION_PRINCIPLES = `
 1. **Choose completeness** — Ship the whole thing. Pick the approach that covers more edge cases.
@@ -17,8 +22,12 @@ export const DECISION_PRINCIPLES = `
 4. **DRY** — Duplicates existing functionality? Reject. Reuse what exists.
 5. **Explicit over clever** — 10-line obvious fix > 200-line abstraction.
 6. **Bias toward action** — Merge > review cycles > stale deliberation. Flag concerns but don't block.
+7. **Local evidence trumps general knowledge** — If we tried X and it failed, prefer alternatives even if X is theoretically SOTA. decision-outcomes.md takes precedence over domain-expertise.md.
 
-Conflict resolution: CEO phases → P1+P2 dominate. Eng phases → P5+P3 dominate. Design phases → P5+P1 dominate.
+Conflict resolution hierarchy:
+- CEO phases → P1 > P2 > P7 > P3 > P5 > P4 > P6
+- Eng phases → P5 > P7 > P3 > P1 > P4 > P2 > P6
+- Design phases → P5 > P1 > P7 > P3 > P2 > P4 > P6
 `.trim();
 
 // ── Types ───────────────────────────────────────────────────────
@@ -29,6 +38,7 @@ export interface OracleInput {
   skillName: string;
   decisionHistory: Decision[];
   projectContext?: string;
+  memory?: OracleMemoryFiles;
 }
 
 export interface OracleOutput {
@@ -99,7 +109,7 @@ export async function askOracle(
   };
 }
 
-function buildOraclePrompt(input: OracleInput): string {
+export function buildOraclePrompt(input: OracleInput): string {
   let prompt = `You are a decision-making oracle for GaryClaw, an autonomous development tool.
 
 ## Decision Principles
@@ -111,6 +121,27 @@ ${input.projectContext ? `- Project: ${input.projectContext.slice(0, 500)}` : ""
 
 `;
 
+  // Phase 5a: Inject oracle memory between principles and recent decisions
+  if (input.memory) {
+    const { taste, domainExpertise, decisionOutcomes, memoryMd } = input.memory;
+
+    if (taste) {
+      prompt += `## Taste Profile (personal preferences)\n${taste}\n\n`;
+    }
+
+    if (domainExpertise) {
+      prompt += `## Domain Expertise (researched knowledge)\n${domainExpertise}\n\n`;
+    }
+
+    if (decisionOutcomes) {
+      prompt += `## Decision Outcomes (what worked and what didn't — P7 applies here)\n${decisionOutcomes}\n\n`;
+    }
+
+    if (memoryMd) {
+      prompt += `## Project Memory (MEMORY.md)\n${memoryMd}\n\n`;
+    }
+  }
+
   if (input.decisionHistory.length > 0) {
     const recent = input.decisionHistory.slice(-5);
     prompt += `## Recent Decisions (last ${recent.length})\n`;
@@ -120,6 +151,10 @@ ${input.projectContext ? `- Project: ${input.projectContext.slice(0, 500)}` : ""
     prompt += "\n";
   }
 
+  const hasOtherOption = input.options.some(
+    (o) => o.label.toLowerCase() === "other",
+  );
+
   prompt += `## Question
 ${input.question}
 
@@ -128,19 +163,21 @@ ${input.options.map((o, i) => `${i + 1}. **${o.label}**: ${o.description}`).join
 
 ## Instructions
 Choose the best option using the Decision Principles above. Consider consistency with prior decisions.
+${input.memory?.taste ? "Also consider the Taste Profile preferences above when they are relevant." : ""}
 
 Respond with ONLY a JSON object (no markdown fences, no explanation outside the JSON):
 {
   "choice": "<exact label of chosen option>",
   "confidence": <1-10>,
   "rationale": "<one sentence explaining why>",
-  "principle": "<which of the 6 principles drove this decision>"
+  "principle": "<which of the 7 principles drove this decision>"${hasOtherOption ? `,
+  "otherProposal": "<if choice is 'Other', provide a detailed free-text proposal here>"` : ""}
 }`;
 
   return prompt;
 }
 
-function parseOracleResponse(
+export function parseOracleResponse(
   raw: string,
   options: { label: string; description: string }[],
 ): Omit<OracleOutput, "isTaste" | "escalate"> {
@@ -157,7 +194,13 @@ function parseOracleResponse(
     const rationale = typeof parsed.rationale === "string" ? parsed.rationale : "No rationale provided";
     const principle = typeof parsed.principle === "string" ? parsed.principle : "Bias toward action";
 
-    return { choice, confidence, rationale, principle };
+    // Extract otherProposal when choice is "Other"
+    const otherProposal =
+      choice.toLowerCase() === "other" && typeof parsed.otherProposal === "string"
+        ? parsed.otherProposal
+        : undefined;
+
+    return { choice, confidence, rationale, principle, otherProposal };
   } catch {
     return fallbackChoice(options, "JSON parse error in oracle response");
   }
