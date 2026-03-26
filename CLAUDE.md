@@ -18,10 +18,9 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 4a: COMPLETE** (2026-03-25) — Daemon Mode MVP: lifecycle, IPC, job queue, git poll, notifications
 **Phase 5a: COMPLETE** (2026-03-26) — Oracle Memory Infrastructure + Enhanced Oracle Prompt
 **Phase 5b: COMPLETE** (2026-03-26) — Post-Job Reflection + Quality Tracking
-- 19 source modules + CLI
+**Phase 5c: COMPLETE** (2026-03-26) — Domain Expertise Research: researcher module, CLI command, freshness tracking
+- 20 source modules + CLI
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
-
-**Next:** Phase 5c (Domain Expertise Research)
 
 ---
 
@@ -59,6 +58,10 @@ npx tsx src/cli.ts daemon status                   # show running status
 npx tsx src/cli.ts daemon trigger qa design-review # enqueue skills
 npx tsx src/cli.ts daemon log --tail 100           # view daemon log
 npx tsx src/cli.ts daemon stop                     # graceful shutdown
+
+# Domain expertise research
+npx tsx src/cli.ts research "WebSocket libraries"  # research a topic
+npx tsx src/cli.ts research "OAuth 2.1" --force    # re-research ignoring freshness
 
 # Options
 npx tsx src/cli.ts run qa \
@@ -117,7 +120,8 @@ CLI (args, readline, display, daemon subcommands)
 | `src/safe-json.ts` | Shared atomic JSON/text I/O — `safeReadJSON`, `safeWriteJSON`, corruption recovery |
 | `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics |
 | `src/reflection.ts` | Post-job reflection: decision outcomes, reopened detection, quality metrics |
-| `src/cli.ts` | `garyclaw run/resume/replay/oracle/daemon`, multi-skill, daemon subcommands |
+| `src/researcher.ts` | Domain expertise research: web search, freshness tracking, section merge |
+| `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon`, multi-skill, daemon subcommands |
 
 ### Key Design Decisions
 
@@ -176,6 +180,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/safe-json.test.ts` | 21 | Atomic write/read, corruption recovery, .bak rename, validation |
 | `test/oracle-memory.test.ts` | 47 | Two-layer resolution, sanitization, metrics, circuit breaker, outcomes |
 | `test/reflection.test.ts` | 48 | Levenshtein, reopened detection, outcome mapping, reflection runner, sandboxing |
+| `test/researcher.test.ts` | 33 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
 
 ---
 
@@ -204,6 +209,9 @@ Two-layer memory (global + per-project), `safe-json.ts` shared I/O, `oracle-memo
 
 ### Phase 5b: Post-Job Reflection + Quality Tracking — COMPLETE
 `src/reflection.ts` — post-job reflection runner, Levenshtein-based reopened issue detection (normalized distance < 0.3), decision outcome mapping (fixed→success, skipped→neutral, reopened→failure), rolling decision-outcomes.md, metrics accumulation, sandboxed canUseTool for Write-only to oracle-memory dirs, path traversal prevention. Wired into orchestrator post-completion (autonomous + memory enabled).
+
+### Phase 5c: Domain Expertise Research — COMPLETE
+`src/researcher.ts` — domain expertise research via web search, freshness tracking (14-day default window), structured output with YAML frontmatter per topic, `parseDomainSections`/`mergeDomainSections` for section management, token budget enforcement (oldest topics dropped), read-only `canUseTool` (WebSearch/WebFetch/Read only), graceful degradation when WebSearch unavailable, `garyclaw research <topic> [--force]` CLI command.
 
 ### Phase 4b: Scheduling (DEFERRED)
 Cron triggers, config hot-reload via SIGHUP.
