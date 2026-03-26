@@ -370,6 +370,96 @@ describe("validateDaemonConfig — cron triggers", () => {
   });
 });
 
+describe("loadDaemonConfig — fallback", () => {
+  const PRIMARY_DIR = join(TEST_DIR, "primary");
+  const FALLBACK_DIR = join(TEST_DIR, "fallback");
+
+  beforeEach(() => {
+    mkdirSync(PRIMARY_DIR, { recursive: true });
+    mkdirSync(FALLBACK_DIR, { recursive: true });
+  });
+  afterEach(() => rmSync(TEST_DIR, { recursive: true, force: true }));
+
+  it("loads from primary dir when config exists there", () => {
+    const config = createValidConfig();
+    config.projectDir = "/primary";
+    writeFileSync(join(PRIMARY_DIR, "daemon.json"), JSON.stringify(config), "utf-8");
+
+    const loaded = loadDaemonConfig(PRIMARY_DIR, FALLBACK_DIR);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.projectDir).toBe("/primary");
+  });
+
+  it("falls back to parent dir when primary has no config", () => {
+    const config = createValidConfig();
+    config.projectDir = "/fallback";
+    writeFileSync(join(FALLBACK_DIR, "daemon.json"), JSON.stringify(config), "utf-8");
+
+    const loaded = loadDaemonConfig(PRIMARY_DIR, FALLBACK_DIR);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.projectDir).toBe("/fallback");
+  });
+
+  it("returns null when neither dir has valid config", () => {
+    const loaded = loadDaemonConfig(PRIMARY_DIR, FALLBACK_DIR);
+    expect(loaded).toBeNull();
+  });
+
+  it("prefers primary over fallback when both exist", () => {
+    const primary = createValidConfig();
+    primary.projectDir = "/primary";
+    writeFileSync(join(PRIMARY_DIR, "daemon.json"), JSON.stringify(primary), "utf-8");
+
+    const fallback = createValidConfig();
+    fallback.projectDir = "/fallback";
+    writeFileSync(join(FALLBACK_DIR, "daemon.json"), JSON.stringify(fallback), "utf-8");
+
+    const loaded = loadDaemonConfig(PRIMARY_DIR, FALLBACK_DIR);
+    expect(loaded!.projectDir).toBe("/primary");
+  });
+});
+
+describe("buildIPCHandler — instances request", () => {
+  beforeEach(() => mkdirSync(TEST_DIR, { recursive: true }));
+  afterEach(() => rmSync(TEST_DIR, { recursive: true, force: true }));
+
+  function createMockRunnerForIPC(): JobRunner {
+    return {
+      enqueue: vi.fn().mockReturnValue("job-001"),
+      processNext: vi.fn().mockResolvedValue(undefined),
+      getState: vi.fn().mockReturnValue({ version: 1, jobs: [], dailyCost: { date: "", totalUsd: 0, jobCount: 0 } }),
+      isRunning: vi.fn().mockReturnValue(false),
+      updateBudget: vi.fn(),
+    };
+  }
+
+  it("returns error when no parentCheckpointDir", async () => {
+    const runner = createMockRunnerForIPC();
+    const handler = buildIPCHandler(runner, Date.now());
+
+    const resp = await handler({ type: "instances" });
+    expect(resp.ok).toBe(false);
+    expect(resp.error).toContain("not available");
+  });
+
+  it("lists instances when parentCheckpointDir provided", async () => {
+    // Create an instance dir with a PID file
+    const instDir = join(TEST_DIR, "daemons", "test-inst");
+    mkdirSync(instDir, { recursive: true });
+    writeFileSync(join(instDir, "daemon.pid"), String(process.pid), "utf-8");
+
+    const runner = createMockRunnerForIPC();
+    const handler = buildIPCHandler(runner, Date.now(), undefined, TEST_DIR);
+
+    const resp = await handler({ type: "instances" });
+    expect(resp.ok).toBe(true);
+    const data = resp.data as any;
+    expect(data.instances).toHaveLength(1);
+    expect(data.instances[0].name).toBe("test-inst");
+    expect(data.instances[0].alive).toBe(true);
+  });
+});
+
 describe("startPollers", () => {
   function createMockRunner(): JobRunner {
     return {

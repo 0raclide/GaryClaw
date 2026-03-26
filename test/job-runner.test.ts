@@ -6,7 +6,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createJobRunner, PerJobCostExceededError } from "../src/job-runner.js";
-import type { DaemonConfig, DaemonState, GaryClawConfig, OrchestratorCallbacks } from "../src/types.js";
+import { updateGlobalBudget } from "../src/daemon-registry.js";
+import type { DaemonConfig, DaemonState, GlobalBudget, GaryClawConfig, OrchestratorCallbacks } from "../src/types.js";
 
 const TEST_DIR = join(process.cwd(), ".test-jobrunner-tmp");
 
@@ -481,6 +482,182 @@ describe("Job Runner", () => {
       // Enqueueing triggers a daily check with today's date
       const id = runner.enqueue(["qa"], "manual", "trigger");
       expect(id).toBeTruthy(); // Should succeed because daily counters reset
+    });
+  });
+
+  describe("global budget enforcement", () => {
+    const PARENT_DIR = join(TEST_DIR, "parent");
+    const INST_DIR = join(TEST_DIR, "parent", "daemons", "test-inst");
+
+    beforeEach(() => {
+      mkdirSync(INST_DIR, { recursive: true });
+    });
+
+    it("rejects enqueue when global daily cost limit reached", () => {
+      // Simulate another instance having spent the entire budget
+      const today = new Date().toISOString().slice(0, 10);
+      const budget: GlobalBudget = {
+        date: today,
+        totalUsd: 5.0,
+        jobCount: 5,
+        byInstance: { "other-inst": { totalUsd: 5.0, jobCount: 5 } },
+      };
+      writeFileSync(join(PARENT_DIR, "global-budget.json"), JSON.stringify(budget), "utf-8");
+
+      const deps = createMockDeps();
+      const runner = createJobRunner(createTestConfig(), INST_DIR, deps, "test-inst", PARENT_DIR);
+      const id = runner.enqueue(["qa"], "manual", "trigger");
+      expect(id).toBeNull();
+    });
+
+    it("allows enqueue when global budget has headroom", () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const budget: GlobalBudget = {
+        date: today,
+        totalUsd: 1.0,
+        jobCount: 1,
+        byInstance: { "other-inst": { totalUsd: 1.0, jobCount: 1 } },
+      };
+      writeFileSync(join(PARENT_DIR, "global-budget.json"), JSON.stringify(budget), "utf-8");
+
+      const deps = createMockDeps();
+      const runner = createJobRunner(createTestConfig(), INST_DIR, deps, "test-inst", PARENT_DIR);
+      const id = runner.enqueue(["qa"], "manual", "trigger");
+      expect(id).toBeTruthy();
+    });
+
+    it("updates global budget after job completion", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        cbs.onEvent({ type: "skill_complete", totalSessions: 1, totalTurns: 5, costUsd: 0.25 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), INST_DIR, deps, "test-inst", PARENT_DIR);
+      runner.enqueue(["qa"], "manual", "trigger");
+
+      await runner.processNext();
+
+      const raw = JSON.parse(readFileSync(join(PARENT_DIR, "global-budget.json"), "utf-8"));
+      expect(raw.totalUsd).toBe(0.25);
+      expect(raw.byInstance["test-inst"].totalUsd).toBe(0.25);
+    });
+
+    it("falls back to local budget when parentCheckpointDir not provided", () => {
+      const deps = createMockDeps();
+      // No parentCheckpointDir — should use local state.dailyCost
+      const runner = createJobRunner(createTestConfig(), INST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger");
+      expect(id).toBeTruthy();
+    });
+  });
+
+  describe("cross-instance dedup", () => {
+    const PARENT_DIR = join(TEST_DIR, "parent-dedup");
+    const INST_A_DIR = join(PARENT_DIR, "daemons", "inst-a");
+    const INST_B_DIR = join(PARENT_DIR, "daemons", "inst-b");
+
+    beforeEach(() => {
+      mkdirSync(INST_A_DIR, { recursive: true });
+      mkdirSync(INST_B_DIR, { recursive: true });
+    });
+
+    it("rejects enqueue when same skills running in another instance", () => {
+      // Simulate inst-a having qa running
+      const stateA: DaemonState = {
+        version: 1,
+        jobs: [{
+          id: "job-a",
+          triggeredBy: "manual",
+          triggerDetail: "test",
+          skills: ["qa"],
+          projectDir: "/tmp",
+          status: "running",
+          enqueuedAt: new Date().toISOString(),
+          costUsd: 0,
+        }],
+        dailyCost: { date: new Date().toISOString().slice(0, 10), totalUsd: 0, jobCount: 0 },
+      };
+      writeFileSync(join(INST_A_DIR, "daemon-state.json"), JSON.stringify(stateA), "utf-8");
+
+      const deps = createMockDeps();
+      const runner = createJobRunner(createTestConfig(), INST_B_DIR, deps, "inst-b", PARENT_DIR);
+      const id = runner.enqueue(["qa"], "manual", "trigger");
+      expect(id).toBeNull();
+    });
+
+    it("allows enqueue when different skills in other instances", () => {
+      // inst-a has design-review queued
+      const stateA: DaemonState = {
+        version: 1,
+        jobs: [{
+          id: "job-a",
+          triggeredBy: "manual",
+          triggerDetail: "test",
+          skills: ["design-review"],
+          projectDir: "/tmp",
+          status: "queued",
+          enqueuedAt: new Date().toISOString(),
+          costUsd: 0,
+        }],
+        dailyCost: { date: new Date().toISOString().slice(0, 10), totalUsd: 0, jobCount: 0 },
+      };
+      writeFileSync(join(INST_A_DIR, "daemon-state.json"), JSON.stringify(stateA), "utf-8");
+
+      const deps = createMockDeps();
+      const runner = createJobRunner(createTestConfig(), INST_B_DIR, deps, "inst-b", PARENT_DIR);
+      const id = runner.enqueue(["qa"], "manual", "trigger");
+      expect(id).toBeTruthy();
+    });
+
+    it("ignores own instance when checking cross-instance dedup", () => {
+      // inst-a has qa queued in its own state
+      const stateA: DaemonState = {
+        version: 1,
+        jobs: [{
+          id: "job-a",
+          triggeredBy: "manual",
+          triggerDetail: "test",
+          skills: ["qa"],
+          projectDir: "/tmp",
+          status: "queued",
+          enqueuedAt: new Date().toISOString(),
+          costUsd: 0,
+        }],
+        dailyCost: { date: new Date().toISOString().slice(0, 10), totalUsd: 0, jobCount: 0 },
+      };
+      writeFileSync(join(INST_A_DIR, "daemon-state.json"), JSON.stringify(stateA), "utf-8");
+
+      // inst-a should not be blocked by its own state file (excludeInstance)
+      // But local dedup will still block it
+      const deps = createMockDeps();
+      const runner = createJobRunner(createTestConfig(), INST_A_DIR, deps, "inst-a", PARENT_DIR);
+      // The existing state was loaded — local dedup blocks the same skills
+      const id = runner.enqueue(["qa"], "manual", "trigger");
+      expect(id).toBeNull(); // Blocked by LOCAL dedup, not cross-instance
+    });
+
+    it("ignores completed jobs in cross-instance check", () => {
+      const stateA: DaemonState = {
+        version: 1,
+        jobs: [{
+          id: "job-a",
+          triggeredBy: "manual",
+          triggerDetail: "test",
+          skills: ["qa"],
+          projectDir: "/tmp",
+          status: "complete",
+          enqueuedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          costUsd: 0.5,
+        }],
+        dailyCost: { date: new Date().toISOString().slice(0, 10), totalUsd: 0, jobCount: 0 },
+      };
+      writeFileSync(join(INST_A_DIR, "daemon-state.json"), JSON.stringify(stateA), "utf-8");
+
+      const deps = createMockDeps();
+      const runner = createJobRunner(createTestConfig(), INST_B_DIR, deps, "inst-b", PARENT_DIR);
+      const id = runner.enqueue(["qa"], "manual", "trigger");
+      expect(id).toBeTruthy();
     });
   });
 });

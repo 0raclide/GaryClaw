@@ -106,6 +106,30 @@ describe("notifyJobComplete", () => {
     expect(script).toContain("/design-review");
     expect(script).toContain("/ship");
   });
+
+  it("includes instance name in title when config.name is set", () => {
+    const job = createTestJob();
+    const config = createTestConfig();
+    config.name = "review-bot";
+    notifyJobComplete(job, config);
+
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    expect(script).toContain("[review-bot]");
+    expect(script).toContain("Job Complete");
+  });
+
+  it("omits instance label when config.name is undefined", () => {
+    const job = createTestJob();
+    const config = createTestConfig();
+    delete config.name;
+    notifyJobComplete(job, config);
+
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    expect(script).not.toContain("[");
+    expect(script).toContain("GaryClaw Job Complete");
+  });
 });
 
 describe("notifyJobError", () => {
@@ -130,6 +154,18 @@ describe("notifyJobError", () => {
     const config = createTestConfig({ onError: false });
     notifyJobError(job, config);
     expect(execFileSync).not.toHaveBeenCalled();
+  });
+
+  it("includes instance name in error title", () => {
+    const job = createTestJob({ status: "failed", error: "timeout" });
+    const config = createTestConfig();
+    config.name = "deploy-bot";
+    notifyJobError(job, config);
+
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    expect(script).toContain("[deploy-bot]");
+    expect(script).toContain("Job Failed");
   });
 });
 
