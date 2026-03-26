@@ -169,11 +169,12 @@ export function isSkillSetActive(
   checkpointDir: string,
   skills: string[],
   excludeInstance?: string,
+  designDoc?: string,
 ): boolean {
   const daemonsPath = join(checkpointDir, DAEMONS_DIR);
   if (!existsSync(daemonsPath)) return false;
 
-  const skillKey = skills.join(",");
+  const skillKey = designDoc ? `${skills.join(",")};${designDoc}` : skills.join(",");
 
   let entries: string[];
   try {

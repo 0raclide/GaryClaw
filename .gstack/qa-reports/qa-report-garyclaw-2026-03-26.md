@@ -1,11 +1,13 @@
-# QA Report — GaryClaw (Run 3)
+# QA Report — GaryClaw (Run 4)
 
-**Date:** 2026-03-26
-**Branch:** main
-**Mode:** Code QA (CLI project, no web UI)
-**Tier:** Standard (critical + high + medium)
-**Duration:** ~8 minutes
-**Test Framework:** Vitest 3.2.4
+| Field | Value |
+|-------|-------|
+| Date | 2026-03-26 |
+| Branch | main |
+| Project Type | Node.js CLI tool (no web UI) |
+| Test Framework | Vitest 3.2.4 |
+| Duration | ~3 minutes |
+| Mode | Test suite + code audit (CLI tool, no browser target) |
 
 ---
 
@@ -13,114 +15,145 @@
 
 | Metric | Value |
 |--------|-------|
-| Total issues found | 2 |
-| Critical | 0 |
-| High | 0 |
-| Medium | 1 |
-| Low | 1 |
-| Fixes applied | 1 (verified: 1, best-effort: 0, reverted: 0) |
-| Deferred issues | 1 |
-| Tests added | 28 (new coverage gap tests) |
-| Tests before | 873 passing (37 files) |
-| Tests after | 901 passing (39 files) |
-| TypeScript errors | 0 |
-| Statement coverage (src/) | 83.5% → 83.6% |
-
-**Health Score: Baseline 98 → Final 98**
+| Tests (before) | 972 passing / 41 files |
+| Tests (after) | 974 passing / 42 files |
+| TypeScript | ✅ Clean (zero type errors) |
+| Issues found | 7 (2 fixed, 5 deferred) |
+| Fixes applied | 2 (verified: 2, best-effort: 0, reverted: 0) |
+| Commits | 2 (1 fix + 1 regression test) |
+| Coverage | 74% statements, 89% branch, 94% functions |
 
 ---
 
-## Issues Found
+## Health Score: 91.8 / 100
 
-### ISSUE-001: Coverage gaps in daemon.ts, safe-json.ts, pipeline.ts [medium] — FIXED
-
-**Severity:** Medium
-**Category:** Test Coverage
-**Status:** verified
-
-**Problem:** Several source modules had uncovered code paths:
-- `daemon.ts` log rotation (10MB threshold) — untested
-- `safe-json.ts` corrupt file backup inner catch block — untested
-- `pipeline.ts` `buildPipelineReport` and `formatPipelineReportMarkdown` — untested
-- `pipeline.ts` context handoff with empty/populated reports — untested
-- `daemon.ts` unknown log level handling — untested
-- `daemon.ts` buildIPCHandler designDoc passthrough — untested
-- `daemon.ts` null/non-object trigger validation — untested
-
-**Fix:** Added 28 new tests across 3 test files:
-- `test/safe-json-extended.test.ts` (13 tests) — corrupt JSON recovery, text I/O edge cases, validation
-- `test/pipeline-extended.test.ts` (10 tests) — skill failure state persistence, context handoff, report formatting, issue deduplication
-- `test/daemon-extended.test.ts` (5 new tests appended) — log rotation, unknown log level, unwritable path, designDoc passthrough, null triggers
-
-**Impact:** Branch coverage improved: pipeline 95.89% → 97.33%, safe-json 86.15% → 89.23%
-
-**Commit:** `f47519e` — `test(qa): add 28 tests for coverage gaps in daemon, safe-json, pipeline`
+| Category | Score | Weight | Weighted |
+|----------|-------|--------|----------|
+| Tests | 100 | 25% | 25.0 |
+| Type Safety | 100 | 20% | 20.0 |
+| Code Quality | 85 | 20% | 17.0 |
+| Coverage | 74 | 20% | 14.8 |
+| CLI Functionality | 100 | 15% | 15.0 |
+| **Total** | | | **91.8** |
 
 ---
 
-### ISSUE-002: cli.ts has 36.7% statement coverage [low] — DEFERRED
+## Top 3 Things to Fix
 
-**Severity:** Low
-**Category:** Test Coverage
-**Status:** deferred
+1. **ISSUE-001 (HIGH) — child.pid undefined after fork() ✅ FIXED**
+   - `src/cli.ts:778`: `fork()` can return undefined PID on failure
+   - Fix: Added explicit null check, exits with error message
+   - Commit: `5d41282`
 
-**Problem:** `cli.ts` has 36.7% statement coverage. The gap is almost entirely the `main()` function (lines 419-844), which:
-- Creates readline interfaces
-- Calls `process.exit()`
-- Forks child processes
-- Reads from stdin
+2. **ISSUE-002 (MEDIUM) — Unsafe property access on IPC response ✅ FIXED**
+   - `src/cli.ts:845`: `d.dailyCost.totalUsd` crashes if `dailyCost` is undefined
+   - Fix: Nullish coalescing for `dailyCost` and `currentJob.costUsd`
+   - Commit: `5d41282`
 
-These are integration-level behaviors that are inherently difficult to unit test without mocking the entire process lifecycle.
-
-**Mitigating factors:**
-- All _exported_ functions in cli.ts are well-tested (77 tests for parseArgs, formatEvent, parseSingleAnswer, parseMultiSelectAnswer, formatUptime)
-- The `main()` function is a thin orchestration layer that delegates to well-tested modules (orchestrator, pipeline, daemon)
-- The spike scripts (0% coverage) are proof-of-concept scripts, not production code
-
-**Recommendation:** Consider an integration test that spawns the CLI as a child process and asserts on stdout/exit codes. However, this would require SDK mocking at the process level.
+3. **ISSUE-003 (MEDIUM) — createSdkOracleQueryFn has zero test coverage**
+   - `src/oracle.ts:278-305`: The actual SDK integration path is completely untested
+   - Risk: SDK behavior changes wouldn't be caught
+   - Status: Deferred (requires SDK mock infrastructure)
 
 ---
 
-## Remaining Coverage Gaps (informational)
+## All Issues
 
-| Module | Stmts | Uncovered | Why |
-|--------|-------|-----------|-----|
-| cli.ts | 36.7% | main() function | Integration code: readline, process.exit, child_process.fork |
-| daemon.ts | 69.5% | startDaemon() | Process lifecycle: PID files, signal handlers, IPC server |
-| oracle.ts | 86.5% | createSdkOracleQueryFn | Requires real SDK (dynamic import) |
-| sdk-wrapper.ts | 82.1% | startSegment | Thin wrapper around SDK query() |
-| daemon-ipc.ts | 81.0% | sendIPCRequest fallback paths | Requires timing-sensitive socket behavior |
-| Spikes (4 files) | 0% | All | Proof-of-concept scripts, not production code |
+### ISSUE-001: child.pid undefined after fork() — **FIXED ✅**
+- **Severity:** HIGH
+- **Category:** Null safety
+- **File:** `src/cli.ts:778`
+- **Description:** After `fork()`, `child.pid` may be undefined if fork fails silently. The CLI would print "PID undefined" masking the failure.
+- **Fix:** Added explicit `!child.pid` check with `process.exit(1)`
+- **Commit:** `5d41282`
+- **Regression test:** `test/cli.regression-1.test.ts`
 
-All remaining uncovered code is either:
-1. **Integration-level** (process lifecycle, SDK calls) — testing requires real infrastructure
-2. **Defensive catch blocks** (error paths that are non-fatal) — difficult to trigger deterministically
-3. **Non-production code** (spike scripts)
+### ISSUE-002: Unsafe property access on IPC response — **FIXED ✅**
+- **Severity:** MEDIUM
+- **Category:** Type safety
+- **File:** `src/cli.ts:845`
+- **Description:** `d.dailyCost.totalUsd.toFixed(3)` crashes if IPC response doesn't include `dailyCost`. Similarly `d.currentJob.costUsd` could be undefined.
+- **Fix:** Nullish coalescing: `d.dailyCost ?? { totalUsd: 0, jobCount: 0 }` and `(d.currentJob.costUsd ?? 0)`
+- **Commit:** `5d41282`
+- **Regression test:** `test/cli.regression-1.test.ts`
+
+### ISSUE-003: createSdkOracleQueryFn untested — **DEFERRED**
+- **Severity:** MEDIUM
+- **Category:** Test coverage
+- **File:** `src/oracle.ts:278-305`
+- **Description:** The function that wraps the SDK for oracle queries has zero test coverage. Tests mock `queryFn` directly, never exercising the generator loop.
+- **Risk:** Silent result loss if SDK changes message format.
+
+### ISSUE-004: Shutdown signal race in daemon — **DEFERRED**
+- **Severity:** MEDIUM
+- **Category:** Race condition
+- **File:** `src/daemon.ts:383-389, 425-426`
+- **Description:** `processNext()` callback queued before `clearInterval()` may complete after shutdown begins, potentially starting new jobs during teardown.
+- **Risk:** Low — tight timing window in single-threaded Node.js.
+
+### ISSUE-005: pipeline.ts startTime non-null assertion — **DEFERRED**
+- **Severity:** MEDIUM
+- **Category:** Null safety
+- **File:** `src/pipeline.ts:297`
+- **Description:** `entry.startTime!` uses non-null assertion. If `getGitDiffSummary` throws before `entry.startTime` is set, undefined would be passed to `buildSkillReport`.
+- **Risk:** Low — git operations rarely throw.
+
+### ISSUE-006: Socket file TOCTOU in daemon startup — **DEFERRED**
+- **Severity:** LOW
+- **Category:** Resource conflict
+- **File:** `src/daemon.ts:370-372`
+- **Description:** Between `unlinkSync` and server bind, another process could create the socket file. Mitigated by single-threaded Node.js and PID file checks.
+
+### ISSUE-007: cli.ts low statement coverage (36%) — **DEFERRED**
+- **Severity:** LOW
+- **Category:** Test coverage
+- **Description:** Most uncovered lines are in the `main()` function's daemon subcommand handlers. The core logic (parseArgs, formatEvent, formatUptime) is well tested.
 
 ---
 
-## Test Suite Health
+## Coverage Summary
 
-```
-Test Files:  39 passed (39)
-Tests:       901 passed (901)
-Duration:    2.58s
-Framework:   Vitest 3.2.4
-```
-
-All 901 tests pass. No flaky tests detected. Test execution time is fast (~2.6s).
+| File | Stmts | Branch | Funcs | Notes |
+|------|-------|--------|-------|-------|
+| ask-handler.ts | 97% | 82% | 100% | ✅ |
+| checkpoint.ts | 99% | 88% | 100% | ✅ |
+| cli.ts | 36% | 92% | 67% | ⚠️ Main function integration paths |
+| daemon.ts | 69% | 86% | 90% | ⚠️ Lifecycle/shutdown paths |
+| daemon-ipc.ts | 81% | 70% | 100% | OK |
+| daemon-registry.ts | 95% | 87% | 100% | ✅ |
+| implement.ts | 94% | 90% | 100% | ✅ |
+| issue-extractor.ts | 90% | 94% | 100% | ✅ |
+| job-runner.ts | 98% | 89% | 94% | ✅ |
+| notifier.ts | 100% | 90% | 100% | ✅ |
+| oracle-memory.ts | 100% | 93% | 100% | ✅ |
+| oracle.ts | 87% | 90% | 86% | ⚠️ SDK query fn untested |
+| orchestrator.ts | 91% | 88% | 100% | ✅ |
+| pipeline.ts | 79% | 91% | 85% | OK |
+| reflection-lock.ts | 92% | 81% | 100% | ✅ |
+| reflection.ts | 90% | 91% | 100% | ✅ |
+| relay.ts | 100% | 86% | 100% | ✅ |
+| report.ts | 100% | 87% | 100% | ✅ |
+| researcher.ts | 97% | 76% | 89% | ✅ |
+| safe-json.ts | 89% | 91% | 100% | ✅ |
+| sdk-wrapper.ts | 82% | 91% | 67% | OK |
+| token-monitor.ts | 100% | 94% | 100% | ✅ |
+| triggers.ts | 100% | 96% | 100% | ✅ |
+| types.ts | 100% | 100% | 100% | ✅ |
 
 ---
 
-## Code Quality Observations
+## CLI Functionality Verification
 
-1. **Type safety is strong** — minimal `as any` usage (18 total, mostly in SDK interop and test mocks)
-2. **Error handling is comprehensive** — all catch blocks are intentional (non-fatal fallbacks with clear comments)
-3. **No null dereference risks found** — consistent null guards throughout
-4. **Pipeline status uses `"complete"` (not `"completed"`)** — consistent within the codebase, matches `PipelineSkillStatus` type
+| Command | Status |
+|---------|--------|
+| `garyclaw` (no args) | ✅ Shows help |
+| `garyclaw run` (no skill) | ✅ Error with usage message |
+| `garyclaw replay` | ✅ Correct error when no log exists |
+| `garyclaw oracle init` | ✅ Creates memory dirs + templates |
+| `garyclaw daemon status` | ✅ Reports "not running" correctly |
 
 ---
 
 ## PR Summary
 
-> QA found 2 issues (1 medium, 1 low), fixed 1. Added 28 tests covering daemon, safe-json, and pipeline gaps. 901 tests passing. Health score 98.
+> QA found 7 issues, fixed 2 (null safety guards in CLI daemon commands), health score 91.8/100. 974 tests passing, zero type errors.
