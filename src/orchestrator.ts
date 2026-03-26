@@ -40,7 +40,7 @@ import { createAskHandler } from "./ask-handler.js";
 import { askOracle, createSdkOracleQueryFn } from "./oracle.js";
 import { executeRelay, finalizeRelay } from "./relay.js";
 import { buildReport, formatReportMarkdown } from "./report.js";
-import { PerJobCostExceededError } from "./types.js";
+import { PerJobCostExceededError, type Issue } from "./types.js";
 
 import { IssueTracker, extractAllToolUse, parseGitLog } from "./issue-extractor.js";
 
@@ -560,6 +560,17 @@ export async function resumeSkill(
   return runSkill(resumeConfig, callbacks);
 }
 
+/**
+ * Merge previous checkpoint issues with current tracker issues, deduplicating by ID.
+ * The tracker accumulates across sessions, so prevIssues (from the last checkpoint)
+ * may already contain issues the tracker also has. Deduplicate to avoid inflation.
+ */
+function deduplicateIssues(prevIssues: Issue[], trackerIssues: Issue[]): Issue[] {
+  const seenIds = new Set(prevIssues.map((i) => i.id));
+  const newIssues = trackerIssues.filter((i) => !seenIds.has(i.id));
+  return [...prevIssues, ...newIssues];
+}
+
 function buildCheckpoint(
   runId: string,
   config: GaryClawConfig,
@@ -610,7 +621,7 @@ function buildCheckpoint(
     timestamp: new Date().toISOString(),
     runId,
     skillName: config.skillName,
-    issues: [...prevIssues, ...issueTracker.getIssues()],
+    issues: deduplicateIssues(prevIssues, issueTracker.getIssues()),
     findings: prevFindings,
     decisions: [...prevDecisions, ...decisions],
     gitBranch,
