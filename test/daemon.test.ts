@@ -14,6 +14,7 @@ import {
   isPidAlive,
   createDaemonLogger,
   buildIPCHandler,
+  startPollers,
 } from "../src/daemon.js";
 import type { DaemonConfig, Job } from "../src/types.js";
 import type { JobRunner } from "../src/job-runner.js";
@@ -285,5 +286,100 @@ describe("buildIPCHandler", () => {
     const resp = await handler({ type: "unknown" } as any);
     expect(resp.ok).toBe(false);
     expect(resp.error).toContain("Unknown");
+  });
+});
+
+describe("validateDaemonConfig — cron triggers", () => {
+  it("accepts valid cron trigger", () => {
+    const config = createValidConfig();
+    config.triggers = [
+      { type: "cron", expression: "0 2 * * *", skills: ["qa"] },
+    ];
+    expect(validateDaemonConfig(config)).toBeNull();
+  });
+
+  it("rejects cron trigger with missing expression", () => {
+    const config = createValidConfig();
+    config.triggers = [
+      { type: "cron", expression: "", skills: ["qa"] } as any,
+    ];
+    expect(validateDaemonConfig(config)).toContain("expression");
+  });
+
+  it("rejects cron trigger with invalid expression", () => {
+    const config = createValidConfig();
+    config.triggers = [
+      { type: "cron", expression: "bad cron", skills: ["qa"] },
+    ];
+    expect(validateDaemonConfig(config)).toContain("Invalid cron expression");
+  });
+
+  it("rejects cron trigger with empty skills", () => {
+    const config = createValidConfig();
+    config.triggers = [
+      { type: "cron", expression: "0 2 * * *", skills: [] },
+    ];
+    expect(validateDaemonConfig(config)).toContain("skills");
+  });
+});
+
+describe("startPollers", () => {
+  function createMockRunner(): JobRunner {
+    return {
+      enqueue: vi.fn().mockReturnValue("job-001"),
+      processNext: vi.fn().mockResolvedValue(undefined),
+      getState: vi.fn().mockReturnValue({ version: 1, jobs: [], dailyCost: { date: "", totalUsd: 0, jobCount: 0 } }),
+      isRunning: vi.fn().mockReturnValue(false),
+      updateBudget: vi.fn(),
+    };
+  }
+
+  it("starts git pollers from config", () => {
+    const config = createValidConfig();
+    const runner = createMockRunner();
+    const log = vi.fn();
+
+    const pollers = startPollers(config, runner, log);
+    expect(pollers).toHaveLength(1);
+    expect(log).toHaveBeenCalledWith("info", expect.stringContaining("Git poller started"));
+  });
+
+  it("starts cron pollers from config", () => {
+    const config = createValidConfig();
+    config.triggers = [
+      { type: "cron", expression: "0 2 * * *", skills: ["qa"] },
+    ];
+    const runner = createMockRunner();
+    const log = vi.fn();
+
+    const pollers = startPollers(config, runner, log);
+    expect(pollers).toHaveLength(1);
+    expect(log).toHaveBeenCalledWith("info", expect.stringContaining("Cron poller started"));
+  });
+
+  it("skips invalid cron expression with warning", () => {
+    const config = createValidConfig();
+    config.triggers = [
+      { type: "cron", expression: "invalid", skills: ["qa"] },
+    ];
+    const runner = createMockRunner();
+    const log = vi.fn();
+
+    const pollers = startPollers(config, runner, log);
+    expect(pollers).toHaveLength(0);
+    expect(log).toHaveBeenCalledWith("warn", expect.stringContaining("Invalid cron expression"));
+  });
+
+  it("starts mixed git + cron pollers", () => {
+    const config = createValidConfig();
+    config.triggers = [
+      { type: "git_poll", intervalSeconds: 60, skills: ["qa"], debounceSeconds: 30 },
+      { type: "cron", expression: "0 2 * * *", skills: ["design-review"] },
+    ];
+    const runner = createMockRunner();
+    const log = vi.fn();
+
+    const pollers = startPollers(config, runner, log);
+    expect(pollers).toHaveLength(2);
   });
 });
