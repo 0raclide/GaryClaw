@@ -211,6 +211,18 @@ async function askUserViaReadline(
       : `${MAGENTA}Choose (number or label): ${RESET}`;
 
     rl.question(promptText, (answer) => {
+      const trimmed = answer.trim();
+      const num = parseInt(trimmed, 10);
+
+      // "Other" selected — prompt for custom input
+      if (!multiSelect && num === options.length + 1) {
+        rl.question(`${MAGENTA}Enter your answer: ${RESET}`, (customAnswer) => {
+          rl.close();
+          resolvePromise(customAnswer.trim() || options[0].label);
+        });
+        return;
+      }
+
       rl.close();
 
       if (multiSelect) {
@@ -228,11 +240,6 @@ function parseSingleAnswer(
 ): string {
   const trimmed = answer.trim();
   const num = parseInt(trimmed, 10);
-
-  // "Other" option (last number)
-  if (num === options.length + 1) {
-    return trimmed; // User will type their answer next prompt — for now return the raw input
-  }
 
   // Number selection
   if (num >= 1 && num <= options.length) {
