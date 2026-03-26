@@ -102,6 +102,19 @@ describe("parseArgs", () => {
     expect(result.noMemory).toBe(true);
   });
 
+  it("parses oracle init command", () => {
+    const result = parseArgs(["node", "cli.ts", "oracle", "init"]);
+    expect(result.command).toBe("oracle");
+    expect(result.subcommand).toBe("init");
+  });
+
+  it("parses oracle init with --project-dir", () => {
+    const result = parseArgs(["node", "cli.ts", "oracle", "init", "--project-dir", "/tmp/proj"]);
+    expect(result.command).toBe("oracle");
+    expect(result.subcommand).toBe("init");
+    expect(result.projectDir).toContain("tmp");
+  });
+
   it("parses --project-dir flag", () => {
     const result = parseArgs(["node", "cli.ts", "run", "qa", "--project-dir", "/tmp/test"]);
     expect(result.projectDir).toContain("tmp");

@@ -107,6 +107,16 @@ export function parseArgs(argv: string[]): {
         skills.push(args[i].replace(/^\//, ""));
       }
     }
+  } else if (command === "oracle") {
+    // oracle subcommand: init
+    subcommand = args[1] ?? "";
+    for (let i = 2; i < args.length; i++) {
+      if (args[i] === "--project-dir" && args[i + 1]) {
+        projectDir = resolve(args[++i]);
+      } else if (!args[i].startsWith("--")) {
+        skills.push(args[i]);
+      }
+    }
   } else if (command === "daemon") {
     // daemon subcommand: start, stop, status, trigger, log
     subcommand = args[1] ?? "";
@@ -339,6 +349,7 @@ ${BOLD}Usage:${RESET}
   garyclaw run <skill> [skill2 ...]   Run one or more skills (pipeline if multiple)
   garyclaw resume                     Resume from last checkpoint or pipeline
   garyclaw replay                     Replay decision log as timeline
+  garyclaw oracle init                Initialize oracle memory directories + templates
   garyclaw daemon start               Start background daemon
   garyclaw daemon stop                Stop running daemon
   garyclaw daemon status              Show daemon status
@@ -557,6 +568,30 @@ async function main(): Promise<void> {
     }
 
     return;
+  }
+
+  if (parsed.command === "oracle") {
+    if (parsed.subcommand === "init" || parsed.skills[0] === "init") {
+      const { initOracleMemory, defaultMemoryConfig } = await import("./oracle-memory.js");
+      const memConfig = defaultMemoryConfig(parsed.projectDir);
+
+      console.log(`${BOLD}GaryClaw Oracle Init${RESET}\n`);
+      console.log(`${DIM}  Global:  ${memConfig.globalDir}${RESET}`);
+      console.log(`${DIM}  Project: ${memConfig.projectDir}${RESET}`);
+      console.log("");
+
+      initOracleMemory(memConfig);
+
+      console.log(`${GREEN}Oracle memory initialized.${RESET}`);
+      console.log(`${DIM}  Edit taste.md to add your preferences.${RESET}`);
+      console.log(`${DIM}  Domain expertise will be populated by garyclaw research <topic>.${RESET}`);
+      console.log(`${DIM}  Decision outcomes are tracked automatically during reflection.${RESET}`);
+      return;
+    }
+
+    console.error(`${RED}Unknown oracle subcommand:${RESET} ${parsed.subcommand || parsed.skills[0] || ""}`);
+    console.error(`${DIM}Available: init${RESET}`);
+    process.exit(1);
   }
 
   if (parsed.command === "daemon") {
