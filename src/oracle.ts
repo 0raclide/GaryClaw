@@ -242,7 +242,7 @@ export function createSdkOracleQueryFn(
         env,
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
-        canUseTool: async () => ({ behavior: "deny" as const }),
+        canUseTool: async (_toolName: string, _input: Record<string, unknown>, _options: { signal: AbortSignal }) => ({ behavior: "deny" as const, message: "Oracle sub-query does not allow tool use" }),
       },
     });
 
