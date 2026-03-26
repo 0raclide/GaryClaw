@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "job-1774484829745-f78d62",
+      "triggeredBy": "manual",
+      "triggerDetail": "trigger",
+      "skills": [
+        "qa"
+      ],
+      "projectDir": "/tmp/project",
+      "status": "failed",
+      "enqueuedAt": "2026-03-26T00:27:09.745Z",
+      "costUsd": 1.5,
+      "startedAt": "2026-03-26T00:27:09.745Z",
+      "completedAt": "2026-03-26T00:27:09.745Z",
+      "error": "Per-job cost limit exceeded: $1.500 > $1.000"
+    },
+    {
+      "id": "job-1774484848450-172cc0",
+      "triggeredBy": "manual",
+      "triggerDetail": "trigger",
+      "skills": [
+        "qa"
+      ],
+      "projectDir": "/tmp/project",
+      "status": "failed",
+      "enqueuedAt": "2026-03-26T00:27:28.450Z",
+      "costUsd": 1.5,
+      "startedAt": "2026-03-26T00:27:28.450Z",
+      "completedAt": "2026-03-26T00:27:28.450Z",
+      "error": "Per-job cost limit exceeded: $1.500 > $1.000"
+    }
+  ],
+  "dailyCost": {
+    "date": "2026-03-26",
+    "totalUsd": 0,
+    "jobCount": 0
+  }
+}

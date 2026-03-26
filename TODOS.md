@@ -47,3 +47,35 @@
 **Effort:** XS (human: ~1 day / CC: ~15 min)
 **Depends on:** Phase 1a (token monitor working)
 **Added by:** /plan-eng-review on 2026-03-25
+
+## P3: Memory-Informed Adaptive Scheduling
+
+**What:** The Oracle learns optimal trigger patterns from job outcomes — e.g., "QA finds 3x more bugs after large commits, so trigger QA after commits touching 5+ files, not on every push." Replaces static cron rules with learned patterns.
+
+**Why:** Static cron triggers fire on fixed schedules regardless of what changed. Adaptive scheduling fires based on what the Oracle learned actually matters — commit size, file types changed, time of day. More efficient use of compute budget.
+
+**Pros:** Smarter resource allocation. Fewer unnecessary jobs. Better bug detection timing.
+
+**Cons:** Cold-start problem — requires 50+ jobs of history to learn from. Needs quality metrics (Phase 5b) to measure what "better" means. Risk of over-fitting to recent patterns.
+
+**Context:** Identified during CEO review cherry-pick ceremony (2026-03-26, SELECTIVE EXPANSION). Deferred because it requires enough job history data to learn from. Ship static cron (Phase 4b) first, layer adaptive triggers when data exists.
+
+**Effort:** M (human: ~1 week / CC: ~1 hour)
+**Depends on:** Phase 5b (quality metrics), Phase 4b (cron baseline)
+**Added by:** /plan-ceo-review on 2026-03-26
+
+## P3: Oracle Decision Batching (Latency Optimization)
+
+**What:** Batch nearby Oracle decisions into a single API call when multiple AskUserQuestions fire within the same segment. Currently each decision is a separate 40K-token API call (~2-5s). Batching could reduce total Oracle latency by 50-70%.
+
+**Why:** At 20 decisions per job × 2-5s each = 40-100 seconds of serial Oracle overhead. Currently ~3-5% of typical job time. Acceptable now but worth optimizing as job frequency increases with daemon mode.
+
+**Pros:** Faster jobs. Lower Oracle cost per decision. Smoother daemon throughput.
+
+**Cons:** Batching changes the decision-by-decision audit trail. Requires buffering AskUserQuestions and responding in bulk, which may not work if later questions depend on earlier answers.
+
+**Context:** Identified by outside voice during CEO review (2026-03-26). The latency is documented but not addressed in the current plan. Future optimization after the Oracle memory system is validated.
+
+**Effort:** S (human: ~3 days / CC: ~30 min)
+**Depends on:** Phase 5a (memory Oracle working)
+**Added by:** /plan-ceo-review on 2026-03-26

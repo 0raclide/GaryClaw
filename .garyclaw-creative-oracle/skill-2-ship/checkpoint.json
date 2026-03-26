@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "timestamp": "2026-03-26T00:18:25.955Z",
+  "runId": "garyclaw-1774484265967-ea4d6a",
+  "skillName": "ship",
+  "issues": [],
+  "findings": [],
+  "decisions": [],
+  "gitBranch": "main",
+  "gitHead": "6a3fe35b6f220c5341d889656cb3b3ed6407afd3",
+  "tokenUsage": {
+    "lastContextSize": 46568,
+    "contextWindow": 1000000,
+    "totalOutputTokens": 103,
+    "sessionCount": 1,
+    "estimatedCostUsd": 0.3542965,
+    "turnHistory": [
+      {
+        "turn": 1,
+        "inputTokens": 3,
+        "cacheReadInputTokens": 8694,
+        "cacheCreationInputTokens": 10133,
+        "computedContextSize": 18830
+      },
+      {
+        "turn": 2,
+        "inputTokens": 3,
+        "cacheReadInputTokens": 8694,
+        "cacheCreationInputTokens": 10133,
+        "computedContextSize": 18830
+      },
+      {
+        "turn": 3,
+        "inputTokens": 3,
+        "cacheReadInputTokens": 8694,
+        "cacheCreationInputTokens": 10133,
+        "computedContextSize": 18830
+      },
+      {
+        "turn": 4,
+        "inputTokens": 3,
+        "cacheReadInputTokens": 8694,
+        "cacheCreationInputTokens": 10133,
+        "computedContextSize": 18830
+      },
+      {
+        "turn": 5,
+        "inputTokens": 1,
+        "cacheReadInputTokens": 18827,
+        "cacheCreationInputTokens": 1077,
+        "computedContextSize": 19905
+      },
+      {
+        "turn": 6,
+        "inputTokens": 2,
+        "cacheReadInputTokens": 18827,
+        "cacheCreationInputTokens": 26390,
+        "computedContextSize": 45219
+      },
+      {
+        "turn": 7,
+        "inputTokens": 2,
+        "cacheReadInputTokens": 18827,
+        "cacheCreationInputTokens": 26390,
+        "computedContextSize": 45219
+      },
+      {
+        "turn": 8,
+        "inputTokens": 1,
+        "cacheReadInputTokens": 45217,
+        "cacheCreationInputTokens": 856,
+        "computedContextSize": 46074
+      },
+      {
+        "turn": 9,
+        "inputTokens": 1,
+        "cacheReadInputTokens": 45217,
+        "cacheCreationInputTokens": 856,
+        "computedContextSize": 46074
+      },
+      {
+        "turn": 10,
+        "inputTokens": 1,
+        "cacheReadInputTokens": 45217,
+        "cacheCreationInputTokens": 856,
+        "computedContextSize": 46074
+      },
+      {
+        "turn": 11,
+        "inputTokens": 1,
+        "cacheReadInputTokens": 46073,
+        "cacheCreationInputTokens": 494,
+        "computedContextSize": 46568
+      }
+    ]
+  },
+  "screenshotPaths": []
+}

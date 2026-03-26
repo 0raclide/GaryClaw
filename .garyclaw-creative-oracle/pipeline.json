@@ -433,16 +433,309 @@
     },
     {
       "skillName": "plan-eng-review",
-      "status": "running",
-      "startTime": "2026-03-26T00:05:53.445Z"
+      "status": "complete",
+      "startTime": "2026-03-26T00:05:53.445Z",
+      "endTime": "2026-03-26T00:17:45.966Z",
+      "report": {
+        "runId": "garyclaw-1774483553446-c89460",
+        "skillName": "plan-eng-review",
+        "startTime": "2026-03-26T00:05:53.445Z",
+        "endTime": "2026-03-26T00:17:45.966Z",
+        "totalSessions": 1,
+        "totalTurns": 76,
+        "estimatedCostUsd": 0.724635,
+        "issues": [],
+        "findings": [],
+        "decisions": [
+          {
+            "timestamp": "2026-03-26T00:07:18.925Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. No design doc found for this branch. /office-hours produces a structured problem statement, premise challenge, and explored alternatives — it gives this review much sharper input to work with. Takes about 10 minutes. However, the CEO review just completed with a detailed plan document covering scope decisions, design choices, and temporal interrogation. That likely serves as sufficient input. Skip to the eng review?",
+            "options": [
+              {
+                "label": "Skip — proceed with review (Recommended)",
+                "description": "The CEO plan document is thorough enough to serve as the design input for this eng review. Completeness: 9/10."
+              },
+              {
+                "label": "Run /office-hours first",
+                "description": "Produce a formal design doc before reviewing. Adds ~10 min. Completeness: 10/10."
+              }
+            ],
+            "chosen": "Skip — proceed with review (Recommended)",
+            "confidence": 9,
+            "rationale": "The CEO plan document already covers scope, design choices, and alternatives — running /office-hours would duplicate that input for marginal completeness gain.",
+            "principle": "DRY"
+          },
+          {
+            "timestamp": "2026-03-26T00:10:20.967Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. ARCHITECTURE ISSUE 1: Who owns DaemonState persistence?\n\nThe plan adds lastRunTimestamps to DaemonState and says the cron poller will persist state via atomicWriteJSON() after each tick. But right now, DaemonState is exclusively managed by job-runner.ts — loadState() and persistState() are private functions inside that module (lines 269-291). The cron poller in triggers.ts would need to read AND write the same daemon-state.json file.\n\nThis creates a coupling problem: two modules (job-runner + cron poller) writing to the same file, and the cron poller needs access to state it doesn't own.\n\nRECOMMENDATION: Choose A — separate files keeps each module owning its own persistence, which is the current pattern. Minimal diff, no refactoring of job-runner internals. Completeness: A=9/10, B=8/10, C=6/10.",
+            "options": [
+              {
+                "label": "A) Separate cron-state.json (Recommended)",
+                "description": "Cron poller manages its own state file (lastRunTimestamps only). ~10 LOC. Clean separation of concerns. (human: ~1 hour / CC: ~5 min)"
+              },
+              {
+                "label": "B) Expose state on JobRunner",
+                "description": "Add getLastRunTimestamps()/setLastRunTimestamp() methods to JobRunner interface. Cron poller writes via runner. Keeps one state file. (human: ~2 hours / CC: ~10 min)"
+              },
+              {
+                "label": "C) Keep in daemon-state.json as planned",
+                "description": "Have cron poller import and call persistState directly. Two modules writing same file. Single-threaded so no race, but tight coupling. (human: ~30 min / CC: ~5 min)"
+              }
+            ],
+            "chosen": "A) Separate cron-state.json (Recommended)",
+            "confidence": 9,
+            "rationale": "Each module owning its own persistence file matches the existing pattern, avoids coupling two writers to the same file, and is the smallest diff.",
+            "principle": "Explicit over clever"
+          },
+          {
+            "timestamp": "2026-03-26T00:10:47.916Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. ARCHITECTURE ISSUE 2: How do git pollers respect quiet hours?\n\nThe plan says quiet hours suppresses ALL triggers (cron + git_poll). But the current git poller in triggers.ts (line 75-83) fires its callback immediately on debounce — it has no concept of quiet hours. The plan doesn't specify WHERE the quiet hours check goes for git triggers.\n\nThree places it could go:\n- Inside createGitPoller (pollutes the generic poller with daemon-specific config)\n- In daemon.ts's trigger callback wrapper (the anonymous function on line 277-279 that calls runner.enqueue)\n- In the job runner's enqueue() method\n\nRECOMMENDATION: Choose A — the daemon is the config owner and already wraps trigger callbacks. Adding the quiet hours check there keeps the poller and runner generic. One line of code in the right place. Explicit > clever. Completeness: A=9/10, B=7/10, C=7/10.",
+            "options": [
+              {
+                "label": "A) Check in daemon.ts callback (Recommended)",
+                "description": "Add isInQuietHours() check in the trigger callback wrapper in daemon.ts before calling runner.enqueue(). ~3 LOC. Daemon owns config, so it should gate triggers. (human: ~30 min / CC: ~3 min)"
+              },
+              {
+                "label": "B) Check in runner.enqueue()",
+                "description": "Job runner checks quiet hours before accepting jobs. Requires passing QuietHours config to runner. Couples runner to scheduling concerns. (human: ~1 hour / CC: ~5 min)"
+              },
+              {
+                "label": "C) Pass quietHours to createGitPoller",
+                "description": "Git poller suppresses fires during quiet hours internally. Requires changing GitPoller interface + adding quiet hours dependency. (human: ~1 hour / CC: ~8 min)"
+              }
+            ],
+            "chosen": "A) Check in daemon.ts callback (Recommended)",
+            "confidence": 9,
+            "rationale": "The daemon owns the config and already wraps trigger callbacks, so gating quiet hours there keeps both the poller and runner generic — one check in the right place, ~3 LOC.",
+            "principle": "Explicit over clever"
+          },
+          {
+            "timestamp": "2026-03-26T00:11:05.738Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. ARCHITECTURE ISSUE 3: Trigger equality for diff-based reload.\n\nThe plan says diff-based config reload only restarts triggers that actually changed. But it doesn't define how to compare two triggers for equality. For git_poll triggers, if you change ONLY debounceSeconds (30→60), should the poller restart?\n\nThis matters because restarting a git poller resets its baseline HEAD — there's a brief window where a push could be missed. But NOT restarting means the old config stays in effect.\n\nThe simplest approach: JSON.stringify() comparison of the full trigger object. If any field differs, restart. This is correct behavior (old config should not persist) and the \"missed push\" window is <5s (one poll interval) which is negligible.\n\nRECOMMENDATION: Choose A — simple deep-compare via JSON.stringify is correct, explicit, and covers all trigger types (git_poll + cron) without type-specific comparison logic. Completeness: A=9/10, B=8/10.",
+            "options": [
+              {
+                "label": "A) JSON.stringify comparison (Recommended)",
+                "description": "Compare triggers by serialized form. Any field change triggers restart. Simple, correct, no type-specific logic. (human: ~30 min / CC: ~3 min)"
+              },
+              {
+                "label": "B) Field-by-field comparison per type",
+                "description": "Compare specific fields per trigger type (type, expression, skills, interval). More explicit but more code, and must be updated when adding new trigger types. (human: ~2 hours / CC: ~10 min)"
+              }
+            ],
+            "chosen": "A) JSON.stringify comparison (Recommended)",
+            "confidence": 9,
+            "rationale": "Simple deep-compare is correct, covers all trigger types uniformly, and avoids maintenance burden when new trigger types are added — 10-line obvious fix beats type-specific abstraction.",
+            "principle": "Explicit over clever"
+          },
+          {
+            "timestamp": "2026-03-26T00:11:22.413Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. ARCHITECTURE ISSUE 4: Poller interface naming.\n\nThe current interface is `GitPoller` with `start()`/`stop()`. The new cron poller has the same shape. The plan implies creating `createCronPoller()` returning... what type? Reusing `GitPoller` is confusing (it's not git). Creating a new `CronPoller` interface with identical methods is a DRY violation.\n\nThe fix is trivial: rename to a generic `Poller` interface, export it from triggers.ts, and use it for both. The `GitPoller` type alias can stay for backward compat.\n\nRECOMMENDATION: Choose A — clean naming, minimal diff (add type alias, update exports). DRY is important per your preferences. Completeness: A=9/10, B=7/10.",
+            "options": [
+              {
+                "label": "A) Generic Poller interface (Recommended)",
+                "description": "Rename to `Poller { start(); stop(); }`. Add `type GitPoller = Poller` alias for backward compat. ~5 LOC change. (human: ~15 min / CC: ~2 min)"
+              },
+              {
+                "label": "B) Keep GitPoller, duplicate as CronPoller",
+                "description": "Create identical CronPoller interface. Two interfaces with same shape. Simple but DRY violation. (human: ~10 min / CC: ~2 min)"
+              }
+            ],
+            "chosen": "A) Generic Poller interface (Recommended)",
+            "confidence": 9,
+            "rationale": "Renaming to a generic Poller interface with a GitPoller type alias eliminates duplication while preserving backward compat — textbook DRY with a ~5 LOC diff.",
+            "principle": "DRY"
+          },
+          {
+            "timestamp": "2026-03-26T00:11:44.675Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. CODE QUALITY ISSUE 1: atomicWriteJSON reconciliation with checkpoint.ts.\n\nThe plan proposes extracting a shared atomicWriteJSON() utility and says checkpoint.ts will reuse it. But the existing checkpoint.ts writeCheckpoint() (lines 24-47) uses a DIFFERENT pattern:\n- Random hex in tmp filename: `checkpoint.tmp.${randomBytes(4).toString('hex')}.json`\n- Different backup naming: `checkpoint.prev.json` (not `.bak`)\n\nThe plan's atomicWriteJSON uses `.tmp` suffix and `.bak` suffix. These are incompatible — migrating checkpoint.ts to the shared utility would change the backup file naming from `.prev.json` to `.bak`, breaking any code that looks for `checkpoint.prev.json`.\n\nThe random hex in checkpoint.ts was defensive (collision safety), but since we're single-threaded it's unnecessary.\n\nRECOMMENDATION: Choose B — the shared utility is still valuable for job-runner + cron-state, and we get DRY for those two. Migrating checkpoint.ts requires updating readCheckpoint() fallback path too — extra diff for no functional gain. Completeness: A=8/10, B=9/10.",
+            "options": [
+              {
+                "label": "A) Migrate checkpoint.ts to shared utility",
+                "description": "Change checkpoint.ts to use atomicWriteJSON. Must also update readCheckpoint fallback to look for .bak instead of .prev.json. Broader diff, full DRY. (human: ~2 hours / CC: ~10 min)"
+              },
+              {
+                "label": "B) Shared utility for new code only (Recommended)",
+                "description": "atomicWriteJSON used by job-runner.ts + cron-state. checkpoint.ts keeps its existing pattern. Avoids touching a working module. Minimal diff. (human: ~1 hour / CC: ~5 min)"
+              },
+              {
+                "label": "C) Skip shared utility entirely",
+                "description": "Inline atomic write in each module. Duplicated ~8 lines in 2 places. Simpler but DRY violation. (human: ~30 min / CC: ~3 min)"
+              }
+            ],
+            "chosen": "B) Shared utility for new code only (Recommended)",
+            "confidence": 9,
+            "rationale": "DRY is satisfied for the new code, and migrating checkpoint.ts risks breaking a working module for zero functional gain — explicit over clever says don't refactor what works.",
+            "principle": "Explicit over clever"
+          },
+          {
+            "timestamp": "2026-03-26T00:12:02.157Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. CODE QUALITY ISSUE 2: validateDaemonConfig hardcodes 'git_poll' rejection.\n\nLine 71 of daemon.ts: `if (t.type !== \"git_poll\") return \\`triggers[${i}].type must be \\\"git_poll\\\"\\`;`\n\nThis must change to accept both 'git_poll' and 'cron' trigger types with type-specific validation (different required fields for each). The existing test on line 95-97 explicitly tests that type='cron' is REJECTED — this test will need updating to pass.\n\nThis is a straightforward fix with no real alternatives — I'll note it as a required change rather than waste a question. The validation should switch on trigger type:\n- `git_poll`: validate intervalSeconds, skills, optional debounceSeconds/branch\n- `cron`: validate expression (via cron-parser), skills, optional catchUp/timezone\n\nMoving on.",
+            "options": [
+              {
+                "label": "A) Acknowledged — proceed (Recommended)",
+                "description": "Required change with obvious implementation. Update validation to switch on trigger type + update test. No decision needed."
+              },
+              {
+                "label": "B) Discuss further",
+                "description": "Want to discuss the validation approach in more detail."
+              }
+            ],
+            "chosen": "A) Acknowledged — proceed (Recommended)",
+            "confidence": 10,
+            "rationale": "Straightforward required change with obvious implementation — no real decision to make, just do it.",
+            "principle": "Bias toward action"
+          },
+          {
+            "timestamp": "2026-03-26T00:13:45.031Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. TEST ISSUE 1: The cron poller needs dependency injection for cron-parser.\n\nThe plan says cron poller uses `cron.parseExpression(expr, { tz })` directly. But to test catch-up semantics (lastRun 48h ago, DST transitions, etc.), you need to control what prev() and next() return. Importing cron-parser directly makes unit tests depend on real time.\n\nThe git poller solved this elegantly: `GitPollerDeps` injects `getHead`, `setInterval`, `setTimeout`, etc. The cron poller needs similar DI.\n\nRECOMMENDATION: Choose A — follows the existing git poller pattern exactly. DI for time functions + cron parsing gives deterministic tests. Your preference for well-tested code is non-negotiable, and you can't test catch-up properly without controlling time. Completeness: A=10/10, B=5/10.",
+            "options": [
+              {
+                "label": "A) CronPollerDeps with mock support (Recommended)",
+                "description": "Inject: parseExpression (or a wrapper), Date.now, setInterval/clearInterval. Same pattern as GitPollerDeps. Enables deterministic catch-up + DST tests. (human: ~2 hours / CC: ~10 min)"
+              },
+              {
+                "label": "B) Use vi.useFakeTimers only",
+                "description": "Vitest fake timers for setInterval + manual Date mocking via vi.setSystemTime. No DI needed. But cron-parser's prev()/next() use internal Date calls that may not respect fake timers. Fragile. (human: ~1 hour / CC: ~8 min)"
+              }
+            ],
+            "chosen": "A) CronPollerDeps with mock support (Recommended)",
+            "confidence": 9,
+            "rationale": "Follows the established GitPollerDeps pattern exactly, guaranteeing deterministic tests for catch-up and DST without fragile fake-timer hacks.",
+            "principle": "DRY"
+          },
+          {
+            "timestamp": "2026-03-26T00:14:04.363Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. TEST ISSUE 2: Config reload testing requires a testable extraction.\n\nThe config reload logic (mtime polling, diff-based restart, orphan pruning) is planned to live inside `startDaemon()` in daemon.ts. But `startDaemon()` is the full daemon lifecycle function — it forks processes, opens sockets, writes PID files. You can't unit test config reload without spinning up an actual daemon.\n\nThe existing codebase solves this pattern well: `buildIPCHandler()` is extracted as a pure function that takes dependencies and returns a handler. Config reload needs the same treatment.\n\nRECOMMENDATION: Choose A — extract the reload logic as a testable function. This is the existing pattern (buildIPCHandler, createJobRunner, createGitPoller all follow it). Explicit > clever. Completeness: A=10/10, B=4/10.",
+            "options": [
+              {
+                "label": "A) Extract reloadConfig() function (Recommended)",
+                "description": "Extract a pure function: reloadConfig(oldConfig, newConfig, pollers) that returns { toStop, toStart, toKeep, prunedKeys }. Unit-testable with no daemon lifecycle. (human: ~2 hours / CC: ~10 min)"
+              },
+              {
+                "label": "B) Test via integration only",
+                "description": "Write the reload logic inline in startDaemon, test by actually starting a daemon in tests. Slow, flaky, hard to test edge cases like invalid JSON. (human: ~3 hours / CC: ~20 min)"
+              }
+            ],
+            "chosen": "A) Extract reloadConfig() function (Recommended)",
+            "confidence": 10,
+            "rationale": "This follows the established codebase pattern (buildIPCHandler, createJobRunner, createGitPoller) and makes config reload fully unit-testable without daemon lifecycle dependencies.",
+            "principle": "DRY"
+          },
+          {
+            "timestamp": "2026-03-26T00:15:26.499Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. TODO PROPOSAL 1: Config reload integration test.\n\nThe plan has unit tests for reloadConfig() (extracted function), but no test that verifies the full mtime-polling loop: daemon detects file change → reads config → calls reloadConfig() → pollers actually restart. This is the integration seam.\n\nA lightweight integration test (mock fs.statSync for mtime, mock config file reads) would catch wiring bugs between the mtime polling loop and the reload function. Not needed for Phase 4b MVP but valuable for Phase 4c hardening.\n\nRECOMMENDATION: Choose A — small TODO for Phase 4c. The unit tests cover the logic; this catches wiring. Completeness: A=8/10, B=6/10, C=9/10.",
+            "options": [
+              {
+                "label": "A) Add to TODOS.md (Recommended)",
+                "description": "P3 TODO for Phase 4c hardening. Integration test for mtime poll → reload → poller restart. (human: ~2 hours / CC: ~15 min)"
+              },
+              {
+                "label": "B) Skip",
+                "description": "Unit tests for reloadConfig() are sufficient. Integration test adds complexity for marginal value."
+              },
+              {
+                "label": "C) Build it now",
+                "description": "Write the integration test as part of Phase 4b. Highest coverage. (human: ~3 hours / CC: ~15 min)"
+              }
+            ],
+            "chosen": "C) Build it now",
+            "confidence": 8,
+            "rationale": "Config reload is squarely in Phase 4b's blast radius and CC effort is ~15 min — P2 auto-approves in-blast-radius expansions under 1 day, and deferring a 15-min task creates more overhead than just doing it.",
+            "principle": "Boil lakes"
+          },
+          {
+            "timestamp": "2026-03-26T00:15:40.824Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. TODO PROPOSAL 2: Update TODOS.md — Phase 4 daemon entry is stale.\n\nThe current TODOS.md has a P2 entry for 'Daemon Mode (Phase 4)' that describes Phase 4a work which is already COMPLETE. It should be updated to reflect Phase 4b (scheduling) as the current work, and Phase 4c (hardening) as the next deferred item. The existing P3 entries (Codebase Summary, Adaptive maxTurns) are still valid.\n\nRECOMMENDATION: Choose A — stale TODOs are worse than no TODOs. Quick cleanup. Completeness: A=9/10, B=5/10.",
+            "options": [
+              {
+                "label": "A) Update TODOS.md (Recommended)",
+                "description": "Replace stale Phase 4 entry with Phase 4c hardening TODO. Mark Phase 4a+4b as complete in the entry. ~5 min."
+              },
+              {
+                "label": "B) Skip",
+                "description": "Leave as-is. The entry is technically wrong but doesn't block anything."
+              }
+            ],
+            "chosen": "A) Update TODOS.md (Recommended)",
+            "confidence": 9,
+            "rationale": "Stale documentation is tech debt — quick 5-min cleanup keeps the project state accurate, consistent with the 'boil lakes' pattern of fixing everything in blast radius.",
+            "principle": "Boil lakes"
+          },
+          {
+            "timestamp": "2026-03-26T00:15:55.269Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. TODO PROPOSAL 3: CLI schedule output format.\n\nThe plan defines the IPC response structure for 'schedule' but doesn't specify how the CLI formats the output. Should it be a table? JSON? Colored text? This is a taste decision.\n\nThe existing CLI subcommands use ANSI-colored text (status shows key-value pairs, log shows raw text). A simple table matching that style would be consistent.\n\nRECOMMENDATION: Choose A — matches existing CLI style. Completeness: A=9/10, B=7/10.",
+            "options": [
+              {
+                "label": "A) ANSI table like status (Recommended)",
+                "description": "Colored key-value display per trigger, with next fire time highlighted. Matches existing daemon status output. (human: ~1 hour / CC: ~5 min)"
+              },
+              {
+                "label": "B) JSON output",
+                "description": "Raw JSON dump for machine consumption. Simple but not human-friendly. Could add --json flag later."
+              }
+            ],
+            "chosen": "A) ANSI table like status (Recommended)",
+            "confidence": 9,
+            "rationale": "Matches the existing CLI style (status, log) so users get a consistent experience, and a --json flag can always be added later.",
+            "principle": "DRY"
+          },
+          {
+            "timestamp": "2026-03-26T00:16:17.732Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw Phase 4b on main. All review sections are complete. Want an outside voice? A different AI system can give a brutally honest, independent challenge of this plan — logical gaps, feasibility risks, and blind spots that are hard to catch from inside the review. Takes about 2 minutes.\n\nRECOMMENDATION: Choose A — an independent second opinion catches structural blind spots. Two different AI models agreeing on a plan is stronger signal than one model's thorough review. Completeness: A=9/10, B=7/10.",
+            "options": [
+              {
+                "label": "A) Get the outside voice (Recommended)",
+                "description": "Claude subagent gives a brutally honest, independent challenge. ~2 minutes."
+              },
+              {
+                "label": "B) Skip",
+                "description": "Proceed to outputs. Review is thorough enough."
+              }
+            ],
+            "chosen": "B) Skip",
+            "confidence": 7,
+            "rationale": "The review is already thorough with multiple test issues and TODOs addressed — another review cycle is stale deliberation when we should be building.",
+            "principle": "Bias toward action"
+          }
+        ],
+        "relayPoints": []
+      }
     },
     {
       "skillName": "ship",
-      "status": "pending"
+      "status": "complete",
+      "startTime": "2026-03-26T00:17:45.967Z",
+      "endTime": "2026-03-26T00:18:25.956Z",
+      "report": {
+        "runId": "garyclaw-1774484265967-ea4d6a",
+        "skillName": "ship",
+        "startTime": "2026-03-26T00:17:45.967Z",
+        "endTime": "2026-03-26T00:18:25.956Z",
+        "totalSessions": 1,
+        "totalTurns": 11,
+        "estimatedCostUsd": 0.3542965,
+        "issues": [],
+        "findings": [],
+        "decisions": [],
+        "relayPoints": []
+      }
     }
   ],
-  "currentSkillIndex": 1,
+  "currentSkillIndex": 2,
   "startTime": "2026-03-25T23:42:23.459Z",
-  "totalCostUsd": 1.69430975,
+  "totalCostUsd": 2.77324125,
   "autonomous": true
 }
