@@ -11,7 +11,6 @@ import type {
   SegmentOptions,
   SegmentResult,
   SdkUsage,
-  SdkModelUsageEntry,
 } from "./types.js";
 
 // Re-export SDK types for stable import paths
