@@ -296,30 +296,7 @@ export async function startDaemon(checkpointDir: string): Promise<void> {
   configLog("info", `IPC server listening on ${socketPath}`);
 
   // 6. Start pollers (git poll + cron)
-  const pollers: GitPoller[] = [];
-  for (const trigger of config.triggers) {
-    if (trigger.type === "git_poll") {
-      const poller = createGitPoller(trigger, config.projectDir, (skills, detail) => {
-        configLog("info", `Git poll triggered: ${detail}`);
-        runner.enqueue(skills, "git_poll", detail);
-      });
-      poller.start();
-      pollers.push(poller);
-      configLog("info", `Git poller started: every ${trigger.intervalSeconds}s, skills=[${trigger.skills.join(",")}]`);
-    } else if (trigger.type === "cron") {
-      const poller = createCronPoller(trigger, (skills, detail) => {
-        configLog("info", `Cron triggered: ${detail}`);
-        runner.enqueue(skills, "cron", detail, trigger.designDoc);
-      });
-      if (poller) {
-        poller.start();
-        pollers.push(poller);
-        configLog("info", `Cron poller started: "${trigger.expression}", skills=[${trigger.skills.join(",")}]`);
-      } else {
-        configLog("warn", `Invalid cron expression "${trigger.expression}", skipping trigger`);
-      }
-    }
-  }
+  let pollers = startPollers(config, runner, configLog);
 
   // 7. Main loop: process next job every 5s
   const processTimer = setInterval(async () => {
@@ -330,7 +307,33 @@ export async function startDaemon(checkpointDir: string): Promise<void> {
     }
   }, PROCESS_INTERVAL_MS);
 
-  // 8. Signal handlers for graceful shutdown
+  // 8. SIGHUP handler for config reload
+  process.on("SIGHUP", () => {
+    configLog("info", "Received SIGHUP — reloading config...");
+    const newConfig = loadDaemonConfig(checkpointDir);
+    if (!newConfig) {
+      configLog("warn", "SIGHUP reload failed: invalid config, keeping old config");
+      return;
+    }
+    const configError = validateDaemonConfig(newConfig);
+    if (configError) {
+      configLog("warn", `SIGHUP reload failed: ${configError}, keeping old config`);
+      return;
+    }
+
+    // Update budget for future enqueue checks
+    runner.updateBudget(newConfig.budget);
+    configLog("info", "Budget updated from reloaded config");
+
+    // Restart pollers with new trigger configs
+    for (const poller of pollers) {
+      poller.stop();
+    }
+    pollers = startPollers(newConfig, runner, configLog);
+    configLog("info", `SIGHUP reload complete: ${pollers.length} poller(s) restarted`);
+  });
+
+  // 9. Signal handlers for graceful shutdown
   let shuttingDown = false;
 
   async function shutdown(signal: string): Promise<void> {
@@ -375,6 +378,42 @@ export async function startDaemon(checkpointDir: string): Promise<void> {
   process.on("SIGINT", () => handleSignal("SIGINT"));
 
   configLog("info", "Daemon ready");
+}
+
+/**
+ * Start all pollers from a config. Returns the array of started pollers.
+ * Extracted as a helper so SIGHUP reload can restart pollers.
+ */
+export function startPollers(
+  config: DaemonConfig,
+  runner: JobRunner,
+  log: (level: string, msg: string) => void,
+): GitPoller[] {
+  const pollers: GitPoller[] = [];
+  for (const trigger of config.triggers) {
+    if (trigger.type === "git_poll") {
+      const poller = createGitPoller(trigger, config.projectDir, (skills, detail) => {
+        log("info", `Git poll triggered: ${detail}`);
+        runner.enqueue(skills, "git_poll", detail);
+      });
+      poller.start();
+      pollers.push(poller);
+      log("info", `Git poller started: every ${trigger.intervalSeconds}s, skills=[${trigger.skills.join(",")}]`);
+    } else if (trigger.type === "cron") {
+      const poller = createCronPoller(trigger, (skills, detail) => {
+        log("info", `Cron triggered: ${detail}`);
+        runner.enqueue(skills, "cron", detail, trigger.designDoc);
+      });
+      if (poller) {
+        poller.start();
+        pollers.push(poller);
+        log("info", `Cron poller started: "${trigger.expression}", skills=[${trigger.skills.join(",")}]`);
+      } else {
+        log("warn", `Invalid cron expression "${trigger.expression}", skipping trigger`);
+      }
+    }
+  }
+  return pollers;
 }
 
 // If this file is executed directly (as a forked process), start the daemon.
