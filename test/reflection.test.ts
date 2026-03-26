@@ -12,7 +12,6 @@ import {
   findRelatedIssue,
   runReflection,
   readDecisionsFromLog,
-  createReflectionCanUseTool,
 } from "../src/reflection.js";
 import { initOracleMemory } from "../src/oracle-memory.js";
 
@@ -516,59 +515,4 @@ describe("reflection", () => {
     });
   });
 
-  describe("createReflectionCanUseTool", () => {
-    it("allows Write to oracle-memory directory", async () => {
-      const canUseTool = createReflectionCanUseTool(["/project/.garyclaw/oracle-memory"]);
-
-      const result = await canUseTool("Write", {
-        file_path: "/project/.garyclaw/oracle-memory/taste.md",
-      });
-      expect(result.behavior).toBe("allow");
-    });
-
-    it("denies Write outside oracle-memory directory", async () => {
-      const canUseTool = createReflectionCanUseTool(["/project/.garyclaw/oracle-memory"]);
-
-      const result = await canUseTool("Write", {
-        file_path: "/project/src/app.ts",
-      });
-      expect(result.behavior).toBe("deny");
-    });
-
-    it("denies non-Write tools", async () => {
-      const canUseTool = createReflectionCanUseTool(["/project/.garyclaw/oracle-memory"]);
-
-      const result = await canUseTool("Bash", { command: "rm -rf /" });
-      expect(result.behavior).toBe("deny");
-      expect(result.message).toContain("only allows Write");
-    });
-
-    it("prevents path traversal attacks", async () => {
-      const canUseTool = createReflectionCanUseTool(["/project/.garyclaw/oracle-memory"]);
-
-      const result = await canUseTool("Write", {
-        file_path: "/project/.garyclaw/oracle-memory/../../etc/passwd",
-      });
-      expect(result.behavior).toBe("deny");
-    });
-
-    it("allows Write to any of multiple allowed dirs", async () => {
-      const canUseTool = createReflectionCanUseTool([
-        "/global/oracle-memory",
-        "/project/.garyclaw/oracle-memory",
-      ]);
-
-      const r1 = await canUseTool("Write", { file_path: "/global/oracle-memory/taste.md" });
-      const r2 = await canUseTool("Write", { file_path: "/project/.garyclaw/oracle-memory/taste.md" });
-      expect(r1.behavior).toBe("allow");
-      expect(r2.behavior).toBe("allow");
-    });
-
-    it("denies when file_path is not a string", async () => {
-      const canUseTool = createReflectionCanUseTool(["/project"]);
-
-      const result = await canUseTool("Write", { file_path: 123 });
-      expect(result.behavior).toBe("deny");
-    });
-  });
 });

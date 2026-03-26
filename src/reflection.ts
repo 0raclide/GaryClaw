@@ -17,14 +17,12 @@
  */
 
 import { join } from "node:path";
-import { resolve } from "node:path";
 import type {
   Decision,
   Issue,
   DecisionOutcome,
   OracleMemoryConfig,
   OracleMetrics,
-  RunReport,
 } from "./types.js";
 import {
   readMetrics,
@@ -336,36 +334,7 @@ export function readDecisionsFromLog(decisionLogPath: string): Decision[] {
   return decisions;
 }
 
-/**
- * Sandboxed canUseTool for reflection — allows only Write to oracle-memory dirs.
- * Path validation: resolve with path.resolve() and confirm the resolved path
- * starts with the target oracle-memory directory prefix.
- */
-export function createReflectionCanUseTool(
-  allowedDirs: string[],
-): (toolName: string, input: Record<string, unknown>) => Promise<{ behavior: "allow" | "deny"; message?: string }> {
-  const resolvedDirs = allowedDirs.map((d) => resolve(d));
-
-  return async (toolName: string, input: Record<string, unknown>) => {
-    if (toolName !== "Write") {
-      return { behavior: "deny" as const, message: `Reflection only allows Write tool, not ${toolName}` };
-    }
-
-    const filePath = input.file_path;
-    if (typeof filePath !== "string") {
-      return { behavior: "deny" as const, message: "Write tool requires file_path" };
-    }
-
-    const resolvedPath = resolve(filePath);
-    const allowed = resolvedDirs.some((dir) => resolvedPath.startsWith(dir));
-
-    if (!allowed) {
-      return {
-        behavior: "deny" as const,
-        message: `Reflection Write blocked: ${resolvedPath} is not within oracle-memory directories`,
-      };
-    }
-
-    return { behavior: "allow" as const };
-  };
-}
+// NOTE: Design deviation — the original design called for a sandboxed SDK query()
+// call with createReflectionCanUseTool(). The algorithmic approach in runReflection()
+// is better: deterministic, no API cost, no latency. The sandboxed canUseTool was
+// built and tested but never wired into production, so it was removed as dead code.
