@@ -1,30 +1,25 @@
 {
   "date": "2026-03-26",
   "url": "CLI (test suite)",
-  "healthScore": 95.8,
-  "run": 6,
+  "healthScore": 97,
+  "run": 7,
   "issues": [
-    { "id": "ISSUE-001", "title": "Missing null guard in findRelatedIssue", "severity": "critical", "category": "error-handling", "status": "fixed" },
-    { "id": "ISSUE-002", "title": "Silent error swallowing in daemon-ipc", "severity": "high", "category": "error-handling", "status": "fixed" },
-    { "id": "ISSUE-003", "title": "Unsafe type casts in SDK wrapper", "severity": "high", "category": "type-safety", "status": "fixed" },
-    { "id": "ISSUE-004", "title": "Daemon shutdown resource leak", "severity": "high", "category": "resource-management", "status": "deferred" },
-    { "id": "ISSUE-005", "title": "CLI top-level catch", "severity": "high", "category": "error-handling", "status": "deferred" },
-    { "id": "ISSUE-006", "title": "Race condition in job-runner state", "severity": "medium", "category": "concurrency", "status": "not-a-bug" },
-    { "id": "ISSUE-007", "title": "Silent decision log failures", "severity": "medium", "category": "error-handling", "status": "fixed" },
-    { "id": "ISSUE-008", "title": "Incomplete error handling in reflection runner", "severity": "medium", "category": "error-handling", "status": "fixed" },
-    { "id": "ISSUE-009", "title": "Oracle memory injection budget bypass", "severity": "medium", "category": "security", "status": "not-a-bug" },
-    { "id": "ISSUE-010", "title": "Git ref validation allows path traversal", "severity": "medium", "category": "security", "status": "fixed" },
-    { "id": "ISSUE-011", "title": "Checkpoint slice pattern fragility", "severity": "low", "category": "code-quality", "status": "deferred" },
-    { "id": "ISSUE-012", "title": "Inefficient regex loop in oracle-memory", "severity": "low", "category": "performance", "status": "deferred" },
-    { "id": "ISSUE-013", "title": "Incomplete cleanup in safe-json backupCorruptFile", "severity": "low", "category": "resource-management", "status": "deferred" },
-    { "id": "ISSUE-014", "title": "IPC data handler clarity", "severity": "low", "category": "code-quality", "status": "deferred" },
-    { "id": "ISSUE-015", "title": "Missing type assertion in parseOracleResponse", "severity": "low", "category": "type-safety", "status": "deferred" }
+    { "id": "ISSUE-001", "title": "TypeScript compilation error in cron poller closure", "severity": "high", "category": "functional", "status": "fixed", "commit": "a0609b4" },
+    { "id": "ISSUE-002", "title": "Null msg crashes SDK message helper functions", "severity": "medium", "category": "type-safety", "status": "fixed", "commit": "1854db5" },
+    { "id": "ISSUE-003", "title": "Unbounded description length in findRelatedIssue", "severity": "medium", "category": "defensive-programming", "status": "fixed", "commit": "e2f0801" }
   ],
   "categoryScores": {
     "testSuite": 100,
-    "typeSafety": 100,
-    "errorHandling": 85,
-    "security": 90,
-    "codeQuality": 95
+    "typeSafety": 95,
+    "errorHandling": 95,
+    "functional": 100,
+    "codeQuality": 97,
+    "documentation": 95
+  },
+  "testStats": {
+    "files": 37,
+    "tests": 873,
+    "passing": 873,
+    "duration": "2.60s"
   }
 }

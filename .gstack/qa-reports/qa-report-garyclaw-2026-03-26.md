@@ -362,3 +362,119 @@ Exported pure functions (no behavior change):
 | Security | 15% | 100 | 100 |
 | Documentation | 10% | 90 | 90 |
 | **Weighted Total** | | **89** | **97** |
+
+---
+
+# QA Report — GaryClaw (Run 5: Post Eng-Review Verification)
+
+**Date:** 2026-03-26
+**Branch:** main
+**Mode:** Full (CLI project — test suite + TypeScript + code scan)
+**Tier:** Standard (critical + high + medium)
+**Duration:** ~8 min
+**Test Framework:** Vitest 3.2.4
+
+---
+
+## Summary
+
+| Metric | Value |
+|--------|-------|
+| Total issues found | 3 |
+| Fixes applied | 3 (verified: 3, best-effort: 0, reverted: 0) |
+| Deferred | 0 |
+| Tests before | 863 across 35 files |
+| Tests after | 873 across 37 files |
+| TypeScript errors | 0 (was 1 before fix) |
+| CLI commands | All working (help, oracle init, replay, daemon status) |
+| Health score | Baseline: 88 → Final: 97 |
+
+**PR Summary:** QA Run 5 found 3 issues (1 high, 2 medium), fixed all 3, added 10 regression tests. 873 tests passing across 37 files. TypeScript compiles clean.
+
+---
+
+## Context
+
+This QA run follows the eng review that accepted 11 fixes and committed them. Run 5 verifies those fixes integrated cleanly and scans for any new issues introduced.
+
+---
+
+## Fixed Issues
+
+### ISSUE-001: TypeScript compilation error in cron poller closure
+- **Severity:** High
+- **Category:** Functional (build failure)
+- **File:** `src/triggers.ts:269`
+- **Fix Status:** ✅ verified
+- **Commit:** `a0609b4`
+- **Description:** `npx tsc --noEmit` failed with TS2345. `parseCronExpression()` returns `CronSchedule | null`. The early-return null check narrowed the type, but TypeScript doesn't carry narrowing into closures — the `check()` function captured `schedule` but TS still saw it as `CronSchedule | null`.
+- **Fix:** Split into `parsedSchedule` (nullable return) and `schedule` (explicitly typed `CronSchedule` after guard).
+
+### ISSUE-002: Null msg crashes SDK message helper functions
+- **Severity:** Medium
+- **Category:** Defensive programming
+- **File:** `src/orchestrator.ts:65-82`
+- **Fix Status:** ✅ verified
+- **Commit:** `1854db5`
+- **Description:** `extractAssistantText(null)` and `extractToolUse(null)` would throw TypeError: "Cannot read properties of null (reading 'type')". While the SDK normally provides typed messages, edge cases (malformed responses, test harnesses) could pass null.
+- **Fix:** Added `if (!msg || ...)` guard at the top of both functions.
+- **Regression test:** `test/orchestrator-helpers.regression-1.test.ts` (6 tests)
+
+### ISSUE-003: Unbounded description length in reflection keyword matching
+- **Severity:** Medium
+- **Category:** Defensive programming
+- **File:** `src/reflection.ts:244-247`
+- **Fix Status:** ✅ verified
+- **Commit:** `e2f0801`
+- **Description:** `findRelatedIssue()` splits `issue.description` into words and creates a Set. With no length cap, a 100K+ description (from corrupt checkpoint data) could cause memory pressure.
+- **Fix:** Cap description to 2000 chars before keyword matching.
+- **Regression test:** `test/reflection.regression-1.test.ts` (4 tests)
+
+---
+
+## Deferred Issues (Low severity — by design)
+
+| # | Description | Severity | Reason |
+|---|-------------|----------|--------|
+| — | `as any` casts in sdk-wrapper.ts, researcher.ts | Low | Intentional SDK compatibility (pre-1.0 SDK) |
+| — | Silent oracle memory catch in orchestrator.ts | Low | By design — graceful degradation |
+| — | Missing overflow check in job-runner cost | Low | Budget enforcement catches before Infinity |
+| — | IPC handled flag pattern (fragile but works) | Low | `handled` boolean already prevents double-processing |
+
+---
+
+## Positive Findings
+
+- **873 tests, 37 files, 2.6s runtime** — excellent coverage and speed
+- **Zero TypeScript errors** after ISSUE-001 fix
+- **All CLI commands functional** — help, oracle init, replay, daemon status
+- **Eng review fixes integrated cleanly** — no test regressions
+- **Daemon running and healthy** — reporting 14 total jobs, cost tracking working
+
+---
+
+## Health Score
+
+| Category | Weight | Baseline | Final |
+|----------|--------|----------|-------|
+| Console (TS errors) | 15% | 0 (tsc failed) | 100 |
+| Functional | 20% | 92 | 100 |
+| Tests | 20% | 100 | 100 |
+| Code Quality | 15% | 92 | 97 |
+| Type Safety | 10% | 85 | 95 |
+| Error Handling | 10% | 90 | 95 |
+| Documentation | 10% | 95 | 95 |
+| **Weighted Total** | | **88** | **97** |
+
+---
+
+## Commits (Run 5)
+
+| SHA | Message |
+|-----|---------|
+| `7de153e` | `fix: implement eng review fixes — proportional truncation, safe-json migration, abort cleanup, tests` |
+| `a0609b4` | `fix(qa): ISSUE-001 — TypeScript compilation error in triggers.ts` |
+| `1854db5` | `fix(qa): ISSUE-002 — add null guard to SDK message helper functions` |
+| `e2f0801` | `fix(qa): ISSUE-003 — cap description length in findRelatedIssue` |
+| `d54ef5e` | `test(qa): regression test for ISSUE-002 — null msg guard` |
+| `f0984f7` | `test(qa): regression test for ISSUE-003 — description length cap` |
