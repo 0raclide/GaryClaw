@@ -35,7 +35,7 @@ import {
   shouldRelay,
   buildUsageSnapshot,
 } from "./token-monitor.js";
-import { writeCheckpoint, readCheckpoint } from "./checkpoint.js";
+import { writeCheckpoint, readCheckpoint, generateRelayPrompt } from "./checkpoint.js";
 import { createAskHandler } from "./ask-handler.js";
 import { askOracle, createSdkOracleQueryFn } from "./oracle.js";
 import { executeRelay, finalizeRelay } from "./relay.js";
@@ -534,6 +534,8 @@ export async function runSkillWithInitialPrompt(
 
 /**
  * Resume a skill from a checkpoint.
+ * Generates a relay prompt from the checkpoint so the new session
+ * picks up where the previous one left off (issues, decisions, progress).
  */
 export async function resumeSkill(
   checkpointDir: string,
@@ -556,8 +558,10 @@ export async function resumeSkill(
     skillName: checkpoint.skillName,
   };
 
-  // Run with the checkpoint as the starting state
-  return runSkill(resumeConfig, callbacks);
+  // Generate relay prompt from checkpoint so accumulated state is carried forward.
+  // Without this, resume would start from scratch and discard all prior work.
+  const relayPrompt = generateRelayPrompt(checkpoint);
+  return runSkillWithInitialPrompt(resumeConfig, callbacks, relayPrompt);
 }
 
 /**

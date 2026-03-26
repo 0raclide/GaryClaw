@@ -483,9 +483,11 @@ describe("resumeSkill", () => {
     const callbacks = createMockCallbacks();
     await resumeSkill(TEST_DIR, createTestConfig({ skillName: "qa" }), callbacks);
 
-    // Should use the checkpoint's skillName, not the config's
+    // Should use the relay prompt from generateRelayPrompt(), not the default "Run the /skill" prompt.
+    // generateRelayPrompt is mocked to return "relay prompt".
     const call = vi.mocked(startSegment).mock.calls[0][0];
-    expect(call.prompt).toContain("/design-review");
+    expect(call.prompt).toBe("relay prompt");
+    expect(call.prompt).not.toContain("Run the /");
   });
 });
 

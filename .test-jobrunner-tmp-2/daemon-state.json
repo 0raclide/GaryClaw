@@ -210,6 +210,36 @@
       "startedAt": "2026-03-26T00:41:28.922Z",
       "completedAt": "2026-03-26T00:41:28.922Z",
       "error": "Per-job cost limit exceeded: $1.500 > $1.000"
+    },
+    {
+      "id": "job-1774486106759-0c4ee1",
+      "triggeredBy": "manual",
+      "triggerDetail": "trigger",
+      "skills": [
+        "qa"
+      ],
+      "projectDir": "/tmp/project",
+      "status": "failed",
+      "enqueuedAt": "2026-03-26T00:48:26.759Z",
+      "costUsd": 1.5,
+      "startedAt": "2026-03-26T00:48:26.759Z",
+      "completedAt": "2026-03-26T00:48:26.759Z",
+      "error": "Per-job cost limit exceeded: $1.500 > $1.000"
+    },
+    {
+      "id": "job-1774486128800-1f8034",
+      "triggeredBy": "manual",
+      "triggerDetail": "trigger",
+      "skills": [
+        "qa"
+      ],
+      "projectDir": "/tmp/project",
+      "status": "failed",
+      "enqueuedAt": "2026-03-26T00:48:48.800Z",
+      "costUsd": 1.5,
+      "startedAt": "2026-03-26T00:48:48.801Z",
+      "completedAt": "2026-03-26T00:48:48.801Z",
+      "error": "Per-job cost limit exceeded: $1.500 > $1.000"
     }
   ],
   "dailyCost": {
