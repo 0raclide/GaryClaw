@@ -14,7 +14,7 @@
  * 7. Signal handlers for graceful shutdown
  */
 
-import { readFileSync, writeFileSync, unlinkSync, existsSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync, appendFileSync, mkdirSync, statSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { createIPCServer, type IPCHandler } from "./daemon-ipc.js";
 import { createJobRunner, type JobRunner } from "./job-runner.js";
@@ -151,10 +151,20 @@ export function createDaemonLogger(
   const levels: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
   const threshold = levels[level] ?? 1;
 
+  const MAX_LOG_BYTES = 10 * 1024 * 1024; // 10 MB
+
   return (msgLevel: string, message: string) => {
     if ((levels[msgLevel] ?? 1) < threshold) return;
     const line = `[${new Date().toISOString()}] [${msgLevel.toUpperCase()}] ${message}\n`;
     try {
+      // Rotate if log exceeds max size: rename current → .1, start fresh
+      if (existsSync(logPath)) {
+        const size = statSync(logPath).size;
+        if (size > MAX_LOG_BYTES) {
+          const rotatedPath = logPath + ".1";
+          try { renameSync(logPath, rotatedPath); } catch { /* ignore */ }
+        }
+      }
       appendFileSync(logPath, line, "utf-8");
     } catch {
       // Can't write to log — silently ignore
