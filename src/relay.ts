@@ -6,7 +6,7 @@
  * ~17K tokens (relay prompt + SKILL.md via settingSources).
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { generateRelayPrompt } from "./checkpoint.js";
 import type { Checkpoint, SegmentOptions, GaryClawConfig } from "./types.js";
 
@@ -25,7 +25,7 @@ export interface FinalizeRelayResult {
  */
 export function prepareRelay(projectDir: string): PrepareRelayResult {
   try {
-    const status = execSync("git status --porcelain", {
+    const status = execFileSync("git", ["status", "--porcelain"], {
       cwd: projectDir,
       encoding: "utf-8",
       timeout: 10_000,
@@ -36,7 +36,7 @@ export function prepareRelay(projectDir: string): PrepareRelayResult {
     }
 
     const stashRef = `garyclaw-relay-${Date.now()}`;
-    execSync(`git stash push --include-untracked -m "${stashRef}"`, {
+    execFileSync("git", ["stash", "push", "--include-untracked", "-m", stashRef], {
       cwd: projectDir,
       encoding: "utf-8",
       timeout: 30_000,
@@ -83,7 +83,7 @@ export function finalizeRelay(
   if (!stashRef) return {};
 
   try {
-    execSync("git stash pop", {
+    execFileSync("git", ["stash", "pop"], {
       cwd: projectDir,
       encoding: "utf-8",
       timeout: 30_000,
