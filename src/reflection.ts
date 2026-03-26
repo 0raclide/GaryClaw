@@ -286,7 +286,11 @@ export function runReflection(input: ReflectionInput): ReflectionResult {
   const allOutcomes = [...existingOutcomes, ...newOutcomes];
 
   // Write updated outcomes (rolling window of ~50)
-  writeDecisionOutcomesRolling(memConfig, allOutcomes);
+  try {
+    writeDecisionOutcomesRolling(memConfig, allOutcomes);
+  } catch (err) {
+    console.warn(`[GaryClaw] Failed to write decision outcomes: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   // Update metrics
   let metrics = readMetrics(memConfig);
@@ -294,7 +298,11 @@ export function runReflection(input: ReflectionInput): ReflectionResult {
     metrics = updateMetricsWithOutcome(metrics, outcome);
   }
   metrics.lastReflectionTimestamp = new Date().toISOString();
-  writeMetrics(memConfig, metrics);
+  try {
+    writeMetrics(memConfig, metrics);
+  } catch (err) {
+    console.warn(`[GaryClaw] Failed to write metrics: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   return {
     outcomes: newOutcomes,
