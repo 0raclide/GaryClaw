@@ -58,7 +58,7 @@ export function extractCommitMessage(bashCommand: string): string | null {
  */
 export function parseCommitMessage(
   msg: string,
-  skillName: string,
+  _skillName: string,
 ): Issue | null {
   // Only parse the first line (in case of multiline messages)
   const firstLine = msg.split("\n")[0].trim();
