@@ -10,7 +10,7 @@
 
 **Cons:** Low urgency — the daemon works fine for short sessions. Only matters for always-on deployment.
 
-**Context:** Phase 4a completed 2026-03-25. Hardening fixes completed 2026-03-26. Log rotation (ISSUE-005) and job pruning (ISSUE-006) fixed by /qa on main, 2026-03-26. maxJobsPerDay enforcement gap (ISSUE-016) fixed by /qa Run 3 on main, 2026-03-26. Remaining: stale PID cleanup.
+**Context:** Phase 4a completed 2026-03-25. Hardening fixes completed 2026-03-26. Log rotation (ISSUE-005) and job pruning (ISSUE-006) fixed by /qa on main, 2026-03-26. maxJobsPerDay enforcement gap (ISSUE-016) fixed by /qa Run 3. Shell injection in triggers.ts (ISSUE-002) and resumeSkill checkpoint discard (ISSUE-003) fixed by /qa Run 4 on main, 2026-03-26. Remaining: stale PID cleanup.
 
 **Effort:** XS (human: ~1 day / CC: ~15 min)
 **Depends on:** Phase 4a (complete)
@@ -63,6 +63,22 @@
 **Effort:** M (human: ~1 week / CC: ~1 hour)
 **Depends on:** Phase 5b (quality metrics), Phase 4b (cron baseline)
 **Added by:** /plan-ceo-review on 2026-03-26
+
+## P4: Narrow Oracle Escalation Keywords
+
+**What:** Replace overly broad `ESCALATION_KEYWORDS` in `src/oracle.ts` (`"token"`, `"remove"`) with more specific patterns (`"api token"`, `"auth token"`, `"remove database"`, `"remove user"`) to reduce false-positive escalations in autonomous mode.
+
+**Why:** Questions about "token tracking" or "remove unused import" currently trigger security escalation, defeating the purpose of autonomous execution.
+
+**Pros:** Fewer false-positive escalations. Smoother autonomous runs.
+
+**Cons:** Risk of missing a real security-sensitive question. Needs careful calibration.
+
+**Context:** Found by /qa Run 4 on main, 2026-03-26. Deferred as low-severity design concern.
+
+**Effort:** XS (human: ~2 hours / CC: ~10 min)
+**Depends on:** None
+**Added by:** /qa on 2026-03-26
 
 ## P3: Oracle Decision Batching (Latency Optimization)
 
