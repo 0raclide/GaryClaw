@@ -8,6 +8,7 @@ import { mkdirSync, rmSync, writeFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import {
   findDesignDoc,
+  loadDesignDoc,
   extractImplementationOrder,
   formatReviewContext,
   buildImplementPrompt,
@@ -479,5 +480,73 @@ Run tests.`,
     const prompt = await buildImplementPrompt(config, [], TEST_DIR);
 
     expect(prompt).toContain("No design doc found");
+  });
+
+  it("uses config.designDoc when set instead of auto-discovery", async () => {
+    // Create a specific design doc at a custom path
+    const specificDir = join(TEST_DIR, "custom");
+    mkdirSync(specificDir, { recursive: true });
+    writeFileSync(
+      join(specificDir, "specific.md"),
+      "# Specific Design\n\n## Implementation Order\n1. Do the thing",
+      "utf-8",
+    );
+
+    // Also create a different design doc in the default location
+    writeFileSync(
+      join(DESIGNS_DIR, "default.md"),
+      "# Default Design\nThis should NOT be used",
+      "utf-8",
+    );
+
+    const config = createMockConfig({ designDoc: "custom/specific.md" });
+    const prompt = await buildImplementPrompt(config, [], TEST_DIR);
+
+    expect(prompt).toContain("# Specific Design");
+    expect(prompt).not.toContain("Default Design");
+    expect(prompt).toContain("1. Do the thing");
+  });
+});
+
+describe("loadDesignDoc", () => {
+  beforeEach(() => {
+    mkdirSync(DESIGNS_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true });
+  });
+
+  it("loads file from absolute path", () => {
+    const absPath = join(DESIGNS_DIR, "absolute.md");
+    writeFileSync(absPath, "# Absolute Path Design", "utf-8");
+
+    const result = loadDesignDoc(absPath, TEST_DIR);
+    expect(result).not.toBeNull();
+    expect(result!.path).toBe(absPath);
+    expect(result!.content).toBe("# Absolute Path Design");
+  });
+
+  it("loads file from relative path (resolved against projectDir)", () => {
+    writeFileSync(
+      join(DESIGNS_DIR, "relative.md"),
+      "# Relative Path Design",
+      "utf-8",
+    );
+
+    const result = loadDesignDoc("docs/designs/relative.md", TEST_DIR);
+    expect(result).not.toBeNull();
+    expect(result!.path).toBe(join(TEST_DIR, "docs", "designs", "relative.md"));
+    expect(result!.content).toBe("# Relative Path Design");
+  });
+
+  it("returns null for nonexistent path", () => {
+    const result = loadDesignDoc("docs/designs/nonexistent.md", TEST_DIR);
+    expect(result).toBeNull();
+  });
+
+  it("returns null for nonexistent absolute path", () => {
+    const result = loadDesignDoc("/tmp/definitely-does-not-exist-garyclaw.md", TEST_DIR);
+    expect(result).toBeNull();
   });
 });
