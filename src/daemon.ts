@@ -28,6 +28,12 @@ import {
   migrateToInstanceDir,
 } from "./daemon-registry.js";
 import { createWorktree, mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
+import {
+  readPidFile as readPidFileDirect,
+  isPidAlive as isPidAliveDirect,
+  writePidFile as writePidFileDirect,
+  removePidFile,
+} from "./pid-utils.js";
 import type { DaemonConfig, IPCRequest, IPCResponse } from "./types.js";
 import type { Server } from "node:net";
 
@@ -140,45 +146,34 @@ export function loadDaemonConfig(checkpointDir: string, fallbackDir?: string): D
 
 /**
  * Check if a PID file points to an alive process.
+ * Delegates to shared pid-utils module.
  */
 export function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+  return isPidAliveDirect(pid).alive;
 }
 
 /**
  * Read PID from file. Returns null if file doesn't exist or is invalid.
+ * Delegates to shared pid-utils module.
  */
 export function readPidFile(checkpointDir: string): number | null {
-  const pidPath = join(checkpointDir, PID_FILE);
-  if (!existsSync(pidPath)) return null;
-  try {
-    const pid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
-    return Number.isFinite(pid) ? pid : null;
-  } catch {
-    return null;
-  }
+  return readPidFileDirect(join(checkpointDir, PID_FILE));
 }
 
 /**
  * Write PID file.
+ * Delegates to shared pid-utils module.
  */
 export function writePidFile(checkpointDir: string, pid: number): void {
-  mkdirSync(checkpointDir, { recursive: true });
-  writeFileSync(join(checkpointDir, PID_FILE), String(pid), "utf-8");
+  writePidFileDirect(join(checkpointDir, PID_FILE), pid);
 }
 
 /**
  * Clean up PID and socket files.
  */
 export function cleanupDaemonFiles(checkpointDir: string): void {
-  const pidPath = join(checkpointDir, PID_FILE);
+  removePidFile(join(checkpointDir, PID_FILE));
   const sockPath = join(checkpointDir, SOCKET_FILE);
-  try { if (existsSync(pidPath)) unlinkSync(pidPath); } catch { /* ignore */ }
   try { if (existsSync(sockPath)) unlinkSync(sockPath); } catch { /* ignore */ }
 }
 

@@ -15,6 +15,7 @@
 import { readdirSync, existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
+import { readPidFile as readPidFileDirect, isPidAlive as isPidAliveDirect } from "./pid-utils.js";
 import type { GlobalBudget, InstanceInfo, DaemonState } from "./types.js";
 
 const DAEMONS_DIR = "daemons";
@@ -28,8 +29,16 @@ const STATE_FILE = "daemon-state.json";
 /**
  * Resolve an instance name. Undefined or empty → "default".
  */
+const VALID_INSTANCE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
+
 export function resolveInstanceName(name?: string): string {
-  return name && name.trim().length > 0 ? name.trim() : "default";
+  const resolved = name && name.trim().length > 0 ? name.trim() : "default";
+  if (!VALID_INSTANCE_NAME.test(resolved)) {
+    throw new Error(
+      `Invalid instance name "${resolved}". Names must be alphanumeric with hyphens/underscores, no path separators.`,
+    );
+  }
+  return resolved;
 }
 
 /**
@@ -75,15 +84,10 @@ export function listInstances(checkpointDir: string): InstanceInfo[] {
 
     if (!existsSync(pidPath)) continue;
 
-    let pid: number;
-    try {
-      pid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
-      if (!Number.isFinite(pid)) continue;
-    } catch {
-      continue;
-    }
+    const pid = readPidFileDirect(pidPath);
+    if (pid === null) continue;
 
-    const alive = isPidAlive(pid);
+    const alive = isPidAliveDirect(pid).alive;
 
     instances.push({
       name,
@@ -249,15 +253,6 @@ export function migrateToInstanceDir(checkpointDir: string): boolean {
 }
 
 // ── Internal helpers ─────────────────────────────────────────────
-
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function validateDaemonState(data: unknown): data is DaemonState {
   if (typeof data !== "object" || data === null) return false;
