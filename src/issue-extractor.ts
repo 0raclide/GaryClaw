@@ -121,9 +121,10 @@ export class IssueTracker {
     // Skip duplicates
     if (this.issues.has(issue.id)) return null;
 
-    // Associate the first recent file path (most relevant Edit/Write)
+    // Associate the last recent file path — the most recent Edit/Write
+    // before the commit is typically the actual fix target
     if (this.recentFilePaths.length > 0) {
-      issue.filePath = this.recentFilePaths[0];
+      issue.filePath = this.recentFilePaths[this.recentFilePaths.length - 1];
     }
 
     // Clear file buffer after commit

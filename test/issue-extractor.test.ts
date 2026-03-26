@@ -173,11 +173,12 @@ describe("IssueTracker", () => {
     expect(issue!.filePath).toBe("src/index.html");
   });
 
-  it("uses first file path when multiple edits precede commit", () => {
+  it("uses last file path when multiple edits precede commit", () => {
     tracker.trackToolUse("Edit", { file_path: "src/a.ts" });
     tracker.trackToolUse("Edit", { file_path: "src/b.ts" });
     const issue = tracker.trackCommit('git commit -m "fix(qa): ISSUE-003 --- fix both"');
-    expect(issue!.filePath).toBe("src/a.ts");
+    // Last edit before commit is typically the actual fix target
+    expect(issue!.filePath).toBe("src/b.ts");
   });
 
   it("returns issue without filePath when no prior edits", () => {
