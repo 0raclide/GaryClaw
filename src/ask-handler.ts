@@ -168,8 +168,9 @@ function writeDecisionLog(path: string, decision: Decision): void {
   try {
     mkdirSync(dirname(path), { recursive: true });
     appendFileSync(path, JSON.stringify(decision) + "\n", "utf-8");
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    // Non-fatal but warn — lost audit trail is worth knowing about
+    console.warn(`[GaryClaw] Failed to write decision log: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -189,8 +190,9 @@ function writeEscalatedLog(
       escalateReason: oracleResult.isTaste ? "taste_decision" : "security_concern",
     };
     appendFileSync(path, JSON.stringify(record) + "\n", "utf-8");
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    // Non-fatal but warn — lost escalation trail is worth knowing about
+    console.warn(`[GaryClaw] Failed to write escalated log: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
