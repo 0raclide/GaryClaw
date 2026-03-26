@@ -69,13 +69,28 @@ function parseArgs(argv: string[]): {
         if (args[i] === "--project-dir" && args[i + 1]) {
           projectDir = resolve(args[++i]);
         } else if (args[i] === "--max-turns" && args[i + 1]) {
-          maxTurns = parseInt(args[++i], 10);
+          const parsed = parseInt(args[++i], 10);
+          if (Number.isNaN(parsed) || parsed < 1) {
+            console.error(`Invalid --max-turns value: ${args[i]}. Must be a positive integer.`);
+            process.exit(1);
+          }
+          maxTurns = parsed;
         } else if (args[i] === "--threshold" && args[i + 1]) {
-          threshold = parseFloat(args[++i]);
+          const parsed = parseFloat(args[++i]);
+          if (Number.isNaN(parsed) || parsed <= 0 || parsed > 1) {
+            console.error(`Invalid --threshold value: ${args[i]}. Must be between 0 and 1.`);
+            process.exit(1);
+          }
+          threshold = parsed;
         } else if (args[i] === "--checkpoint-dir" && args[i + 1]) {
           checkpointDir = resolve(args[++i]);
         } else if (args[i] === "--max-sessions" && args[i + 1]) {
-          maxSessions = parseInt(args[++i], 10);
+          const parsed = parseInt(args[++i], 10);
+          if (Number.isNaN(parsed) || parsed < 1) {
+            console.error(`Invalid --max-sessions value: ${args[i]}. Must be a positive integer.`);
+            process.exit(1);
+          }
+          maxSessions = parsed;
         } else if (args[i] === "--autonomous") {
           autonomous = true;
         }
