@@ -1024,12 +1024,50 @@
     },
     {
       "skillName": "qa",
-      "status": "running",
-      "startTime": "2026-03-26T00:46:53.140Z"
+      "status": "complete",
+      "startTime": "2026-03-26T00:46:53.140Z",
+      "endTime": "2026-03-26T00:56:59.641Z",
+      "report": {
+        "runId": "garyclaw-1774486013141-cd72fb",
+        "skillName": "qa",
+        "startTime": "2026-03-26T00:46:53.140Z",
+        "endTime": "2026-03-26T00:56:59.641Z",
+        "totalSessions": 1,
+        "totalTurns": 159,
+        "estimatedCostUsd": 0.9973774999999999,
+        "issues": [],
+        "findings": [],
+        "decisions": [
+          {
+            "timestamp": "2026-03-26T00:48:10.856Z",
+            "sessionIndex": 0,
+            "question": "GaryClaw on main branch. Your working tree has uncommitted changes from the eng review (modified files in src/cli.ts, src/orchestrator.ts, docs/designs/brain-first-roadmap.md, plus new test files). /qa needs a clean tree so each bug fix gets its own atomic commit. How should we handle these?\n\nRECOMMENDATION: Choose A because uncommitted work from the eng review should be preserved as a commit before QA adds its own fix commits. Completeness: A=10/10, B=7/10, C=3/10.",
+            "options": [
+              {
+                "label": "Commit my changes (Recommended)",
+                "description": "Commit all current changes with a descriptive message, then start QA"
+              },
+              {
+                "label": "Stash my changes",
+                "description": "Stash changes, run QA, pop the stash after"
+              },
+              {
+                "label": "Abort",
+                "description": "I'll clean up manually and re-run /qa"
+              }
+            ],
+            "chosen": "Commit my changes (Recommended)",
+            "confidence": 9,
+            "rationale": "Preserving eng review work as an atomic commit before QA ensures completeness — nothing gets lost, and QA gets the clean tree it needs for its own atomic fix commits.",
+            "principle": "Choose completeness"
+          }
+        ],
+        "relayPoints": []
+      }
     }
   ],
   "currentSkillIndex": 2,
   "startTime": "2026-03-26T00:02:27.822Z",
-  "totalCostUsd": 3.8156359999999996,
+  "totalCostUsd": 4.813013499999999,
   "autonomous": true
 }

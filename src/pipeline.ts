@@ -223,9 +223,14 @@ async function executePipelineFrom(
       checkpointDir: skillCheckpointDir,
     };
 
-    // Build prompt: first skill gets default, subsequent get context handoff
+    // Build prompt: implement gets a special prompt, others get context handoff
     const prevEntry = i > 0 ? state.skills[i - 1] : null;
-    if (prevEntry?.report) {
+    if (skillName === "implement") {
+      const { buildImplementPrompt } = await import("./implement.js");
+      const prevSkills = state.skills.slice(0, i);
+      const implPrompt = await buildImplementPrompt(config, prevSkills, config.projectDir);
+      await runSkillWithPrompt(skillConfig, callbacks, implPrompt);
+    } else if (prevEntry?.report) {
       // Override the initial prompt via a custom prompt in the skill config
       // runSkill uses `Run the /${skillName} skill...` as default prompt,
       // but we need to inject context from previous skill.

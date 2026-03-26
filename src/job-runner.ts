@@ -31,7 +31,7 @@ export { PerJobCostExceededError };
 const STATE_FILE = "daemon-state.json";
 
 export interface JobRunner {
-  enqueue(skills: string[], triggeredBy: Job["triggeredBy"], triggerDetail: string): string | null;
+  enqueue(skills: string[], triggeredBy: Job["triggeredBy"], triggerDetail: string, designDoc?: string): string | null;
   processNext(): Promise<void>;
   getState(): DaemonState;
   isRunning(): boolean;
@@ -86,6 +86,7 @@ export function createJobRunner(
     skills: string[],
     triggeredBy: Job["triggeredBy"],
     triggerDetail: string,
+    designDoc?: string,
   ): string | null {
     // Budget check: daily job count
     // Note: No TOCTOU race here — Node.js is single-threaded, so enqueue() and
@@ -130,6 +131,7 @@ export function createJobRunner(
       status: "queued",
       enqueuedAt: new Date().toISOString(),
       costUsd: 0,
+      designDoc,
     };
 
     state.jobs.push(job);
@@ -227,6 +229,7 @@ function buildGaryClawConfig(
     askTimeoutMs: config.orchestrator.askTimeoutMs,
     maxRelaySessions: config.orchestrator.maxRelaySessions,
     autonomous: true,
+    designDoc: job.designDoc,
   };
 }
 

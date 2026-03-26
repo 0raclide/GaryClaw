@@ -189,7 +189,7 @@ describe("buildIPCHandler", () => {
     const resp = await handler({ type: "trigger", skills: ["qa", "ship"] });
     expect(resp.ok).toBe(true);
     expect((resp.data as any).jobId).toBe("job-123");
-    expect(runner.enqueue).toHaveBeenCalledWith(["qa", "ship"], "manual", "CLI trigger");
+    expect(runner.enqueue).toHaveBeenCalledWith(["qa", "ship"], "manual", "CLI trigger", undefined);
   });
 
   it("rejects 'trigger' with empty skills", async () => {

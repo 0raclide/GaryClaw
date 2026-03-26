@@ -232,7 +232,7 @@ describe("buildIPCHandler", () => {
     const resp = await handler({ type: "trigger", skills: ["qa"] });
     expect(resp.ok).toBe(true);
     expect((resp.data as any).jobId).toBe("job-new-001");
-    expect(runner.enqueue).toHaveBeenCalledWith(["qa"], "manual", "CLI trigger");
+    expect(runner.enqueue).toHaveBeenCalledWith(["qa"], "manual", "CLI trigger", undefined);
   });
 
   it("handles trigger rejection (dedup/budget)", async () => {

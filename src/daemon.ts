@@ -203,7 +203,7 @@ export function buildIPCHandler(
         if (!Array.isArray(skills) || skills.length === 0) {
           return { ok: false, error: "skills must be a non-empty array" };
         }
-        const jobId = runner.enqueue(skills, "manual", "CLI trigger");
+        const jobId = runner.enqueue(skills, "manual", "CLI trigger", request.designDoc);
         if (jobId) {
           return { ok: true, data: { jobId } };
         }

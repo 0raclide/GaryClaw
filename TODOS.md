@@ -95,3 +95,19 @@
 **Effort:** S (human: ~3 days / CC: ~30 min)
 **Depends on:** Phase 5a (memory Oracle working)
 **Added by:** /plan-ceo-review on 2026-03-26
+
+## P3: Implement Step Tracking Across Relays
+
+**What:** Track which implementation steps from the design doc's "Implementation Order" have been completed, so that after a checkpoint/relay the fresh session knows where to resume instead of re-reading the full design doc from scratch.
+
+**Why:** The implement skill constructs a prompt with the full design doc + implementation order. After relay, the fresh session gets a generic checkpoint summary but doesn't know which steps are done vs. remaining. For long implementations (5+ steps), the new session may repeat completed steps or lose its place. The "follow implementation order exactly" rule becomes contradictory when the order has already been partially executed.
+
+**Pros:** Correct relay behavior for multi-step implementations. Saves context tokens by only injecting remaining steps. Prevents duplicate commits.
+
+**Cons:** Requires checkpoint.ts to understand implement-specific state (step index, completed steps). Adds coupling between implement.ts and the checkpoint system. May need git log analysis to detect which steps were committed.
+
+**Context:** Identified by outside voice during eng review of the implement skill (2026-03-26). The orchestrator's generic checkpoint captures issues/decisions but not implement-specific progress. A step-tracking field in the checkpoint state (e.g., `implementProgress: { completedSteps: number[], currentStep: number }`) could be injected into the relay prompt to resume at the right place.
+
+**Effort:** S (human: ~3 days / CC: ~30 min)
+**Depends on:** Implement skill (complete)
+**Added by:** /plan-eng-review on 2026-03-26
