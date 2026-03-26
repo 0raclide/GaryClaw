@@ -435,11 +435,11 @@ Setup: `claude setup-token` → export `CLAUDE_CODE_OAUTH_TOKEN=<token>`
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAR | 7 proposals, 6 accepted, 1 deferred |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 2 | CLEAR | 11 proposals, 9 accepted, 2 deferred (Phase 4b SELECTIVE EXPANSION) |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
-| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR | 15 issues, 0 critical gaps |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 2 | CLEAR | 10 issues, 0 critical gaps |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
 
-- **OUTSIDE VOICE:** Claude subagent ran plan challenge — 11 findings, 3 cross-model tensions (resume strategy, spike scope, phase ordering). All substantive tensions resolved.
+- **OUTSIDE VOICE:** Claude subagent ran plan challenges — 2 sessions total. First: 11 findings, 3 cross-model tensions resolved. Second (Phase 4b): 9 findings, 2 cross-model tensions resolved (catchUpLimit removed, fs.watch replaced with mtime polling).
 - **UNRESOLVED:** 0
-- **VERDICT:** CEO + ENG CLEARED — ready to implement. Run spikes first, then Phase 1a core build.
+- **VERDICT:** CEO CLEARED (Phase 4b). Eng review recommended for expanded Phase 4b scope before implementation.

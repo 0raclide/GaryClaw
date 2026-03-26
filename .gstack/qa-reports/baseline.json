@@ -1,0 +1,24 @@
+{
+  "date": "2026-03-26",
+  "url": "CLI (test suite)",
+  "healthScore": 95,
+  "issues": [
+    { "id": "ISSUE-001", "title": "Missing @types/node dev dependency", "severity": "critical", "category": "build", "status": "verified" },
+    { "id": "ISSUE-002", "title": "CanUseTool type mismatch in oracle.ts", "severity": "high", "category": "type-safety", "status": "verified" },
+    { "id": "ISSUE-003", "title": "Documentation test count drift", "severity": "low", "category": "documentation", "status": "deferred" }
+  ],
+  "categoryScores": {
+    "typeSafety": 100,
+    "testSuite": 100,
+    "dependencies": 100,
+    "codeHygiene": 100,
+    "documentation": 70,
+    "buildHealth": 100
+  },
+  "testStats": {
+    "total": 280,
+    "passing": 280,
+    "failing": 0,
+    "files": 14
+  }
+}

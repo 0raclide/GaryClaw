@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "pipelineId": "pipeline-1774483347822-e81a5e",
+  "skills": [
+    {
+      "skillName": "plan-ceo-review",
+      "status": "running",
+      "startTime": "2026-03-26T00:02:27.823Z"
+    },
+    {
+      "skillName": "plan-eng-review",
+      "status": "pending"
+    },
+    {
+      "skillName": "qa",
+      "status": "pending"
+    }
+  ],
+  "currentSkillIndex": 0,
+  "startTime": "2026-03-26T00:02:27.822Z",
+  "totalCostUsd": 0,
+  "autonomous": true
+}
