@@ -83,6 +83,8 @@ export function createJobRunner(
     triggerDetail: string,
   ): string | null {
     // Budget check: daily job count
+    // Note: No TOCTOU race here — Node.js is single-threaded, so enqueue() and
+    // processNext() never interleave between synchronous budget reads and writes.
     const today = todayDateStr();
     resetDailyIfNeeded(state, today);
 
