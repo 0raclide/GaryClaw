@@ -16,7 +16,8 @@ import type { Job, DaemonConfig } from "./types.js";
 export function notifyJobComplete(job: Job, config: DaemonConfig): void {
   if (!config.notifications.enabled || !config.notifications.onComplete) return;
 
-  const title = "GaryClaw Job Complete";
+  const instanceLabel = config.name ? ` [${config.name}]` : "";
+  const title = `GaryClaw${instanceLabel} Job Complete`;
   const message = `/${job.skills.join(" → /")} finished ($${job.costUsd.toFixed(3)})`;
   sendNotification(title, message);
 }
@@ -27,7 +28,8 @@ export function notifyJobComplete(job: Job, config: DaemonConfig): void {
 export function notifyJobError(job: Job, config: DaemonConfig): void {
   if (!config.notifications.enabled || !config.notifications.onError) return;
 
-  const title = "GaryClaw Job Failed";
+  const instanceLabel = config.name ? ` [${config.name}]` : "";
+  const title = `GaryClaw${instanceLabel} Job Failed`;
   const message = `/${job.skills.join(" → /")} failed: ${job.error ?? "unknown error"}`;
   sendNotification(title, message);
 }
