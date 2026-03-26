@@ -9,6 +9,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -196,9 +197,28 @@ async function executePipelineFrom(
 ): Promise<void> {
   const totalSkills = state.skills.length;
 
+  // Track git HEAD at pipeline start for cross-skill change detection
+  let lastKnownHead = getGitHead(config.projectDir);
+
   for (let i = state.currentSkillIndex; i < totalSkills; i++) {
     const entry = state.skills[i];
     const skillName = entry.skillName;
+
+    // Check if HEAD changed since last skill (cross-pipeline or external commits)
+    let headChangeNote: string | null = null;
+    if (i > 0 && lastKnownHead) {
+      const currentHead = getGitHead(config.projectDir);
+      if (currentHead && currentHead !== lastKnownHead) {
+        const diffSummary = getGitDiffSummary(config.projectDir, lastKnownHead, currentHead);
+        const commitCount = diffSummary ? diffSummary.split("\n").length : 0;
+        headChangeNote = `Note: ${commitCount} commit(s) landed since the previous skill ran.`;
+        if (diffSummary) {
+          headChangeNote += ` Recent commits:\n${diffSummary}`;
+        }
+        headChangeNote += "\nReview the diff before proceeding — some findings from the previous skill may already be addressed.";
+        lastKnownHead = currentHead;
+      }
+    }
 
     // Update state
     entry.status = "running";
@@ -234,14 +254,24 @@ async function executePipelineFrom(
         // runSkill uses `Run the /${skillName} skill...` as default prompt,
         // but we need to inject context from previous skill.
         // We do this by running with a modified orchestrator prompt.
-        const handoffPrompt = buildContextHandoff(
+        let handoffPrompt = buildContextHandoff(
           prevEntry.skillName,
           prevEntry.report,
           skillName,
         );
+        // Inject HEAD change context if commits landed between skills
+        if (headChangeNote) {
+          handoffPrompt = `${headChangeNote}\n\n${handoffPrompt}`;
+        }
         await runSkillWithPrompt(skillConfig, callbacks, handoffPrompt);
       } else {
-        await runSkill(skillConfig, callbacks);
+        // No previous report — run with optional HEAD change note
+        if (headChangeNote) {
+          await runSkillWithPrompt(skillConfig, callbacks,
+            `${headChangeNote}\n\nNow run the /${skillName} skill. Follow all SKILL.md instructions completely.`);
+        } else {
+          await runSkill(skillConfig, callbacks);
+        }
       }
     } catch (err) {
       // Mark skill as failed and persist state so resume can skip past it
@@ -356,6 +386,49 @@ function buildSkillReport(
     estimatedCostUsd: checkpoint.tokenUsage.estimatedCostUsd,
     relayPoints: [],
   });
+}
+
+// ── Git HEAD tracking ────────────────────────────────────────────
+
+/**
+ * Get the current git HEAD commit hash for the project directory.
+ * Returns null if git is unavailable or dir is not a repo.
+ */
+export function getGitHead(projectDir: string): string | null {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: projectDir,
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).toString().trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get a short summary of commits between two git refs.
+ * Returns null if git is unavailable or refs are invalid.
+ */
+export function getGitDiffSummary(
+  projectDir: string,
+  fromRef: string,
+  toRef: string,
+): string | null {
+  try {
+    const log = execFileSync(
+      "git",
+      ["log", "--oneline", `${fromRef}..${toRef}`],
+      {
+        cwd: projectDir,
+        timeout: 5000,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    ).toString().trim();
+    return log || null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Pipeline report ─────────────────────────────────────────────
