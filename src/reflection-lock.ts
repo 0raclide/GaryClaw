@@ -43,14 +43,11 @@ export function acquireReflectionLock(
     return true;
   }
 
-  // Poll until timeout
+  // Poll until timeout — synchronous sleep via Atomics.wait to avoid CPU spin
   const deadline = Date.now() + timeoutMs;
+  const sleepBuf = new Int32Array(new SharedArrayBuffer(4));
   while (Date.now() < deadline) {
-    // Busy-wait with small increments (synchronous — no async in reflection path)
-    const waitUntil = Date.now() + POLL_INTERVAL_MS;
-    while (Date.now() < waitUntil) {
-      // Spin — this is acceptable for short poll intervals in a lock path
-    }
+    Atomics.wait(sleepBuf, 0, 0, POLL_INTERVAL_MS);
 
     if (tryCreateLockDir(lockDir, pidFile)) {
       return true;
