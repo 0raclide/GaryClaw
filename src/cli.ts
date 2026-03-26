@@ -45,7 +45,9 @@ export function parseArgs(argv: string[]): {
   configPath?: string;
   maxSessions: number;
   autonomous: boolean;
+  noMemory: boolean;
   tailLines: number;
+  designDoc?: string;
 } {
   const args = argv.slice(2);
   const command = args[0] ?? "help";
@@ -58,7 +60,9 @@ export function parseArgs(argv: string[]): {
   let checkpointDir: string | undefined;
   let configPath: string | undefined;
   let maxSessions = 10;
+  let designDoc: string | undefined;
   let autonomous = false;
+  let noMemory = false;
   let tailLines = 50;
 
   // Collect skills (positional args after "run") and flags
@@ -93,6 +97,10 @@ export function parseArgs(argv: string[]): {
           maxSessions = parsed;
         } else if (args[i] === "--autonomous") {
           autonomous = true;
+        } else if (args[i] === "--no-memory") {
+          noMemory = true;
+        } else if (args[i] === "--design-doc" && args[i + 1]) {
+          designDoc = args[++i];
         }
       } else {
         // Positional arg = skill name (strip leading / if present)
@@ -116,6 +124,8 @@ export function parseArgs(argv: string[]): {
           process.exit(1);
         }
         tailLines = parsed;
+      } else if (args[i] === "--design-doc" && args[i + 1]) {
+        designDoc = args[++i];
       } else if (!args[i].startsWith("--")) {
         // Positional args after subcommand = skill names for trigger
         skills.push(args[i].replace(/^\//, ""));
@@ -151,11 +161,13 @@ export function parseArgs(argv: string[]): {
         maxSessions = parsed;
       } else if (args[i] === "--autonomous") {
         autonomous = true;
+      } else if (args[i] === "--no-memory") {
+        noMemory = true;
       }
     }
   }
 
-  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, tailLines };
+  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, tailLines, designDoc };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -340,6 +352,7 @@ ${BOLD}Options:${RESET}
   --checkpoint-dir <dir>   Checkpoint directory (default: .garyclaw)
   --max-sessions <n>       Max relay sessions (default: 10)
   --autonomous             Use Decision Oracle instead of human prompts
+  --no-memory              Disable Oracle memory injection (kill switch)
   --config <path>          Daemon config file (default: .garyclaw/daemon.json)
 
 ${BOLD}Examples:${RESET}
@@ -348,6 +361,8 @@ ${BOLD}Examples:${RESET}
   garyclaw run qa design-review ship          # skill pipeline
   garyclaw run /qa /design-review /ship       # same (slashes stripped)
   garyclaw run design-review --threshold 0.80
+  garyclaw run plan-ceo-review plan-eng-review implement  # review then build
+  garyclaw run implement --autonomous         # implement from design doc
   garyclaw resume --checkpoint-dir .garyclaw
   garyclaw replay
   garyclaw daemon start                       # start background daemon
@@ -394,9 +409,11 @@ async function main(): Promise<void> {
         askTimeoutMs: 5 * 60 * 1000,
         maxRelaySessions: parsed.maxSessions,
         autonomous: parsed.autonomous,
+        designDoc: parsed.designDoc,
+        noMemory: parsed.noMemory,
       };
 
-      console.log(`${BOLD}GaryClaw${RESET} — running ${CYAN}/${config.skillName}${RESET}${config.autonomous ? ` ${YELLOW}[AUTONOMOUS]${RESET}` : ""}`);
+      console.log(`${BOLD}GaryClaw${RESET} — running ${CYAN}/${config.skillName}${RESET}${config.autonomous ? ` ${YELLOW}[AUTONOMOUS]${RESET}` : ""}${config.noMemory ? ` ${DIM}[NO-MEMORY]${RESET}` : ""}`);
       console.log(`${DIM}  Project:          ${config.projectDir}${RESET}`);
       console.log(`${DIM}  Max turns/segment: ${config.maxTurnsPerSegment}${RESET}`);
       console.log(`${DIM}  Relay threshold:   ${(config.relayThresholdRatio * 100).toFixed(0)}%${RESET}`);
@@ -417,6 +434,8 @@ async function main(): Promise<void> {
         askTimeoutMs: 5 * 60 * 1000,
         maxRelaySessions: parsed.maxSessions,
         autonomous: parsed.autonomous,
+        designDoc: parsed.designDoc,
+        noMemory: parsed.noMemory,
       };
 
       const skillList = parsed.skills.map((s) => `/${s}`).join(" → ");
@@ -449,6 +468,7 @@ async function main(): Promise<void> {
       askTimeoutMs: 5 * 60 * 1000,
       maxRelaySessions: parsed.maxSessions,
       autonomous: parsed.autonomous,
+      noMemory: parsed.noMemory,
     };
 
     const cbs: OrchestratorCallbacks = {
@@ -643,7 +663,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        const resp = await sendIPCRequest(socketPath, { type: "trigger", skills: parsed.skills }, 3000);
+        const resp = await sendIPCRequest(socketPath, { type: "trigger", skills: parsed.skills, designDoc: parsed.designDoc }, 3000);
         if (resp.ok) {
           const d = resp.data as any;
           console.log(`${GREEN}Job enqueued:${RESET} ${d.jobId}`);

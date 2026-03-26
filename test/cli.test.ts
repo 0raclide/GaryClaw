@@ -81,6 +81,27 @@ describe("parseArgs", () => {
     expect(result.autonomous).toBe(false);
   });
 
+  it("parses --no-memory flag", () => {
+    const result = parseArgs(["node", "cli.ts", "run", "qa", "--no-memory"]);
+    expect(result.noMemory).toBe(true);
+  });
+
+  it("defaults noMemory to false", () => {
+    const result = parseArgs(["node", "cli.ts", "run", "qa"]);
+    expect(result.noMemory).toBe(false);
+  });
+
+  it("parses --no-memory with --autonomous", () => {
+    const result = parseArgs(["node", "cli.ts", "run", "qa", "--autonomous", "--no-memory"]);
+    expect(result.autonomous).toBe(true);
+    expect(result.noMemory).toBe(true);
+  });
+
+  it("parses --no-memory in resume command", () => {
+    const result = parseArgs(["node", "cli.ts", "resume", "--no-memory"]);
+    expect(result.noMemory).toBe(true);
+  });
+
   it("parses --project-dir flag", () => {
     const result = parseArgs(["node", "cli.ts", "run", "qa", "--project-dir", "/tmp/test"]);
     expect(result.projectDir).toContain("tmp");

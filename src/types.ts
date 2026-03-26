@@ -109,6 +109,7 @@ export interface GaryClawConfig {
   autonomous: boolean;
   abortSignal?: AbortSignal;
   designDoc?: string;
+  noMemory?: boolean;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────

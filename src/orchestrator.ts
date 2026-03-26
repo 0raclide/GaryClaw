@@ -41,6 +41,12 @@ import { askOracle, createSdkOracleQueryFn } from "./oracle.js";
 import { executeRelay, finalizeRelay } from "./relay.js";
 import { buildReport, formatReportMarkdown } from "./report.js";
 import { PerJobCostExceededError, type Issue } from "./types.js";
+import {
+  defaultMemoryConfig,
+  readOracleMemory,
+  isCircuitBreakerTripped,
+} from "./oracle-memory.js";
+import { sendNotification } from "./notifier.js";
 
 import { IssueTracker, extractAllToolUse, parseGitLog } from "./issue-extractor.js";
 
@@ -176,6 +182,32 @@ async function runSkillInternal(
       return;
     }
     const monitor = createTokenMonitorState();
+
+    // Phase 5a: Read oracle memory for this session (once per session, not per question)
+    const oracleMemory = (() => {
+      if (!config.autonomous || config.noMemory) return undefined;
+      try {
+        const memConfig = defaultMemoryConfig(config.projectDir);
+        // Check circuit breaker — if tripped, disable memory and notify
+        if (isCircuitBreakerTripped(memConfig)) {
+          sendNotification(
+            "GaryClaw Oracle Degraded",
+            "Circuit breaker tripped — Oracle memory disabled (accuracy < 60%)",
+          );
+          return undefined;
+        }
+        const memory = readOracleMemory(memConfig, config.projectDir);
+        // Only return if there's at least one non-null memory file
+        if (memory.taste || memory.domainExpertise || memory.decisionOutcomes || memory.memoryMd) {
+          return memory;
+        }
+        return undefined;
+      } catch {
+        // Oracle memory read failed — degrade gracefully to no-memory mode
+        return undefined;
+      }
+    })();
+
     const askHandler = createAskHandler({
       onAskUser: callbacks.onAskUser,
       askTimeoutMs: config.askTimeoutMs,
@@ -191,6 +223,7 @@ async function runSkillInternal(
                 escalateThreshold: 6,
               },
               skillName: config.skillName,
+              memory: oracleMemory,
             },
             escalatedLogPath: join(config.checkpointDir, "escalated.jsonl"),
           }
