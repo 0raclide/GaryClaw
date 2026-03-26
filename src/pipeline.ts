@@ -174,11 +174,17 @@ export async function resumePipeline(
     return;
   }
 
-  // Advance past any completed skills to find the resume point
+  // Advance past any completed or failed skills to find the resume point.
+  // Failed skills are retried on resume (status reset to pending).
   let resumeIndex = 0;
   for (let i = 0; i < state.skills.length; i++) {
     if (state.skills[i].status === "complete") {
       resumeIndex = i + 1;
+    } else if (state.skills[i].status === "failed") {
+      // Resume from the failed skill (retry it)
+      state.skills[i].status = "pending";
+      resumeIndex = i;
+      break;
     } else {
       break;
     }
@@ -225,24 +231,39 @@ async function executePipelineFrom(
 
     // Build prompt: implement gets a special prompt, others get context handoff
     const prevEntry = i > 0 ? state.skills[i - 1] : null;
-    if (skillName === "implement") {
-      const { buildImplementPrompt } = await import("./implement.js");
-      const prevSkills = state.skills.slice(0, i);
-      const implPrompt = await buildImplementPrompt(config, prevSkills, config.projectDir);
-      await runSkillWithPrompt(skillConfig, callbacks, implPrompt);
-    } else if (prevEntry?.report) {
-      // Override the initial prompt via a custom prompt in the skill config
-      // runSkill uses `Run the /${skillName} skill...` as default prompt,
-      // but we need to inject context from previous skill.
-      // We do this by running with a modified orchestrator prompt.
-      const handoffPrompt = buildContextHandoff(
-        prevEntry.skillName,
-        prevEntry.report,
-        skillName,
-      );
-      await runSkillWithPrompt(skillConfig, callbacks, handoffPrompt);
-    } else {
-      await runSkill(skillConfig, callbacks);
+    try {
+      if (skillName === "implement") {
+        const { buildImplementPrompt } = await import("./implement.js");
+        const prevSkills = state.skills.slice(0, i);
+        const implPrompt = await buildImplementPrompt(config, prevSkills, config.projectDir);
+        await runSkillWithPrompt(skillConfig, callbacks, implPrompt);
+      } else if (prevEntry?.report) {
+        // Override the initial prompt via a custom prompt in the skill config
+        // runSkill uses `Run the /${skillName} skill...` as default prompt,
+        // but we need to inject context from previous skill.
+        // We do this by running with a modified orchestrator prompt.
+        const handoffPrompt = buildContextHandoff(
+          prevEntry.skillName,
+          prevEntry.report,
+          skillName,
+        );
+        await runSkillWithPrompt(skillConfig, callbacks, handoffPrompt);
+      } else {
+        await runSkill(skillConfig, callbacks);
+      }
+    } catch (err) {
+      // Mark skill as failed and persist state so resume can skip past it
+      const skillEndTime = new Date().toISOString();
+      entry.status = "failed";
+      entry.endTime = skillEndTime;
+      writePipelineState(state, config.checkpointDir);
+
+      callbacks.onEvent({
+        type: "error",
+        message: `Skill /${skillName} failed: ${err instanceof Error ? err.message : String(err)}`,
+        recoverable: true,
+      });
+      throw err;
     }
 
     // Read the skill's checkpoint for its report data
