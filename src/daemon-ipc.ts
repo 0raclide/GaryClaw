@@ -54,14 +54,18 @@ export function createIPCServer(socketPath: string, handler: IPCHandler): Server
 
     conn.on("data", (chunk) => {
       data += chunk.toString();
-      handleRequest();
+      handleRequest().catch(() => {
+        // Prevent unhandled promise rejection from crashing the daemon
+      });
     });
 
     conn.on("end", () => {
       // If we haven't processed yet (e.g., no newline), try with what we have
       if (!handled && data.length > 0) {
         data += "\n"; // Treat end-of-stream as delimiter
-        handleRequest();
+        handleRequest().catch(() => {
+          // Prevent unhandled promise rejection from crashing the daemon
+        });
       }
     });
 
