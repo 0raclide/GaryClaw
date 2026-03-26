@@ -19,7 +19,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 5a: COMPLETE** (2026-03-26) — Oracle Memory Infrastructure + Enhanced Oracle Prompt
 **Phase 5b: COMPLETE** (2026-03-26) — Post-Job Reflection + Quality Tracking
 **Phase 5c: COMPLETE** (2026-03-26) — Domain Expertise Research: researcher module, CLI command, freshness tracking
-- 20 source modules + CLI
+**Phase 6: COMPLETE** (2026-03-26) — Parallel Daemon Instances: registry, global budget, cross-instance dedup, reflection lock
+- 23 source modules + CLI
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -52,12 +53,19 @@ npx tsx src/cli.ts replay
 # Oracle memory management
 npx tsx src/cli.ts oracle init                   # create memory dirs + templates
 
-# Daemon mode (background process)
-npx tsx src/cli.ts daemon start                    # start daemon (reads .garyclaw/daemon.json)
-npx tsx src/cli.ts daemon status                   # show running status
-npx tsx src/cli.ts daemon trigger qa design-review # enqueue skills
-npx tsx src/cli.ts daemon log --tail 100           # view daemon log
-npx tsx src/cli.ts daemon stop                     # graceful shutdown
+# Daemon mode (background process, supports parallel instances)
+npx tsx src/cli.ts daemon start                    # start default daemon instance
+npx tsx src/cli.ts daemon start --name review-bot  # start named parallel instance
+npx tsx src/cli.ts daemon status                   # show default instance status
+npx tsx src/cli.ts daemon status --all             # show all instances
+npx tsx src/cli.ts daemon list                     # alias for status --all
+npx tsx src/cli.ts daemon trigger qa design-review # enqueue to default instance
+npx tsx src/cli.ts daemon trigger --name review-bot design-review  # enqueue to named instance
+npx tsx src/cli.ts daemon log --tail 100           # view default daemon log
+npx tsx src/cli.ts daemon log --name review-bot    # view named instance log
+npx tsx src/cli.ts daemon stop                     # stop default instance
+npx tsx src/cli.ts daemon stop --name review-bot   # stop named instance
+npx tsx src/cli.ts daemon stop --all               # stop all instances
 
 # Domain expertise research
 npx tsx src/cli.ts research "WebSocket libraries"  # research a topic
@@ -80,13 +88,15 @@ npm test
 ## Architecture
 
 ```
-CLI (args, readline, display, daemon subcommands)
-  → Daemon (persistent background process, PID file, IPC)
-  |   → Job Runner (FIFO queue, budget enforcement, state persistence)
+CLI (args, readline, display, daemon subcommands, --name/--all)
+  → Daemon Registry (instance discovery, global budget, cross-instance dedup)
+  → Daemon (persistent background process, PID file, IPC, per-instance dirs)
+  |   → Job Runner (FIFO queue, budget enforcement, state persistence, global budget)
   |   → Git Poller (HEAD change detection, debounce)
-  |   → Notifier (macOS notifications, job summaries)
+  |   → Notifier (macOS notifications, job summaries, instance labels)
+  |   → Reflection Lock (advisory file lock for concurrent oracle-memory writes)
   |
-  → Pipeline (multi-skill sequential execution, context handoff)
+  → Pipeline (multi-skill sequential execution, context handoff, git HEAD tracking)
       → Orchestrator (main loop per skill: sessions × segments)
           → sdk-wrapper.startSegment()  →  SDK query() generator
           → token-monitor (per-turn context tracking)
@@ -110,18 +120,20 @@ CLI (args, readline, display, daemon subcommands)
 | `src/report.ts` | Merge issues/findings/decisions, markdown report |
 | `src/oracle.ts` | Decision Oracle — 7 Principles, confidence scoring, escalation, memory injection |
 | `src/issue-extractor.ts` | Hybrid issue extraction from SDK stream + git log |
-| `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state |
+| `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state, git HEAD tracking |
 | `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
-| `src/daemon.ts` | Daemon process: PID, IPC server, pollers, signal handling |
+| `src/daemon.ts` | Daemon process: PID, IPC server, pollers, signal handling, instance-aware |
 | `src/daemon-ipc.ts` | Unix socket IPC: `createIPCServer`, `sendIPCRequest` |
-| `src/job-runner.ts` | FIFO job queue, budget enforcement, state persistence |
+| `src/daemon-registry.ts` | Multi-instance coordination: discovery, global budget, cross-instance dedup |
+| `src/job-runner.ts` | FIFO job queue, budget enforcement, state persistence, global budget |
 | `src/triggers.ts` | Git poll trigger with HEAD change detection + debounce |
-| `src/notifier.ts` | macOS notifications via osascript, job summary files |
+| `src/notifier.ts` | macOS notifications via osascript, job summary files, instance labels |
+| `src/reflection-lock.ts` | Advisory file lock (mkdir-based) for concurrent oracle-memory writes |
 | `src/safe-json.ts` | Shared atomic JSON/text I/O — `safeReadJSON`, `safeWriteJSON`, corruption recovery |
 | `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics |
 | `src/reflection.ts` | Post-job reflection: decision outcomes, reopened detection, quality metrics |
 | `src/researcher.ts` | Domain expertise research: web search, freshness tracking, section merge |
-| `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon`, multi-skill, daemon subcommands |
+| `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon`, multi-skill, daemon subcommands, `--name`/`--all` |
 
 ### Key Design Decisions
 
@@ -136,6 +148,10 @@ CLI (args, readline, display, daemon subcommands)
 - **Two-layer oracle memory** — global `~/.garyclaw/oracle-memory/` + per-project `.garyclaw/oracle-memory/`. decision-outcomes.md per-project only.
 - **Circuit breaker** — accuracy < 60% with 10+ decisions disables memory injection + notifies
 - **Prompt injection sanitization** — strip known patterns before memory injection into Oracle prompt
+- **Parallel daemon instances** — each instance gets own subdir under `.garyclaw/daemons/{name}/`, shared global budget at `.garyclaw/global-budget.json`
+- **Cross-instance dedup** — scans all instance `daemon-state.json` files before local dedup
+- **Reflection lock** — `mkdir`-based advisory lock prevents concurrent reflection writes to oracle-memory
+- **Git HEAD tracking in pipelines** — detects commits between skills and injects context into handoff prompt
 
 ---
 
@@ -173,10 +189,12 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline.test.ts` | 27 | state persistence, context handoff, pipeline report, validation |
 | `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |
 | `test/daemon-ipc.test.ts` | 10 | Request/response over socket, malformed input, timeout |
-| `test/notifier.test.ts` | 15 | Notification formatting, summary generation, graceful failure |
-| `test/job-runner.test.ts` | 20 | FIFO queue, dedup, budget, state persistence, job lifecycle |
+| `test/notifier.test.ts` | 24 | Notification formatting, summary generation, graceful failure, instance labels |
+| `test/job-runner.test.ts` | 36 | FIFO queue, dedup, budget, state persistence, job lifecycle, global budget, cross-instance dedup |
 | `test/triggers.test.ts` | 15 | Git poll HEAD detection, debounce, interval, branch filtering |
-| `test/daemon.test.ts` | 12 | Config validation, PID lifecycle, IPC handler, logger |
+| `test/daemon.test.ts` | 18 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request |
+| `test/daemon-registry.test.ts` | 42 | Instance discovery, global budget, cross-instance dedup, migration |
+| `test/reflection-lock.test.ts` | 12 | Acquire/release, reentrant, stale recovery, timeout |
 | `test/safe-json.test.ts` | 21 | Atomic write/read, corruption recovery, .bak rename, validation |
 | `test/oracle-memory.test.ts` | 47 | Two-layer resolution, sanitization, metrics, circuit breaker, outcomes |
 | `test/reflection.test.ts` | 48 | Levenshtein, reopened detection, outcome mapping, reflection runner, sandboxing |
@@ -212,6 +230,9 @@ Two-layer memory (global + per-project), `safe-json.ts` shared I/O, `oracle-memo
 
 ### Phase 5c: Domain Expertise Research — COMPLETE
 `src/researcher.ts` — domain expertise research via web search, freshness tracking (14-day default window), structured output with YAML frontmatter per topic, `parseDomainSections`/`mergeDomainSections` for section management, token budget enforcement (oldest topics dropped), read-only `canUseTool` (WebSearch/WebFetch/Read only), graceful degradation when WebSearch unavailable, `garyclaw research <topic> [--force]` CLI command.
+
+### Phase 6: Parallel Daemon Instances — COMPLETE
+Multiple daemon instances running in parallel on the same project. Each instance gets own subdirectory under `.garyclaw/daemons/{name}/` with isolated PID, socket, log, and state files. Shared global budget at `.garyclaw/global-budget.json` with per-instance attribution. Cross-instance dedup prevents duplicate jobs across instances. Advisory reflection lock (mkdir-based) prevents concurrent oracle-memory corruption. Pipeline git HEAD tracking detects commits between skills. CLI gains `--name`, `--all`, and `daemon list`. Backward-compatible migration from flat layout. See `src/daemon-registry.ts`.
 
 ### Phase 4b: Scheduling (DEFERRED)
 Cron triggers, config hot-reload via SIGHUP.
