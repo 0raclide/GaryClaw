@@ -1,20 +1,20 @@
 # TODOS
 
-## P2: Daemon Mode (Phase 4)
+## P2: Daemon Hardening (Phase 4b)
 
-**What:** Persistent background process that watches for triggers (new commits, deploy events, schedules) and auto-runs skills.
+**What:** Remaining hardening for the daemon: log rotation (size-based, 10MB threshold), job state pruning (retainDays, max 10 per cycle), stale PID cleanup on startup.
 
-**Why:** The 10x vision — "push code, go to sleep, wake up to results." Transforms GaryClaw from a tool you invoke into a tool that works for you.
+**Why:** Phase 4a daemon MVP is complete and working — runs jobs, enforces budgets, sends notifications. But log files grow unbounded, completed job state accumulates, and stale PID files from crashes aren't cleaned up.
 
-**Pros:** Maximum autonomy. Enables the full "tireless junior engineer" vision.
+**Pros:** Production-readiness for long-running daemon instances.
 
-**Cons:** Significant complexity — daemon lifecycle, process manager, trigger system, scheduling, resource management, cost limits.
+**Cons:** Low urgency — the daemon works fine for short sessions. Only matters for always-on deployment.
 
-**Context:** Accepted as deferred scope during CEO review (2026-03-25, SCOPE EXPANSION mode). Requires Phases 1-3 completed first. Architecture is designed to support it — the Orchestrator → Session Runner → Checkpoint Manager pipeline is reusable. Key design questions: what trigger system? (file watcher, git hooks, cron) What resource limits? (max concurrent skills, cost ceiling per day)
+**Context:** Phase 4a completed 2026-03-25 (daemon lifecycle, IPC, job queue, git poll, notifications). Hardening fixes completed 2026-03-26 (shell injection, AbortSignal, per-job cost enforcement, checkpoint quadratic fix, orchestrator tests, eng review follow-ups). Cron scheduling deferred indefinitely — `/loop` is sufficient.
 
-**Effort:** L (human: ~2 weeks / CC: ~4 hours)
-**Depends on:** Phase 1 (relay), Phase 2 (oracle), Phase 3 (chaining)
-**Added by:** /plan-ceo-review on 2026-03-25
+**Effort:** S (human: ~3 days / CC: ~30 min)
+**Depends on:** Phase 4a (complete)
+**Added by:** /plan-eng-review on 2026-03-26
 
 ## P3: Codebase Summary Persistence Across Relays
 
