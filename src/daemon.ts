@@ -27,6 +27,7 @@ import {
   listInstances,
   migrateToInstanceDir,
 } from "./daemon-registry.js";
+import { createWorktree, mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
 import type { DaemonConfig, IPCRequest, IPCResponse } from "./types.js";
 import type { Server } from "node:net";
 
@@ -362,6 +363,20 @@ export async function startDaemon(checkpointDir: string, instanceName?: string):
   writePidFile(instDir, process.pid);
   configLog("info", `PID ${process.pid} written to ${join(instDir, PID_FILE)}`);
 
+  // 3a. Create git worktree for named instances (not "default")
+  let baseBranch: string | undefined;
+  if (name !== "default") {
+    try {
+      baseBranch = resolveBaseBranch(config.projectDir);
+      const wtInfo = createWorktree(config.projectDir, name, baseBranch);
+      config.worktreePath = wtInfo.path;
+      configLog("info", `Worktree created at ${wtInfo.path} on branch ${wtInfo.branch}`);
+    } catch (err) {
+      configLog("error", `Failed to create worktree: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+
   // 4. Create job runner (with global budget + cross-instance dedup via parentCheckpointDir)
   const runner = createJobRunner(config, instDir, { log: configLog }, name, checkpointDir);
   configLog("info", `Job runner created for instance [${name}]`);
@@ -445,6 +460,24 @@ export async function startDaemon(checkpointDir: string, instanceName?: string):
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
     });
+
+    // Attempt to merge worktree branch for named instances
+    if (name !== "default" && baseBranch) {
+      try {
+        const mergeResult = mergeWorktreeBranch(config.projectDir, name, baseBranch);
+        if (mergeResult.merged) {
+          if (mergeResult.commitCount && mergeResult.commitCount > 0) {
+            configLog("info", `Merged ${mergeResult.commitCount} commit(s) from garyclaw/${name} to ${baseBranch}`);
+          } else {
+            configLog("info", `Branch garyclaw/${name} already up to date with ${baseBranch}`);
+          }
+        } else {
+          configLog("warn", `Branch garyclaw/${name} needs manual merge: ${mergeResult.reason}`);
+        }
+      } catch (err) {
+        configLog("warn", `Failed to merge worktree branch: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
 
     // Clean up files
     cleanupDaemonFiles(instDir);
