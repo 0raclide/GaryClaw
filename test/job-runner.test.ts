@@ -298,6 +298,87 @@ describe("Job Runner", () => {
       expect(job.error).toContain("Per-job cost limit exceeded");
     });
 
+    it("sets failureCategory on failed job", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockRejectedValue(new Error("auth verification failed"));
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+
+      await runner.processNext();
+
+      const state = runner.getState();
+      const job = state.jobs.find((j) => j.id === id)!;
+      expect(job.status).toBe("failed");
+      expect(job.failureCategory).toBe("auth-issue");
+      expect(job.retryable).toBe(true);
+    });
+
+    it("sets failureCategory to budget-exceeded for PerJobCostExceededError", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        cbs.onEvent({ type: "cost_update", costUsd: 1.5, sessionIndex: 0 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+
+      await runner.processNext();
+
+      const state = runner.getState();
+      const job = state.jobs.find((j) => j.id === id)!;
+      expect(job.failureCategory).toBe("budget-exceeded");
+      expect(job.retryable).toBe(false);
+    });
+
+    it("sets failureCategory to unknown for unrecognized errors", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockRejectedValue(new Error("something completely unexpected"));
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+
+      await runner.processNext();
+
+      const state = runner.getState();
+      const job = state.jobs.find((j) => j.id === id)!;
+      expect(job.failureCategory).toBe("unknown");
+      expect(job.retryable).toBe(false);
+    });
+
+    it("appends failures.jsonl on job failure", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockRejectedValue(new Error("ENOSPC: no space left on device"));
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      runner.enqueue(["qa"], "manual", "trigger");
+
+      await runner.processNext();
+
+      const jsonlPath = join(TEST_DIR, "failures.jsonl");
+      expect(existsSync(jsonlPath)).toBe(true);
+      const content = readFileSync(jsonlPath, "utf-8").trim();
+      const record = JSON.parse(content);
+      expect(record.category).toBe("infra-issue");
+      expect(record.retryable).toBe(true);
+      expect(record.skills).toEqual(["qa"]);
+    });
+
+    it("includes category in log message on failure", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockRejectedValue(new Error("test failed: 3 of 10"));
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      runner.enqueue(["qa"], "manual", "trigger");
+
+      await runner.processNext();
+
+      // Check that log was called with category in the message
+      const errorCalls = deps.log.mock.calls.filter((c: string[]) => c[0] === "error");
+      expect(errorCalls.length).toBeGreaterThan(0);
+      expect(errorCalls[0][1]).toContain("[project-bug]");
+    });
+
     it("only checks cost limit on cost-related events", async () => {
       const deps = createMockDeps();
       deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
