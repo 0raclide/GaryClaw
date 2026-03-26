@@ -775,6 +775,10 @@ async function main(): Promise<void> {
       });
 
       child.unref();
+      if (!child.pid) {
+        console.error(`${RED}Error:${RESET} Daemon fork failed — no PID returned`);
+        process.exit(1);
+      }
       console.log(`${GREEN}Daemon [${instName}] started${RESET} (PID ${child.pid})`);
       return;
     }
@@ -842,14 +846,15 @@ async function main(): Promise<void> {
         console.log(`  ${BOLD}Uptime:${RESET}      ${formatUptime(d.uptimeSeconds)}`);
         console.log(`  ${BOLD}Queue:${RESET}       ${d.queuedCount} job(s) queued`);
         console.log(`  ${BOLD}Total jobs:${RESET}  ${d.totalJobs}`);
-        console.log(`  ${BOLD}Daily cost:${RESET}  $${d.dailyCost.totalUsd.toFixed(3)} (${d.dailyCost.jobCount} jobs today)`);
+        const dailyCost = d.dailyCost ?? { totalUsd: 0, jobCount: 0 };
+        console.log(`  ${BOLD}Daily cost:${RESET}  $${dailyCost.totalUsd.toFixed(3)} (${dailyCost.jobCount} jobs today)`);
 
         if (d.currentJob) {
           console.log(`\n  ${BOLD}Current Job:${RESET}`);
           console.log(`    ID:      ${d.currentJob.id}`);
           console.log(`    Skills:  ${d.currentJob.skills.map((s: string) => `/${s}`).join(", ")}`);
           console.log(`    Started: ${d.currentJob.startedAt}`);
-          console.log(`    Cost:    $${d.currentJob.costUsd.toFixed(3)}`);
+          console.log(`    Cost:    $${(d.currentJob.costUsd ?? 0).toFixed(3)}`);
         }
 
         if (d.oracleHealth) {
