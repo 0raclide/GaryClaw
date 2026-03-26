@@ -43,12 +43,12 @@ export function startSegment(options: SegmentOptions): AsyncIterable<SDKMessage>
 export function extractTurnUsage(msg: SDKMessage): SdkUsage | null {
   if (msg.type !== "assistant") return null;
   const usage = (msg as any).message?.usage;
-  if (!usage) return null;
+  if (!usage || typeof usage !== "object") return null;
   return {
-    input_tokens: usage.input_tokens,
-    output_tokens: usage.output_tokens,
-    cache_read_input_tokens: usage.cache_read_input_tokens,
-    cache_creation_input_tokens: usage.cache_creation_input_tokens,
+    input_tokens: typeof usage.input_tokens === "number" ? usage.input_tokens : 0,
+    output_tokens: typeof usage.output_tokens === "number" ? usage.output_tokens : 0,
+    cache_read_input_tokens: typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : 0,
+    cache_creation_input_tokens: typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : 0,
   };
 }
 
@@ -59,13 +59,13 @@ export function extractResultData(msg: SDKMessage): SegmentResult | null {
   if (msg.type !== "result") return null;
   const m = msg as any;
   return {
-    sessionId: m.session_id ?? "",
-    subtype: m.subtype ?? "",
-    resultText: m.result ?? "",
-    usage: m.usage ?? null,
-    modelUsage: m.modelUsage ?? null,
-    totalCostUsd: m.total_cost_usd ?? 0,
-    numTurns: m.num_turns ?? 0,
+    sessionId: typeof m.session_id === "string" ? m.session_id : "",
+    subtype: typeof m.subtype === "string" ? m.subtype : "",
+    resultText: typeof m.result === "string" ? m.result : "",
+    usage: m.usage && typeof m.usage === "object" ? m.usage : null,
+    modelUsage: m.modelUsage && typeof m.modelUsage === "object" ? m.modelUsage : null,
+    totalCostUsd: typeof m.total_cost_usd === "number" ? m.total_cost_usd : 0,
+    numTurns: typeof m.num_turns === "number" ? m.num_turns : 0,
   };
 }
 
