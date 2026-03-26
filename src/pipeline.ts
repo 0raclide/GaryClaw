@@ -13,14 +13,13 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { runSkill } from "./orchestrator.js";
-import { buildReport, formatReportMarkdown } from "./report.js";
+import { buildReport } from "./report.js";
 import { readCheckpoint } from "./checkpoint.js";
 
 import type {
   GaryClawConfig,
   OrchestratorCallbacks,
   PipelineState,
-  PipelineSkillEntry,
   PipelineReport,
   RunReport,
   Checkpoint,
