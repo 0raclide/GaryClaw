@@ -229,7 +229,7 @@ export function createJobRunner(
     } catch (err) {
       nextJob.status = "failed";
       nextJob.completedAt = new Date().toISOString();
-      nextJob.error = err instanceof Error ? err.message : String(err);
+      nextJob.error = err instanceof Error ? err.message : String(err ?? "");
 
       // Classify the failure
       const classification = classifyError(err);
