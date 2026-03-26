@@ -328,6 +328,16 @@ export const ORACLE_MEMORY_BUDGETS = {
   memoryMd: 6_000,
 } as const;
 
+// ── Domain research ─────────────────────────────────────────────
+
+export interface DomainSection {
+  topic: string;
+  lastResearched: string;
+  searchCount: number;
+  partial: boolean;
+  content: string;
+}
+
 // ── SDK message types (loosely typed for pre-1.0 safety) ────────
 
 export interface SdkUsage {
