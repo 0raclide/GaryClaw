@@ -657,3 +657,156 @@ describe("helper functions (via exports)", () => {
     expect((toolEvent as any).inputSummary).toMatch(/\.\.\.$/);
   });
 });
+
+describe("AbortSignal mid-run", () => {
+  it("aborts between segments when signal fires mid-execution", async () => {
+    const controller = new AbortController();
+    const resultMsg1 = makeResultMsg("max_turns");
+
+    let segmentCall = 0;
+    vi.mocked(startSegment).mockImplementation(() => {
+      segmentCall++;
+      if (segmentCall === 1) {
+        // After first segment completes, abort the signal
+        controller.abort();
+        return makeSegmentIterator([resultMsg1]);
+      }
+      // Should never reach here
+      return makeSegmentIterator([makeResultMsg("success")]);
+    });
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: msg.subtype, resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 1,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig({ abortSignal: controller.signal }), callbacks);
+
+    expect(callbacks.events).toContainEqual(
+      expect.objectContaining({ type: "error", message: "Aborted by signal", recoverable: false }),
+    );
+    // Should have started only 1 segment (aborted before second)
+    expect(startSegment).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("checkpoint quadratic regression", () => {
+  it("checkpoint data does not duplicate across multiple relays", async () => {
+    // This test verifies the quadratic growth fix by checking that
+    // writeCheckpoint is called with non-duplicated data across relays.
+    // Simulate: segment 1 sets contextWindow, segment 2 triggers relay,
+    // segment 3 (new session) triggers relay again, segment 4 succeeds.
+
+    let segmentCall = 0;
+    vi.mocked(startSegment).mockImplementation(() => {
+      segmentCall++;
+      if (segmentCall <= 2) {
+        return makeSegmentIterator([
+          makeAssistantTextMsg("Working..."),
+          makeResultMsg("max_turns"),
+        ]);
+      }
+      return makeSegmentIterator([makeResultMsg("success")]);
+    });
+
+    vi.mocked(extractTurnUsage).mockImplementation((msg: any) => {
+      if (msg.type === "assistant") {
+        return {
+          input_tokens: 900000,
+          output_tokens: 1000,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        };
+      }
+      return null;
+    });
+
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: msg.subtype, resultText: "ok",
+          usage: null,
+          modelUsage: { "claude-sonnet-4-5-20250929": { contextWindow: 1000000 } },
+          totalCostUsd: 0.1, numTurns: 5,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    // writeCheckpoint should be called at least twice (relay + final)
+    const checkpointCalls = vi.mocked(writeCheckpoint).mock.calls;
+    expect(checkpointCalls.length).toBeGreaterThanOrEqual(2);
+
+    // Each checkpoint's decisions array should not contain duplicates
+    // from previous checkpoints (the quadratic growth bug)
+    for (const [checkpoint] of checkpointCalls) {
+      const cp = checkpoint as any;
+      const decisionQuestions = cp.decisions.map((d: any) => d.question);
+      const uniqueQuestions = new Set(decisionQuestions);
+      expect(decisionQuestions.length).toBe(uniqueQuestions.size);
+    }
+  });
+});
+
+describe("relay re-check on first segment", () => {
+  it("triggers relay via re-check after setContextWindow on first segment result", async () => {
+    // The fix: shouldRelay is re-checked after setContextWindow, so relay
+    // can trigger on the first segment even though contextWindow was null
+    // during assistant message processing.
+
+    let segmentCall = 0;
+    vi.mocked(startSegment).mockImplementation(() => {
+      segmentCall++;
+      if (segmentCall === 1) {
+        // First segment: assistant msg with high usage, then result sets contextWindow
+        return makeSegmentIterator([
+          makeAssistantTextMsg("Processing..."),
+          makeResultMsg("max_turns"),
+        ]);
+      }
+      // Second segment (after relay): success
+      return makeSegmentIterator([makeResultMsg("success")]);
+    });
+
+    vi.mocked(extractTurnUsage).mockImplementation((msg: any) => {
+      if (msg.type === "assistant") {
+        return {
+          input_tokens: 900000,
+          output_tokens: 1000,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        };
+      }
+      return null;
+    });
+
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: msg.subtype, resultText: "ok",
+          usage: null,
+          modelUsage: { "claude-sonnet-4-5-20250929": { contextWindow: 1000000 } },
+          totalCostUsd: 0.1, numTurns: 5,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    // Relay should trigger on the first segment (not requiring a second segment)
+    expect(callbacks.events).toContainEqual(
+      expect.objectContaining({ type: "relay_triggered" }),
+    );
+    expect(executeRelay).toHaveBeenCalled();
+  });
+});

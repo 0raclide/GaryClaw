@@ -195,6 +195,14 @@ describe("sendNotification", () => {
     // Uses execFileSync (no shell), so even unescaped content can't inject shell commands
     expect(vi.mocked(execFileSync).mock.calls[0][0]).toBe("osascript");
   });
+
+  it("handles single quotes in message without breaking osascript", () => {
+    sendNotification("Title", "It's a test");
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    // Single quotes pass through unescaped — they're inside AppleScript double quotes
+    expect(script).toContain("It's a test");
+  });
 });
 
 describe("escapeAppleScript", () => {

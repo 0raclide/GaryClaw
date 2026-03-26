@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { prepareRelay, buildRelaySegment, finalizeRelay } from "../src/relay.js";
+import { prepareRelay, buildRelaySegment, finalizeRelay, executeRelay } from "../src/relay.js";
 import { createMockCheckpoint, createMockIssue, resetCounters } from "./helpers.js";
 import type { GaryClawConfig } from "../src/types.js";
 
@@ -90,6 +90,49 @@ describe("relay", () => {
       expect(segment.env).toEqual({ PATH: "/usr/bin" });
       expect(segment.settingSources).toEqual(["project"]);
       expect(segment.resume).toBeUndefined(); // Fresh session, no resume
+    });
+
+    it("uses custom canUseTool when provided", async () => {
+      const checkpoint = createMockCheckpoint({ skillName: "qa" });
+      const config: GaryClawConfig = {
+        skillName: "qa",
+        projectDir: "/test/project",
+        maxTurnsPerSegment: 15,
+        relayThresholdRatio: 0.85,
+        checkpointDir: "/test/.garyclaw",
+        settingSources: ["project"],
+        env: {},
+        askTimeoutMs: 300_000,
+        maxRelaySessions: 10,
+        autonomous: false,
+      };
+
+      const customCanUseTool = async () => ({ behavior: "deny" as const, message: "blocked" });
+      const segment = buildRelaySegment(checkpoint, config, customCanUseTool);
+
+      const result = await segment.canUseTool("Bash", {});
+      expect(result.behavior).toBe("deny");
+      expect(result.message).toBe("blocked");
+    });
+
+    it("falls back to allow-all when no canUseTool provided", async () => {
+      const checkpoint = createMockCheckpoint({ skillName: "qa" });
+      const config: GaryClawConfig = {
+        skillName: "qa",
+        projectDir: "/test/project",
+        maxTurnsPerSegment: 15,
+        relayThresholdRatio: 0.85,
+        checkpointDir: "/test/.garyclaw",
+        settingSources: ["project"],
+        env: {},
+        askTimeoutMs: 300_000,
+        maxRelaySessions: 10,
+        autonomous: false,
+      };
+
+      const segment = buildRelaySegment(checkpoint, config);
+      const result = await segment.canUseTool("Bash", {});
+      expect(result.behavior).toBe("allow");
     });
   });
 

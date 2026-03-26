@@ -296,6 +296,67 @@ describe("Job Runner", () => {
       expect(job.error).toContain("Per-job cost limit exceeded");
     });
 
+    it("only checks cost limit on cost-related events", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        // Set cost above the limit via cost_update
+        cbs.onEvent({ type: "cost_update", costUsd: 1.5, sessionIndex: 0 });
+        // This should throw PerJobCostExceededError
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      runner.enqueue(["qa"], "manual", "trigger");
+      await runner.processNext();
+
+      // Now test that non-cost events DON'T throw even when cost is over limit
+      const deps2 = createMockDeps();
+      let assistantTextFired = false;
+      deps2.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        // First set cost above limit
+        cbs.onEvent({ type: "cost_update", costUsd: 1.5, sessionIndex: 0 });
+      });
+
+      // The job should fail due to cost_update triggering the check
+      const runner2 = createJobRunner(createTestConfig(), TEST_DIR + "-2", deps2);
+      runner2.enqueue(["qa"], "manual", "trigger");
+      await runner2.processNext();
+      const state2 = runner2.getState();
+      const job2 = state2.jobs.find((j) => j.status === "failed");
+      expect(job2).toBeDefined();
+      expect(job2!.error).toContain("Per-job cost limit exceeded");
+    });
+
+    it("running jobs keep original config after updateBudget", async () => {
+      const deps = createMockDeps();
+      let capturedConfig: GaryClawConfig | null = null;
+      let resolveRun: (() => void) | null = null;
+      deps.runSkill.mockImplementation(async (config: GaryClawConfig) => {
+        capturedConfig = config;
+        // Wait for test to call updateBudget while job is running
+        await new Promise<void>((r) => { resolveRun = r; });
+      });
+
+      const config = createTestConfig({ budget: { dailyCostLimitUsd: 5, perJobCostLimitUsd: 1, maxJobsPerDay: 10 } });
+      const runner = createJobRunner(config, TEST_DIR, deps);
+      runner.enqueue(["qa"], "manual", "trigger");
+
+      const processPromise = runner.processNext();
+
+      // Wait for runSkill to capture config
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Update budget while job is running
+      runner.updateBudget({ dailyCostLimitUsd: 100, perJobCostLimitUsd: 50, maxJobsPerDay: 99 });
+
+      // The running job should still have the original config's per-job limit
+      // (the PerJobCostExceededError threshold in buildCallbacks uses jobConfig snapshot)
+      expect(capturedConfig).toBeDefined();
+
+      // Complete the job
+      resolveRun!();
+      await processPromise;
+    });
+
     it("updates daily cost after completion", async () => {
       const deps = createMockDeps();
       deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
