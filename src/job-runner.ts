@@ -94,7 +94,13 @@ export function createJobRunner(
     const today = todayDateStr();
     resetDailyIfNeeded(state, today);
 
-    if (state.dailyCost.jobCount >= currentConfig.budget.maxJobsPerDay) {
+    // Count all jobs enqueued today (any status), not just completed ones.
+    // dailyCost.jobCount only increments on completion, so using it here would
+    // allow unlimited enqueues before any job finishes.
+    const todayJobCount = state.jobs.filter(
+      (j) => j.enqueuedAt.startsWith(today),
+    ).length;
+    if (todayJobCount >= currentConfig.budget.maxJobsPerDay) {
       d.log("warn", `Budget: max jobs/day (${currentConfig.budget.maxJobsPerDay}) reached`);
       return null;
     }
