@@ -55,7 +55,7 @@ import type {
 /**
  * Extract assistant text content from an SDK message for live progress.
  */
-function extractAssistantText(msg: any): string | null {
+export function extractAssistantText(msg: any): string | null {
   if (msg.type !== "assistant") return null;
   const content = msg.message?.content;
   if (!Array.isArray(content)) return null;
@@ -71,7 +71,7 @@ function extractAssistantText(msg: any): string | null {
 /**
  * Extract tool use info from an SDK message for live progress.
  */
-function extractToolUse(msg: any): { toolName: string; inputSummary: string } | null {
+export function extractToolUse(msg: any): { toolName: string; inputSummary: string } | null {
   if (msg.type !== "assistant") return null;
   const content = msg.message?.content;
   if (!Array.isArray(content)) return null;
@@ -87,7 +87,7 @@ function extractToolUse(msg: any): { toolName: string; inputSummary: string } | 
   return null;
 }
 
-function summarizeToolInput(toolName: string, input: Record<string, any>): string {
+export function summarizeToolInput(toolName: string, input: Record<string, any>): string {
   switch (toolName) {
     case "Read":
       return input.file_path ? truncate(input.file_path, 80) : "";
@@ -110,7 +110,7 @@ function summarizeToolInput(toolName: string, input: Record<string, any>): strin
   }
 }
 
-function truncate(s: string, max: number): string {
+export function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 3) + "..." : s;
 }
 
@@ -565,7 +565,7 @@ export async function resumeSkill(
  * The tracker accumulates across sessions, so prevIssues (from the last checkpoint)
  * may already contain issues the tracker also has. Deduplicate to avoid inflation.
  */
-function deduplicateIssues(prevIssues: Issue[], trackerIssues: Issue[]): Issue[] {
+export function deduplicateIssues(prevIssues: Issue[], trackerIssues: Issue[]): Issue[] {
   const seenIds = new Set(prevIssues.map((i) => i.id));
   const newIssues = trackerIssues.filter((i) => !seenIds.has(i.id));
   return [...prevIssues, ...newIssues];

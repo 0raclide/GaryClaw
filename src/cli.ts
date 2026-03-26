@@ -34,7 +34,7 @@ const MAGENTA = "\x1b[35m";
 
 // ── Arg parsing ─────────────────────────────────────────────────
 
-function parseArgs(argv: string[]): {
+export function parseArgs(argv: string[]): {
   command: string;
   subcommand: string;
   skills: string[];
@@ -140,7 +140,7 @@ function parseArgs(argv: string[]): {
 
 // ── Event formatting ────────────────────────────────────────────
 
-function formatEvent(event: OrchestratorEvent): string {
+export function formatEvent(event: OrchestratorEvent): string {
   switch (event.type) {
     case "segment_start":
       return `${DIM}[Session ${event.sessionIndex}] Segment ${event.segmentIndex} starting...${RESET}`;
@@ -249,7 +249,7 @@ async function askUserViaReadline(
   });
 }
 
-function parseSingleAnswer(
+export function parseSingleAnswer(
   answer: string,
   options: { label: string; description: string }[],
 ): string {
@@ -271,7 +271,7 @@ function parseSingleAnswer(
   return trimmed || options[0].label;
 }
 
-function parseMultiSelectAnswer(
+export function parseMultiSelectAnswer(
   answer: string,
   options: { label: string; description: string }[],
 ): string {
@@ -663,7 +663,7 @@ async function main(): Promise<void> {
   process.exit(1);
 }
 
-function formatUptime(seconds: number): string {
+export function formatUptime(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   const h = Math.floor(seconds / 3600);
