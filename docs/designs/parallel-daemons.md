@@ -1,5 +1,5 @@
 ---
-status: DRAFT
+status: ACTIVE
 ---
 # Design: Parallel Daemon Instances
 
@@ -178,16 +178,52 @@ Include instance name in notification title: "GaryClaw [review-bot] Job Complete
 
 ---
 
+## Prerequisite: Reflection Lock
+
+Before parallel daemons can ship, oracle-memory writes during reflection must be protected from concurrent clobber. Two daemon instances reflecting simultaneously would corrupt `decision-outcomes.md` and `metrics.json`.
+
+### `src/reflection-lock.ts` (~60 lines)
+
+Simple file-based advisory lock using `mkdir` (atomic on POSIX — succeeds or fails, no partial state):
+
+```typescript
+export function acquireReflectionLock(oracleMemoryDir: string, timeoutMs?: number): boolean
+// Creates {oracleMemoryDir}/.reflection-lock/ directory
+// If already exists, waits up to timeoutMs (default: 30_000), polling every 500ms
+// Returns true if acquired, false on timeout
+
+export function releaseReflectionLock(oracleMemoryDir: string): void
+// Removes the lock directory. Safe to call even if not held.
+
+export function isReflectionLocked(oracleMemoryDir: string): boolean
+// Check without acquiring
+```
+
+The lock is per oracle-memory directory (project-level). Global oracle-memory doesn't need locking since `domain-expertise.md` and `taste.md` are only written by explicit CLI commands (not reflection).
+
+Wire into `src/reflection.ts` → `runReflection()`: acquire lock before writing, release after. On timeout: skip reflection with warning (non-fatal).
+
+### `test/reflection-lock.test.ts` (~10 tests)
+
+- Acquire and release
+- Double acquire from same process succeeds (reentrant check via PID file inside lock dir)
+- Timeout when lock held by another (simulate with pre-created dir)
+- Release when not held (no-op)
+- `isReflectionLocked` true/false
+
 ## Implementation order
 
-1. **`src/types.ts`** — add `GlobalBudget`, `InstanceInfo`, `name` to `DaemonConfig`, `"instances"` to `IPCRequest`
-2. **`src/daemon-registry.ts` + `test/daemon-registry.test.ts`** — registry, global budget, cross-instance dedup
-3. **`src/job-runner.ts`** — integrate global budget + cross-instance dedup
-4. **`src/daemon.ts`** — instance-aware directories, config fallback, registry integration
-5. **`src/notifier.ts`** — instance name in notifications
-6. **`src/cli.ts`** — `--name`, `--all`, `daemon list`, instance-aware subcommands
-7. **Update tests** — job-runner, daemon, notifier
-8. **`CLAUDE.md`** — update docs
+1. **`src/reflection-lock.ts` + tests** — advisory lock for oracle-memory writes
+2. **`src/reflection.ts`** — wire lock into `runReflection()`
+3. **`src/types.ts`** — add `GlobalBudget`, `InstanceInfo`, `name` to `DaemonConfig`, `"instances"` to `IPCRequest`
+4. **`src/daemon-registry.ts` + `test/daemon-registry.test.ts`** — registry, global budget, cross-instance dedup
+5. **`src/job-runner.ts`** — integrate global budget + cross-instance dedup
+6. **`src/daemon.ts`** — instance-aware directories, config fallback, registry integration, migration from flat layout
+7. **`src/notifier.ts`** — instance name in notifications
+8. **`src/pipeline.ts`** — git HEAD check at skill boundaries (minimal fix for cross-pipeline coordination)
+9. **`src/cli.ts`** — `--name`, `--all`, `daemon list`, instance-aware subcommands
+10. **Update tests** — job-runner, daemon, notifier, pipeline
+11. **`CLAUDE.md`** — update docs
 
 ---
 

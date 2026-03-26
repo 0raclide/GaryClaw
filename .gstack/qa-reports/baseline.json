@@ -1,25 +1,26 @@
 {
   "date": "2026-03-26",
   "url": "CLI (test suite)",
-  "healthScore": 97,
-  "run": 7,
+  "healthScore": 98,
+  "run": 8,
   "issues": [
-    { "id": "ISSUE-001", "title": "TypeScript compilation error in cron poller closure", "severity": "high", "category": "functional", "status": "fixed", "commit": "a0609b4" },
-    { "id": "ISSUE-002", "title": "Null msg crashes SDK message helper functions", "severity": "medium", "category": "type-safety", "status": "fixed", "commit": "1854db5" },
-    { "id": "ISSUE-003", "title": "Unbounded description length in findRelatedIssue", "severity": "medium", "category": "defensive-programming", "status": "fixed", "commit": "e2f0801" }
+    { "id": "ISSUE-001", "title": "Coverage gaps in daemon.ts, safe-json.ts, pipeline.ts", "severity": "medium", "category": "test-coverage", "status": "fixed", "commit": "f47519e" },
+    { "id": "ISSUE-002", "title": "cli.ts has 36.7% statement coverage", "severity": "low", "category": "test-coverage", "status": "deferred" }
   ],
   "categoryScores": {
     "testSuite": 100,
-    "typeSafety": 95,
-    "errorHandling": 95,
+    "typeSafety": 100,
+    "errorHandling": 100,
     "functional": 100,
     "codeQuality": 97,
     "documentation": 95
   },
   "testStats": {
-    "files": 37,
-    "tests": 873,
-    "passing": 873,
-    "duration": "2.60s"
+    "files": 39,
+    "tests": 901,
+    "passing": 901,
+    "duration": "2.58s",
+    "statementCoverage": 83.61,
+    "branchCoverage": 89.63
   }
 }

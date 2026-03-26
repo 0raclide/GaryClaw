@@ -1,10 +1,10 @@
-# QA Report — GaryClaw (Run 2)
+# QA Report — GaryClaw (Run 3)
 
 **Date:** 2026-03-26
 **Branch:** main
 **Mode:** Code QA (CLI project, no web UI)
 **Tier:** Standard (critical + high + medium)
-**Duration:** ~5 minutes
+**Duration:** ~8 minutes
 **Test Framework:** Vitest 3.2.4
 
 ---
@@ -13,468 +13,114 @@
 
 | Metric | Value |
 |--------|-------|
-| Total issues found | 15 |
+| Total issues found | 2 |
 | Critical | 0 |
-| High | 1 |
-| Medium | 5 |
-| Low | 8 |
-| Deferred (medium, fragile pattern) | 3 |
-| Fixes applied | 6 (verified: 6, best-effort: 0, reverted: 0) |
-| Deferred issues | 9 |
-| Regression tests added | 13 |
-| Tests before | 309 passing (15 files) |
-| Tests after | 322 passing (16 files) |
+| High | 0 |
+| Medium | 1 |
+| Low | 1 |
+| Fixes applied | 1 (verified: 1, best-effort: 0, reverted: 0) |
+| Deferred issues | 1 |
+| Tests added | 28 (new coverage gap tests) |
+| Tests before | 873 passing (37 files) |
+| Tests after | 901 passing (39 files) |
 | TypeScript errors | 0 |
+| Statement coverage (src/) | 83.5% → 83.6% |
 
-**Health Score: Baseline 98 → Final 100**
-
-**PR Summary:** QA found 15 issues, fixed 6 (1 high + 5 medium), added 13 regression tests. 322 tests passing.
-
----
-
-## Top 3 Things Fixed
-
-1. **ISSUE-001** (High) — Duplicate issues across relay checkpoints — tracker accumulated across sessions while prevIssues already contained prior data → inflated relay prompts
-2. **ISSUE-006** (Medium) — Jobs array grew unbounded in daemon state → disk/memory growth over time
-3. **ISSUE-004** (Medium) — Unhandled async rejections in IPC server → could crash daemon process
+**Health Score: Baseline 98 → Final 98**
 
 ---
 
-## Fixed Issues
+## Issues Found
 
-### ISSUE-001: Duplicate issues across relay checkpoints
-- **Severity:** High
-- **Category:** Logic Bug
-- **File:** `src/orchestrator.ts`
-- **Fix Status:** ✅ verified
-- **Commit:** `97fa9f5`
-- **Description:** `IssueTracker` is created once outside the session loop and accumulates across all sessions. `buildCheckpoint` merged `[...prevIssues, ...issueTracker.getIssues()]`, but `prevIssues` from the last checkpoint already contained the tracker's earlier issues. Result: duplicates after each relay, wasting relay prompt tokens.
-- **Fix:** Added `deduplicateIssues()` helper that filters tracker issues already present in `prevIssues` by ID.
-- **Regression test:** 3 tests in `test/qa-regressions.regression-1.test.ts`
+### ISSUE-001: Coverage gaps in daemon.ts, safe-json.ts, pipeline.ts [medium] — FIXED
 
-### ISSUE-004: Unhandled async rejection in IPC handler
-- **Severity:** Medium
-- **Category:** Error Handling
-- **File:** `src/daemon-ipc.ts`
-- **Fix Status:** ✅ verified
-- **Commit:** `55a9104`
-- **Description:** `handleRequest()` is async but called without `await` from `data` and `end` event handlers. If it rejected after the inner try/catch, the unhandled promise rejection could crash the daemon.
-- **Fix:** Added `.catch(() => {})` to both call sites.
+**Severity:** Medium
+**Category:** Test Coverage
+**Status:** verified
 
-### ISSUE-005: Daemon log grows unbounded
-- **Severity:** Medium
-- **Category:** Resource Leak
-- **File:** `src/daemon.ts`
-- **Fix Status:** ✅ verified
-- **Commit:** `2c9c8db`
-- **Description:** The daemon logger appends to `daemon.log` indefinitely with no rotation or size limit.
-- **Fix:** Added log rotation at 10 MB — renames current log to `.1` and starts fresh.
+**Problem:** Several source modules had uncovered code paths:
+- `daemon.ts` log rotation (10MB threshold) — untested
+- `safe-json.ts` corrupt file backup inner catch block — untested
+- `pipeline.ts` `buildPipelineReport` and `formatPipelineReportMarkdown` — untested
+- `pipeline.ts` context handoff with empty/populated reports — untested
+- `daemon.ts` unknown log level handling — untested
+- `daemon.ts` buildIPCHandler designDoc passthrough — untested
+- `daemon.ts` null/non-object trigger validation — untested
 
-### ISSUE-006: Jobs array grows unbounded
-- **Severity:** Medium
-- **Category:** Resource Leak
-- **File:** `src/job-runner.ts`
-- **Fix Status:** ✅ verified
-- **Commit:** `1260663`
-- **Description:** Completed/failed jobs pushed to `state.jobs` and never pruned. State file and `find()` calls grow linearly with total jobs ever run.
-- **Fix:** Added `pruneOldJobs()` that keeps only the most recent 100 finished jobs. Queued/running jobs are never pruned.
-- **Regression test:** 4 tests in `test/qa-regressions.regression-1.test.ts`
+**Fix:** Added 28 new tests across 3 test files:
+- `test/safe-json-extended.test.ts` (13 tests) — corrupt JSON recovery, text I/O edge cases, validation
+- `test/pipeline-extended.test.ts` (10 tests) — skill failure state persistence, context handoff, report formatting, issue deduplication
+- `test/daemon-extended.test.ts` (5 new tests appended) — log rotation, unknown log level, unwritable path, designDoc passthrough, null triggers
 
-### ISSUE-011: "Other" option returns raw number string
-- **Severity:** Medium
-- **Category:** Functional Bug
-- **File:** `src/cli.ts`
-- **Fix Status:** ✅ verified
-- **Commit:** `8de31ef`
-- **Description:** Selecting the "Other" option returned the raw number string (e.g., `"5"`) instead of prompting for custom input.
-- **Fix:** Added a follow-up readline prompt "Enter your answer:" when "Other" is selected.
+**Impact:** Branch coverage improved: pipeline 95.89% → 97.33%, safe-json 86.15% → 89.23%
 
-### ISSUE-015: No NaN validation on CLI numeric args
-- **Severity:** Medium
-- **Category:** Input Validation
-- **File:** `src/cli.ts`
-- **Fix Status:** ✅ verified
-- **Commit:** `111def1`
-- **Description:** `--max-turns`, `--threshold`, `--max-sessions` parsed without NaN checks. Invalid values caused unpredictable SDK behavior.
-- **Fix:** Added validation with clear error messages and `process.exit(1)` on invalid values.
-- **Regression test:** 6 tests in `test/qa-regressions.regression-1.test.ts`
+**Commit:** `f47519e` — `test(qa): add 28 tests for coverage gaps in daemon, safe-json, pipeline`
 
 ---
 
-## Deferred Issues (Low severity / fragile patterns)
+### ISSUE-002: cli.ts has 36.7% statement coverage [low] — DEFERRED
 
-| ID | Severity | Description |
-|----|----------|-------------|
-| ISSUE-002 | Medium | Git log injection via unsanitized ref strings in `issue-extractor.ts` — safe today (hex hashes) but fragile if checkpoints tampered with |
-| ISSUE-003 | Medium | Relay `canUseTool` propagation is effectively dead code |
-| ISSUE-007 | Low | IPC `end` handler writes to ended connection — malformed client gets no response |
-| ISSUE-008 | Low | `process.env` type assertion hides `undefined` values |
-| ISSUE-009 | Low | `relay_complete` event emitted before stash pop — cosmetic ordering |
-| ISSUE-010 | Low | `estimatedCostUsd` overwrites per-session — depends on SDK cumulative behavior |
-| ISSUE-012 | Low | Duplicate `process.env` type assertion in CLI |
-| ISSUE-013 | Medium | Decisions may duplicate in reports via `mergeDecisions` concatenation |
-| ISSUE-014 | Medium | Shell interpolation in `relay.ts` git stash — safe but fragile pattern |
+**Severity:** Low
+**Category:** Test Coverage
+**Status:** deferred
 
----
+**Problem:** `cli.ts` has 36.7% statement coverage. The gap is almost entirely the `main()` function (lines 419-844), which:
+- Creates readline interfaces
+- Calls `process.exit()`
+- Forks child processes
+- Reads from stdin
 
-## Commits
+These are integration-level behaviors that are inherently difficult to unit test without mocking the entire process lifecycle.
 
-| Commit | Description |
-|--------|-------------|
-| `97fa9f5` | fix(qa): ISSUE-001 — deduplicate issues across relay checkpoints |
-| `55a9104` | fix(qa): ISSUE-004 — catch unhandled async rejections in IPC handler |
-| `2c9c8db` | fix(qa): ISSUE-005 — add log rotation to daemon logger |
-| `1260663` | fix(qa): ISSUE-006 — prune old jobs to prevent unbounded state growth |
-| `8de31ef` | fix(qa): ISSUE-011 — prompt for custom input when "Other" is selected |
-| `111def1` | fix(qa): ISSUE-015 — validate CLI numeric args for NaN |
-| `82af3b3` | test(qa): regression tests for ISSUE-001, ISSUE-006, ISSUE-015 |
+**Mitigating factors:**
+- All _exported_ functions in cli.ts are well-tested (77 tests for parseArgs, formatEvent, parseSingleAnswer, parseMultiSelectAnswer, formatUptime)
+- The `main()` function is a thin orchestration layer that delegates to well-tested modules (orchestrator, pipeline, daemon)
+- The spike scripts (0% coverage) are proof-of-concept scripts, not production code
+
+**Recommendation:** Consider an integration test that spawns the CLI as a child process and asserts on stdout/exit codes. However, this would require SDK mocking at the process level.
 
 ---
 
-## Health Score
+## Remaining Coverage Gaps (informational)
 
-| Category | Weight | Score | Notes |
-|----------|--------|-------|-------|
-| Functional | 30% | 100 | All logic bugs fixed |
-| Robustness | 25% | 100 | IPC crash risk fixed, log rotation added |
-| Code Quality | 20% | 100 | Clean TS, no dead code |
-| Test Coverage | 15% | 100 | 322 tests across 16 files |
-| Security | 10% | 95 | API key stripping good; git log injection deferred |
+| Module | Stmts | Uncovered | Why |
+|--------|-------|-----------|-----|
+| cli.ts | 36.7% | main() function | Integration code: readline, process.exit, child_process.fork |
+| daemon.ts | 69.5% | startDaemon() | Process lifecycle: PID files, signal handlers, IPC server |
+| oracle.ts | 86.5% | createSdkOracleQueryFn | Requires real SDK (dynamic import) |
+| sdk-wrapper.ts | 82.1% | startSegment | Thin wrapper around SDK query() |
+| daemon-ipc.ts | 81.0% | sendIPCRequest fallback paths | Requires timing-sensitive socket behavior |
+| Spikes (4 files) | 0% | All | Proof-of-concept scripts, not production code |
 
-**Final Score: 99/100**
-
----
-
-# QA Report — GaryClaw (Run 3: Test Coverage Deep-Dive)
-
-**Date:** 2026-03-26
-**Branch:** main
-**Mode:** Test suite analysis (no web UI)
-**Tier:** Standard
-**Duration:** ~15 min
-**Test Framework:** Vitest 3.2.4
+All remaining uncovered code is either:
+1. **Integration-level** (process lifecycle, SDK calls) — testing requires real infrastructure
+2. **Defensive catch blocks** (error paths that are non-fatal) — difficult to trigger deterministically
+3. **Non-production code** (spike scripts)
 
 ---
 
-## Summary
+## Test Suite Health
 
-| Metric | Before (Run 2) | After (Run 3) |
-|--------|-----------------|----------------|
-| **Test files** | 16 | 22 |
-| **Tests** | 322 | 516 |
-| **Passing** | 322/322 (100%) | 516/516 (100%) |
-| **Modules with test coverage** | 14/17 | 17/17 |
-| **New tests written** | — | 194 |
-| **Source bugs found** | — | 1 (ISSUE-016) |
+```
+Test Files:  39 passed (39)
+Tests:       901 passed (901)
+Duration:    2.58s
+Framework:   Vitest 3.2.4
+```
 
----
-
-## Issue Found & Fixed
-
-### ISSUE-016: maxJobsPerDay counted only completed jobs, not enqueued
-
-- **Severity:** High
-- **Category:** Functional — budget enforcement
-- **Status:** ✅ verified
-- **Commit:** `7ad554d`
-- **Files Changed:** `src/job-runner.ts`, `test/job-runner.test.ts`
-- **Description:** `enqueue()` checked `state.dailyCost.jobCount` to enforce `maxJobsPerDay`, but `jobCount` only increments after a job completes in `processNext()`. This allowed unlimited jobs to be enqueued before any finished — the budget gate was effectively open during the first batch.
-- **Fix:** Count all jobs enqueued today (`state.jobs.filter(j => j.enqueuedAt.startsWith(today)).length`) instead of relying on the completion counter.
-- **Regression test:** `test/job-runner.regression-2.test.ts` (3 tests)
+All 901 tests pass. No flaky tests detected. Test execution time is fast (~2.6s).
 
 ---
 
-## Coverage Gaps Identified & Fixed
+## Code Quality Observations
 
-### Critical — Previously untested modules
-
-| Module | Gap | Tests Added | File |
-|--------|-----|-------------|------|
-| `src/cli.ts` | **No test file at all** — arg parsing, event formatting, answer parsing, uptime formatting | 63 | `test/cli.test.ts` |
-| `src/orchestrator.ts` | Internal helpers: `extractAssistantText`, `extractToolUse`, `summarizeToolInput`, `truncate`, `deduplicateIssues` | 38 | `test/orchestrator-helpers.test.ts` |
-
-### Important — Under-tested modules
-
-| Module | Gap | Tests Added | File |
-|--------|-----|-------------|------|
-| `src/daemon.ts` | Logger rotation, buildIPCHandler edge cases, config validation, PID helpers | 41 | `test/daemon-extended.test.ts` |
-| `src/oracle.ts` | Prompt construction, response parsing, confidence clamping, security keywords | 32 | `test/oracle-extended.test.ts` |
-| `src/job-runner.ts` | `pruneOldJobs`, `updateBudget`, per-job cost enforcement, stale recovery | 17 | `test/job-runner-extended.test.ts` |
-
-### Source changes for testability
-
-Exported pure functions (no behavior change):
-- `src/cli.ts`: `parseArgs`, `formatEvent`, `parseSingleAnswer`, `parseMultiSelectAnswer`, `formatUptime`
-- `src/orchestrator.ts`: `extractAssistantText`, `extractToolUse`, `summarizeToolInput`, `truncate`, `deduplicateIssues`
+1. **Type safety is strong** — minimal `as any` usage (18 total, mostly in SDK interop and test mocks)
+2. **Error handling is comprehensive** — all catch blocks are intentional (non-fatal fallbacks with clear comments)
+3. **No null dereference risks found** — consistent null guards throughout
+4. **Pipeline status uses `"complete"` (not `"completed"`)** — consistent within the codebase, matches `PipelineSkillStatus` type
 
 ---
 
-## Remaining Coverage Gaps (Deferred)
+## PR Summary
 
-| Module | Gap | Reason |
-|--------|-----|--------|
-| `src/daemon.ts` | `startDaemon()` full lifecycle | Requires process fork + signal handling — integration test |
-| `src/cli.ts` | `main()`, `askUserViaReadline()` | Uses `process.exit()`, `readline` — needs integration harness |
-| `src/sdk-wrapper.ts` | Real SDK integration | By design — all unit tests use synthetic data |
-| `src/relay.ts` | Git merge conflict scenario | Needs real git repo with conflicting changes |
-
----
-
-## Commits (Run 3)
-
-| SHA | Message |
-|-----|---------|
-| `7ad554d` | `fix(qa): ISSUE-001 — maxJobsPerDay counted completions not enqueues` |
-| `91c635b` | `test(qa): comprehensive test coverage expansion — 191 new tests` |
-
----
-
-## Health Score
-
-| Category | Weight | Score | Notes |
-|----------|--------|-------|-------|
-| Functional | 30% | 100 | All logic bugs fixed |
-| Robustness | 25% | 100 | Error handling solid |
-| Code Quality | 20% | 100 | Clean TS, pure functions exported |
-| Test Coverage | 15% | 95 | 516 tests, all 17 modules covered; integration tests deferred |
-| Security | 10% | 95 | API key stripping good; git injection deferred |
-
-**Final Score: 99/100**
-
-**PR Summary:** QA Run 3 found 1 bug (budget enforcement gap in job runner), fixed it, and expanded test coverage from 322 → 516 tests across 22 files. All 17 source modules now have dedicated test coverage.
-
----
-
-# QA Report — GaryClaw (Run 4: Code Hygiene & Dead Code)
-
-**Date:** 2026-03-26
-**Branch:** main
-**Mode:** Codebase health — dead code, repo hygiene, dependency audit
-**Tier:** Standard
-**Duration:** ~5 minutes
-**Test Framework:** Vitest 3.2.4
-
----
-
-## Summary
-
-| Metric | Value |
-|--------|-------|
-| Total issues found | 9 |
-| Fixes applied | 8 (all verified) |
-| Deferred | 1 (spike files — out of scope) |
-| Health score | 89 → 97 |
-| Tests before | 516 passing (22 files) |
-| Tests after | 516 passing (22 files) |
-| TypeScript strict | ✅ Clean (0 errors, 0 unused vars in src/) |
-| npm audit | ✅ 0 vulnerabilities |
-
-**PR Summary:** QA Run 4 found 9 issues (1 high, 8 medium), fixed 8. Removed committed test artifacts, eliminated all dead code from production source. 516 tests still passing, zero TypeScript errors.
-
----
-
-## Fixed Issues
-
-### ISSUE-001: Test temp directory committed to repo
-- **Severity:** High
-- **Category:** Code Hygiene
-- **File:** `.test-jobrunner-tmp-2/daemon-state.json`
-- **Fix Status:** ✅ verified
-- **Commit:** `8914e7e`
-- **Description:** A 250-line test fixture file (`.test-jobrunner-tmp-2/daemon-state.json`) containing synthetic job runner state was tracked in git. This is test output that should never have been committed.
-- **Fix:** Removed from git via `git rm`. Added `.test-*-tmp*/` pattern to `.gitignore` to prevent recurrence.
-
-### ISSUE-002/003: Unused `dirname` import and `totalFixed` variable in checkpoint.ts
-- **Severity:** Medium
-- **Category:** Dead Code
-- **Fix Status:** ✅ verified
-- **Commit:** `68ffbfd`
-- **Description:** `dirname` was imported from `node:path` but never used. `totalFixed` was computed but never referenced in the relay prompt template.
-- **Fix:** Removed both.
-
-### ISSUE-004: Unused `DaemonState` type import in daemon.ts
-- **Severity:** Medium
-- **Category:** Dead Code
-- **Fix Status:** ✅ verified
-- **Commit:** `df7328e`
-- **Fix:** Removed from type import.
-
-### ISSUE-005: Unused `skillName` param in `parseCommitMessage()`
-- **Severity:** Medium
-- **Category:** Dead Code
-- **Fix Status:** ✅ verified
-- **Commit:** `e9c3c83`
-- **Description:** Parameter accepted but never used in function body. Retained in signature (callers pass it) with `_` prefix to signal intentional non-use.
-- **Fix:** Renamed `skillName` → `_skillName`.
-
-### ISSUE-006/007: Unused imports in pipeline.ts
-- **Severity:** Medium
-- **Category:** Dead Code
-- **Fix Status:** ✅ verified
-- **Commit:** `61f0fa9`
-- **Fix:** Removed `formatReportMarkdown` value import and `PipelineSkillEntry` type import.
-
-### ISSUE-008: Unused `JobStatus` type import in job-runner.ts
-- **Severity:** Medium
-- **Category:** Dead Code
-- **Fix Status:** ✅ verified
-- **Commit:** `1a0124d`
-- **Fix:** Removed from type import.
-
-### ISSUE-009: Unused `SdkModelUsageEntry` type import in sdk-wrapper.ts
-- **Severity:** Medium
-- **Category:** Dead Code
-- **Fix Status:** ✅ verified
-- **Commit:** `3fa854c`
-- **Fix:** Removed from type import.
-
----
-
-## Deferred
-
-| Item | Reason |
-|------|--------|
-| 3 unused vars in `src/spikes/*.ts` | Proof-of-concept scripts, not production code |
-
----
-
-## Positive Findings
-
-- **516 tests, 22 files, 2.6s runtime** — excellent coverage and speed
-- **Zero npm vulnerabilities**
-- **Zero TypeScript errors** under strict mode with `--noUnusedLocals --noUnusedParameters` (excluding spikes)
-- **Clean ANTHROPIC_API_KEY handling** — all references strip the key from env (secure pattern)
-- **No credential files** in repo
-- **No TODO/FIXME/HACK comments** in source
-- **Atomic commit history** throughout
-
----
-
-## Health Score
-
-| Category | Weight | Baseline | Final |
-|----------|--------|----------|-------|
-| Tests | 20% | 100 | 100 |
-| TypeScript strict | 15% | 100 | 100 |
-| Dependencies | 10% | 100 | 100 |
-| Dead code | 15% | 40 | 95 |
-| Code hygiene | 15% | 70 | 100 |
-| Security | 15% | 100 | 100 |
-| Documentation | 10% | 90 | 90 |
-| **Weighted Total** | | **89** | **97** |
-
----
-
-# QA Report — GaryClaw (Run 5: Post Eng-Review Verification)
-
-**Date:** 2026-03-26
-**Branch:** main
-**Mode:** Full (CLI project — test suite + TypeScript + code scan)
-**Tier:** Standard (critical + high + medium)
-**Duration:** ~8 min
-**Test Framework:** Vitest 3.2.4
-
----
-
-## Summary
-
-| Metric | Value |
-|--------|-------|
-| Total issues found | 3 |
-| Fixes applied | 3 (verified: 3, best-effort: 0, reverted: 0) |
-| Deferred | 0 |
-| Tests before | 863 across 35 files |
-| Tests after | 873 across 37 files |
-| TypeScript errors | 0 (was 1 before fix) |
-| CLI commands | All working (help, oracle init, replay, daemon status) |
-| Health score | Baseline: 88 → Final: 97 |
-
-**PR Summary:** QA Run 5 found 3 issues (1 high, 2 medium), fixed all 3, added 10 regression tests. 873 tests passing across 37 files. TypeScript compiles clean.
-
----
-
-## Context
-
-This QA run follows the eng review that accepted 11 fixes and committed them. Run 5 verifies those fixes integrated cleanly and scans for any new issues introduced.
-
----
-
-## Fixed Issues
-
-### ISSUE-001: TypeScript compilation error in cron poller closure
-- **Severity:** High
-- **Category:** Functional (build failure)
-- **File:** `src/triggers.ts:269`
-- **Fix Status:** ✅ verified
-- **Commit:** `a0609b4`
-- **Description:** `npx tsc --noEmit` failed with TS2345. `parseCronExpression()` returns `CronSchedule | null`. The early-return null check narrowed the type, but TypeScript doesn't carry narrowing into closures — the `check()` function captured `schedule` but TS still saw it as `CronSchedule | null`.
-- **Fix:** Split into `parsedSchedule` (nullable return) and `schedule` (explicitly typed `CronSchedule` after guard).
-
-### ISSUE-002: Null msg crashes SDK message helper functions
-- **Severity:** Medium
-- **Category:** Defensive programming
-- **File:** `src/orchestrator.ts:65-82`
-- **Fix Status:** ✅ verified
-- **Commit:** `1854db5`
-- **Description:** `extractAssistantText(null)` and `extractToolUse(null)` would throw TypeError: "Cannot read properties of null (reading 'type')". While the SDK normally provides typed messages, edge cases (malformed responses, test harnesses) could pass null.
-- **Fix:** Added `if (!msg || ...)` guard at the top of both functions.
-- **Regression test:** `test/orchestrator-helpers.regression-1.test.ts` (6 tests)
-
-### ISSUE-003: Unbounded description length in reflection keyword matching
-- **Severity:** Medium
-- **Category:** Defensive programming
-- **File:** `src/reflection.ts:244-247`
-- **Fix Status:** ✅ verified
-- **Commit:** `e2f0801`
-- **Description:** `findRelatedIssue()` splits `issue.description` into words and creates a Set. With no length cap, a 100K+ description (from corrupt checkpoint data) could cause memory pressure.
-- **Fix:** Cap description to 2000 chars before keyword matching.
-- **Regression test:** `test/reflection.regression-1.test.ts` (4 tests)
-
----
-
-## Deferred Issues (Low severity — by design)
-
-| # | Description | Severity | Reason |
-|---|-------------|----------|--------|
-| — | `as any` casts in sdk-wrapper.ts, researcher.ts | Low | Intentional SDK compatibility (pre-1.0 SDK) |
-| — | Silent oracle memory catch in orchestrator.ts | Low | By design — graceful degradation |
-| — | Missing overflow check in job-runner cost | Low | Budget enforcement catches before Infinity |
-| — | IPC handled flag pattern (fragile but works) | Low | `handled` boolean already prevents double-processing |
-
----
-
-## Positive Findings
-
-- **873 tests, 37 files, 2.6s runtime** — excellent coverage and speed
-- **Zero TypeScript errors** after ISSUE-001 fix
-- **All CLI commands functional** — help, oracle init, replay, daemon status
-- **Eng review fixes integrated cleanly** — no test regressions
-- **Daemon running and healthy** — reporting 14 total jobs, cost tracking working
-
----
-
-## Health Score
-
-| Category | Weight | Baseline | Final |
-|----------|--------|----------|-------|
-| Console (TS errors) | 15% | 0 (tsc failed) | 100 |
-| Functional | 20% | 92 | 100 |
-| Tests | 20% | 100 | 100 |
-| Code Quality | 15% | 92 | 97 |
-| Type Safety | 10% | 85 | 95 |
-| Error Handling | 10% | 90 | 95 |
-| Documentation | 10% | 95 | 95 |
-| **Weighted Total** | | **88** | **97** |
-
----
-
-## Commits (Run 5)
-
-| SHA | Message |
-|-----|---------|
-| `7de153e` | `fix: implement eng review fixes — proportional truncation, safe-json migration, abort cleanup, tests` |
-| `a0609b4` | `fix(qa): ISSUE-001 — TypeScript compilation error in triggers.ts` |
-| `1854db5` | `fix(qa): ISSUE-002 — add null guard to SDK message helper functions` |
-| `e2f0801` | `fix(qa): ISSUE-003 — cap description length in findRelatedIssue` |
-| `d54ef5e` | `test(qa): regression test for ISSUE-002 — null msg guard` |
-| `f0984f7` | `test(qa): regression test for ISSUE-003 — description length cap` |
+> QA found 2 issues (1 medium, 1 low), fixed 1. Added 28 tests covering daemon, safe-json, and pipeline gaps. 901 tests passing. Health score 98.
