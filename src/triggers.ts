@@ -253,8 +253,9 @@ export function createCronPoller(
   onTrigger: TriggerCallback,
   deps: Partial<CronPollerDeps> = {},
 ): GitPoller | null {
-  const schedule = parseCronExpression(config.expression);
-  if (!schedule) return null;
+  const parsedSchedule = parseCronExpression(config.expression);
+  if (!parsedSchedule) return null;
+  const schedule: CronSchedule = parsedSchedule;
 
   const d = { ...defaultCronDeps, ...deps };
   let timer: ReturnType<typeof globalThis.setInterval> | null = null;
