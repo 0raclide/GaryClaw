@@ -108,6 +108,7 @@ export interface GaryClawConfig {
   maxRelaySessions: number;
   autonomous: boolean;
   abortSignal?: AbortSignal;
+  designDoc?: string;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────
@@ -250,6 +251,7 @@ export interface Job {
   costUsd: number;
   error?: string;
   reportPath?: string;
+  designDoc?: string;
 }
 
 export interface DaemonState {
@@ -262,7 +264,7 @@ export interface DaemonState {
 
 export type IPCRequest =
   | { type: "status" }
-  | { type: "trigger"; skills: string[] }
+  | { type: "trigger"; skills: string[]; designDoc?: string }
   | { type: "queue" };
 
 export interface IPCResponse {
@@ -270,6 +272,53 @@ export interface IPCResponse {
   data?: unknown;
   error?: string;
 }
+
+// ── Oracle memory ────────────────────────────────────────────────
+
+export interface OracleMemoryConfig {
+  globalDir: string;    // ~/.garyclaw/oracle-memory/
+  projectDir: string;   // .garyclaw/oracle-memory/
+  disableMemory?: boolean;  // --no-memory flag
+}
+
+export interface OracleMemoryFiles {
+  taste: string | null;             // taste.md content
+  domainExpertise: string | null;   // domain-expertise.md content
+  decisionOutcomes: string | null;  // decision-outcomes.md content (project only)
+  memoryMd: string | null;          // MEMORY.md content
+}
+
+export interface OracleMetrics {
+  totalDecisions: number;
+  accurateDecisions: number;      // fixed = success
+  neutralDecisions: number;       // skipped/deferred
+  failedDecisions: number;        // reopened = failure
+  accuracyPercent: number;        // accurateDecisions / (accurate + failed) * 100
+  confidenceTrend: number[];      // last 20 confidence scores
+  lastReflectionTimestamp: string | null;
+  circuitBreakerTripped: boolean; // accuracy < 60% → memory disabled
+}
+
+export interface DecisionOutcome {
+  decisionId: string;             // timestamp-based ID
+  timestamp: string;
+  question: string;
+  chosen: string;
+  confidence: number;
+  principle: string;
+  outcome: "success" | "neutral" | "failure";
+  outcomeDetail?: string;
+  relatedFilePath?: string;
+  jobId?: string;
+}
+
+/** Token budget hard caps for oracle memory files (in estimated tokens) */
+export const ORACLE_MEMORY_BUDGETS = {
+  taste: 4_000,
+  domainExpertise: 20_000,
+  decisionOutcomes: 12_000,
+  memoryMd: 6_000,
+} as const;
 
 // ── SDK message types (loosely typed for pre-1.0 safety) ────────
 

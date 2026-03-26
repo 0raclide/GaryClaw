@@ -38,6 +38,7 @@ export interface OracleOutput {
   principle: string;
   isTaste: boolean;
   escalate: boolean;
+  otherProposal?: string;
 }
 
 export interface OracleConfig {
