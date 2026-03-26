@@ -7,18 +7,19 @@ import { mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Job, DaemonConfig } from "../src/types.js";
 
-// Mock execSync to avoid actually sending notifications
+// Mock execFileSync to avoid actually sending notifications
 vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import {
   notifyJobComplete,
   notifyJobError,
   notifyEscalation,
   writeSummary,
   sendNotification,
+  escapeAppleScript,
 } from "../src/notifier.js";
 
 const TEST_DIR = join(process.cwd(), ".test-notifier-tmp");
@@ -64,7 +65,7 @@ function createTestConfig(overrides: Partial<DaemonConfig["notifications"]> = {}
 
 describe("notifyJobComplete", () => {
   beforeEach(() => {
-    vi.mocked(execSync).mockClear();
+    vi.mocked(execFileSync).mockClear();
   });
 
   it("sends notification for completed job", () => {
@@ -72,25 +73,26 @@ describe("notifyJobComplete", () => {
     const config = createTestConfig();
     notifyJobComplete(job, config);
 
-    expect(execSync).toHaveBeenCalledOnce();
-    const cmd = vi.mocked(execSync).mock.calls[0][0] as string;
-    expect(cmd).toContain("display notification");
-    expect(cmd).toContain("/qa finished");
-    expect(cmd).toContain("$0.125");
+    expect(execFileSync).toHaveBeenCalledOnce();
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    expect(script).toContain("display notification");
+    expect(script).toContain("/qa finished");
+    expect(script).toContain("$0.125");
   });
 
   it("skips when notifications disabled", () => {
     const job = createTestJob();
     const config = createTestConfig({ enabled: false });
     notifyJobComplete(job, config);
-    expect(execSync).not.toHaveBeenCalled();
+    expect(execFileSync).not.toHaveBeenCalled();
   });
 
   it("skips when onComplete disabled", () => {
     const job = createTestJob();
     const config = createTestConfig({ onComplete: false });
     notifyJobComplete(job, config);
-    expect(execSync).not.toHaveBeenCalled();
+    expect(execFileSync).not.toHaveBeenCalled();
   });
 
   it("formats multi-skill notification", () => {
@@ -98,16 +100,17 @@ describe("notifyJobComplete", () => {
     const config = createTestConfig();
     notifyJobComplete(job, config);
 
-    const cmd = vi.mocked(execSync).mock.calls[0][0] as string;
-    expect(cmd).toContain("/qa");
-    expect(cmd).toContain("/design-review");
-    expect(cmd).toContain("/ship");
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    expect(script).toContain("/qa");
+    expect(script).toContain("/design-review");
+    expect(script).toContain("/ship");
   });
 });
 
 describe("notifyJobError", () => {
   beforeEach(() => {
-    vi.mocked(execSync).mockClear();
+    vi.mocked(execFileSync).mockClear();
   });
 
   it("sends notification for failed job", () => {
@@ -115,60 +118,100 @@ describe("notifyJobError", () => {
     const config = createTestConfig();
     notifyJobError(job, config);
 
-    expect(execSync).toHaveBeenCalledOnce();
-    const cmd = vi.mocked(execSync).mock.calls[0][0] as string;
-    expect(cmd).toContain("Job Failed");
-    expect(cmd).toContain("Auth expired");
+    expect(execFileSync).toHaveBeenCalledOnce();
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    expect(script).toContain("Job Failed");
+    expect(script).toContain("Auth expired");
   });
 
   it("skips when onError disabled", () => {
     const job = createTestJob({ status: "failed", error: "boom" });
     const config = createTestConfig({ onError: false });
     notifyJobError(job, config);
-    expect(execSync).not.toHaveBeenCalled();
+    expect(execFileSync).not.toHaveBeenCalled();
   });
 });
 
 describe("notifyEscalation", () => {
   beforeEach(() => {
-    vi.mocked(execSync).mockClear();
+    vi.mocked(execFileSync).mockClear();
   });
 
   it("sends escalation notification", () => {
     const config = createTestConfig();
     notifyEscalation("Should we delete the production database?", config);
 
-    expect(execSync).toHaveBeenCalledOnce();
-    const cmd = vi.mocked(execSync).mock.calls[0][0] as string;
-    expect(cmd).toContain("Escalation");
-    expect(cmd).toContain("delete the production database");
+    expect(execFileSync).toHaveBeenCalledOnce();
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    expect(script).toContain("Escalation");
+    expect(script).toContain("delete the production database");
   });
 });
 
 describe("sendNotification", () => {
   beforeEach(() => {
-    vi.mocked(execSync).mockClear();
+    vi.mocked(execFileSync).mockClear();
   });
 
   it("returns true on success", () => {
-    vi.mocked(execSync).mockReturnValue(Buffer.from(""));
+    vi.mocked(execFileSync).mockReturnValue(Buffer.from(""));
     const result = sendNotification("Title", "Message");
     expect(result).toBe(true);
   });
 
   it("returns false when osascript fails", () => {
-    vi.mocked(execSync).mockImplementation(() => {
+    vi.mocked(execFileSync).mockImplementation(() => {
       throw new Error("osascript not found");
     });
     const result = sendNotification("Title", "Message");
     expect(result).toBe(false);
   });
 
+  it("uses execFileSync instead of execSync (no shell injection)", () => {
+    sendNotification("Title", "Message");
+    expect(execFileSync).toHaveBeenCalledWith(
+      "osascript",
+      ["-e", expect.stringContaining("display notification")],
+      expect.any(Object),
+    );
+  });
+
   it("escapes double quotes in title and message", () => {
     sendNotification('Has "quotes"', 'Also "quoted"');
-    const cmd = vi.mocked(execSync).mock.calls[0][0] as string;
-    expect(cmd).toContain('Has \\"quotes\\"');
-    expect(cmd).toContain('Also \\"quoted\\"');
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    expect(script).toContain('Has \\"quotes\\"');
+    expect(script).toContain('Also \\"quoted\\"');
+  });
+
+  it("escapes backslashes to prevent AppleScript injection", () => {
+    sendNotification("Title", 'path\\"; do shell script "evil');
+    const args = vi.mocked(execFileSync).mock.calls[0][1] as string[];
+    const script = args[1];
+    // Backslash is escaped so \" doesn't break out of the AppleScript string
+    expect(script).toContain('path\\\\\\"; do shell script \\"evil');
+    // Uses execFileSync (no shell), so even unescaped content can't inject shell commands
+    expect(vi.mocked(execFileSync).mock.calls[0][0]).toBe("osascript");
+  });
+});
+
+describe("escapeAppleScript", () => {
+  it("escapes double quotes", () => {
+    expect(escapeAppleScript('say "hello"')).toBe('say \\"hello\\"');
+  });
+
+  it("escapes backslashes", () => {
+    expect(escapeAppleScript("path\\to\\file")).toBe("path\\\\to\\\\file");
+  });
+
+  it("escapes both together", () => {
+    expect(escapeAppleScript('a\\"b')).toBe('a\\\\\\"b');
+  });
+
+  it("passes through safe strings unchanged", () => {
+    expect(escapeAppleScript("Hello World 123")).toBe("Hello World 123");
   });
 });
 

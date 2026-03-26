@@ -5,7 +5,7 @@
  * Graceful no-op if osascript is unavailable.
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Job, DaemonConfig } from "./types.js";
@@ -80,14 +80,24 @@ export function writeSummary(job: Job, jobDir: string): void {
 }
 
 /**
+ * Escape a string for embedding in an AppleScript double-quoted string.
+ * AppleScript requires escaping backslashes and double quotes.
+ */
+export function escapeAppleScript(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/**
  * Send a macOS notification via osascript. No-op if unavailable.
+ * Uses execFileSync to avoid shell interpretation (no shell injection).
  */
 export function sendNotification(title: string, message: string): boolean {
   try {
-    const escapedTitle = title.replace(/"/g, '\\"');
-    const escapedMessage = message.replace(/"/g, '\\"');
-    execSync(
-      `osascript -e 'display notification "${escapedMessage}" with title "${escapedTitle}"'`,
+    const escapedTitle = escapeAppleScript(title);
+    const escapedMessage = escapeAppleScript(message);
+    execFileSync(
+      "osascript",
+      ["-e", `display notification "${escapedMessage}" with title "${escapedTitle}"`],
       { timeout: 5000, stdio: "ignore" },
     );
     return true;
