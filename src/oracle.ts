@@ -56,11 +56,15 @@ export interface OracleConfig {
   escalateThreshold: number; // Confidence below this → escalate (default: 6)
 }
 
-// ── Security/destructive keywords for escalation ────────────────
+// ── Security/destructive phrases for escalation ────────────────
+// Phase 4b: Narrowed from broad keywords to specific phrases to reduce
+// false positives (e.g. "token tracking" or "remove unused import").
 
-const ESCALATION_KEYWORDS = [
-  "delete", "drop", "remove", "destroy", "force push", "reset --hard",
-  "production", "deploy", "secret", "credential", "password", "token",
+export const ESCALATION_PHRASES = [
+  "delete", "drop", "destroy", "force push", "reset --hard",
+  "remove database", "remove user", "remove account", "delete permanently",
+  "production", "deploy", "secret", "credential", "password",
+  "api token", "auth token", "secret token", "access token",
   "api key", "security", "vulnerability", "permission", "admin",
   "billing", "payment", "user data", "pii", "gdpr",
 ];
@@ -264,7 +268,7 @@ function shouldEscalateForSecurity(
     .join(" ")
     .toLowerCase();
 
-  return ESCALATION_KEYWORDS.some((kw) => text.includes(kw));
+  return ESCALATION_PHRASES.some((phrase) => text.includes(phrase));
 }
 
 /**
