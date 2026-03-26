@@ -48,7 +48,7 @@ export function safeReadJSON<T>(
     return null;
   }
 
-  return (validate ? parsed : parsed) as T;
+  return parsed as T;
 }
 
 /**

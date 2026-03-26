@@ -64,6 +64,22 @@
 **Depends on:** Phase 5b (quality metrics), Phase 4b (cron baseline)
 **Added by:** /plan-ceo-review on 2026-03-26
 
+## P4: Daemon Shutdown AbortSignal Improvement
+
+**What:** Improve daemon shutdown handler to use AbortSignal propagation instead of polling with setTimeout, so running jobs can be cleanly cancelled rather than waiting 60s for the timeout cap.
+
+**Why:** Current shutdown polls `runner.isRunning()` every 1s for up to 60s. If a job is truly stuck, the daemon exits mid-job. AbortSignal threading (already partially implemented in orchestrator) could enable clean cancellation.
+
+**Pros:** Cleaner shutdown. No orphaned SDK queries. Faster daemon stop.
+
+**Cons:** Low urgency — 60s timeout works in practice for non-stuck jobs.
+
+**Context:** Found by /qa Run 6 on main, 2026-03-26 (ISSUE-004). Already in Phase 4c roadmap.
+
+**Effort:** XS (human: ~1 day / CC: ~15 min)
+**Depends on:** Phase 4a (complete)
+**Added by:** /qa Run 6 on 2026-03-26
+
 ## P4: Narrow Oracle Escalation Keywords
 
 **What:** Replace overly broad `ESCALATION_KEYWORDS` in `src/oracle.ts` (`"token"`, `"remove"`) with more specific patterns (`"api token"`, `"auth token"`, `"remove database"`, `"remove user"`) to reduce false-positive escalations in autonomous mode.
@@ -110,4 +126,20 @@
 
 **Effort:** S (human: ~3 days / CC: ~30 min)
 **Depends on:** Implement skill (complete)
+**Added by:** /plan-eng-review on 2026-03-26
+
+## P3: Auto-Research Trigger (Daemon Integration)
+
+**What:** When the Oracle makes 3+ low-confidence decisions (confidence < 6) in a single job within the same topic area, the daemon auto-enqueues a research session for that topic before the next job runs.
+
+**Why:** Closes the feedback loop: Oracle encounters unfamiliar territory → auto-researches → next job has domain expertise. Currently, domain expertise only gets populated via manual `garyclaw research <topic>`. The auto-trigger makes the system self-improving.
+
+**Pros:** Fully autonomous learning. No human intervention needed to improve Oracle knowledge over time. Topics researched are directly relevant (driven by actual low-confidence decisions, not guesses).
+
+**Cons:** Requires topic extraction heuristic (inferring what topic caused low confidence from the question text). Cold start — needs Phase 5c (manual research) working first. Needs daemon config flag (`autoResearch.enabled`) to gate the behavior.
+
+**Context:** Deferred from Phase 5c plan (2026-03-26). The plan includes the config schema (`autoResearch: { enabled, lowConfidenceThreshold, minDecisionsToTrigger }`) but explicitly defers implementation to after manual research is validated.
+
+**Effort:** S (human: ~3 days / CC: ~30 min)
+**Depends on:** Phase 5c (manual research working), daemon job runner
 **Added by:** /plan-eng-review on 2026-03-26

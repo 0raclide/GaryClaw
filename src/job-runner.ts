@@ -112,10 +112,13 @@ export function createJobRunner(
       return null;
     }
 
-    // Dedup: skip if same skills already queued or running
-    const skillKey = skills.join(",");
+    // Dedup: skip if same skills + designDoc already queued or running
+    const skillKey = designDoc ? `${skills.join(",")};${designDoc}` : skills.join(",");
     const duplicate = state.jobs.find(
-      (j) => (j.status === "queued" || j.status === "running") && j.skills.join(",") === skillKey,
+      (j) => {
+        const jKey = j.designDoc ? `${j.skills.join(",")};${j.designDoc}` : j.skills.join(",");
+        return (j.status === "queued" || j.status === "running") && jKey === skillKey;
+      },
     );
     if (duplicate) {
       d.log("info", `Dedup: skills [${skillKey}] already ${duplicate.status} (${duplicate.id})`);
