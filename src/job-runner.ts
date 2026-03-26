@@ -137,7 +137,7 @@ export function createJobRunner(
 
     // Cross-instance dedup: check if skills are active in ANY other instance
     const skillKey = designDoc ? `${skills.join(",")};${designDoc}` : skills.join(",");
-    if (parentCheckpointDir && isSkillSetActive(parentCheckpointDir, skills, resolvedInstanceName)) {
+    if (parentCheckpointDir && isSkillSetActive(parentCheckpointDir, skills, resolvedInstanceName, designDoc)) {
       d.log("info", `Cross-instance dedup: skills [${skillKey}] already active in another instance`);
       return null;
     }
@@ -259,9 +259,11 @@ function buildGaryClawConfig(
   jobDir: string,
   deps: JobRunnerDeps,
 ): GaryClawConfig {
+  // Named instances use worktree path; default uses main repo
+  const projectDir = config.worktreePath ?? config.projectDir;
   return {
     skillName: job.skills[0],
-    projectDir: config.projectDir,
+    projectDir,
     maxTurnsPerSegment: config.orchestrator.maxTurnsPerSegment,
     relayThresholdRatio: config.orchestrator.relayThresholdRatio,
     checkpointDir: jobDir,
