@@ -20,7 +20,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 5b: COMPLETE** (2026-03-26) — Post-Job Reflection + Quality Tracking
 **Phase 5c: COMPLETE** (2026-03-26) — Domain Expertise Research: researcher module, CLI command, freshness tracking
 **Phase 6: COMPLETE** (2026-03-26) — Parallel Daemon Instances: registry, global budget, cross-instance dedup, reflection lock
-- 23 source modules + CLI
+**Git Worktree Isolation: COMPLETE** (2026-03-26) — Worktree per named instance, branch strategy, fast-forward merge on stop
+- 26 source modules + CLI
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -44,6 +45,12 @@ npx tsx src/cli.ts run plan-ceo-review plan-eng-review implement --autonomous
 # Just implement from design doc (no review step)
 npx tsx src/cli.ts run implement --autonomous
 
+# Prioritize next backlog item (writes .garyclaw/priority.md)
+npx tsx src/cli.ts run prioritize --autonomous
+
+# Full autonomous loop: prioritize → implement → QA
+npx tsx src/cli.ts run prioritize implement qa --autonomous
+
 # Resume from last checkpoint or pipeline
 npx tsx src/cli.ts resume --checkpoint-dir .garyclaw
 
@@ -64,7 +71,8 @@ npx tsx src/cli.ts daemon trigger --name review-bot design-review  # enqueue to 
 npx tsx src/cli.ts daemon log --tail 100           # view default daemon log
 npx tsx src/cli.ts daemon log --name review-bot    # view named instance log
 npx tsx src/cli.ts daemon stop                     # stop default instance
-npx tsx src/cli.ts daemon stop --name review-bot   # stop named instance
+npx tsx src/cli.ts daemon stop --name review-bot   # stop named instance (merges branch)
+npx tsx src/cli.ts daemon stop --name review-bot --cleanup  # stop + remove worktree/branch
 npx tsx src/cli.ts daemon stop --all               # stop all instances
 
 # Domain expertise research
@@ -133,7 +141,10 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics |
 | `src/reflection.ts` | Post-job reflection: decision outcomes, reopened detection, quality metrics |
 | `src/researcher.ts` | Domain expertise research: web search, freshness tracking, section merge |
-| `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon`, multi-skill, daemon subcommands, `--name`/`--all` |
+| `src/implement.ts` | Implement skill: design doc discovery, review context, prompt builder |
+| `src/prioritize.ts` | Prioritize skill: TODOS.md parsing, overnight goal, oracle context, scoring prompt |
+| `src/worktree.ts` | Git worktree isolation: create, remove, merge, list worktrees for parallel instances |
+| `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
 
 ### Key Design Decisions
 
@@ -152,6 +163,8 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Cross-instance dedup** — scans all instance `daemon-state.json` files before local dedup
 - **Reflection lock** — `mkdir`-based advisory lock prevents concurrent reflection writes to oracle-memory
 - **Git HEAD tracking in pipelines** — detects commits between skills and injects context into handoff prompt
+- **Git worktree isolation** — named daemon instances get their own worktree + branch (`garyclaw/{name}`), default instance uses main repo directly
+- **Fast-forward only merge** — on daemon stop, attempt `--ff-only` merge to base branch; if diverged, leave branch for manual merge
 
 ---
 
@@ -199,6 +212,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/oracle-memory.test.ts` | 47 | Two-layer resolution, sanitization, metrics, circuit breaker, outcomes |
 | `test/reflection.test.ts` | 48 | Levenshtein, reopened detection, outcome mapping, reflection runner, sandboxing |
 | `test/researcher.test.ts` | 33 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
+| `test/prioritize.test.ts` | 30 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
+| `test/worktree.test.ts` | 26 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch |
 
 ---
 
@@ -233,6 +248,9 @@ Two-layer memory (global + per-project), `safe-json.ts` shared I/O, `oracle-memo
 
 ### Phase 6: Parallel Daemon Instances — COMPLETE
 Multiple daemon instances running in parallel on the same project. Each instance gets own subdirectory under `.garyclaw/daemons/{name}/` with isolated PID, socket, log, and state files. Shared global budget at `.garyclaw/global-budget.json` with per-instance attribution. Cross-instance dedup prevents duplicate jobs across instances. Advisory reflection lock (mkdir-based) prevents concurrent oracle-memory corruption. Pipeline git HEAD tracking detects commits between skills. CLI gains `--name`, `--all`, and `daemon list`. Backward-compatible migration from flat layout. See `src/daemon-registry.ts`.
+
+### Git Worktree Isolation — COMPLETE
+Each named daemon instance operates in its own git worktree with a dedicated branch (`garyclaw/{name}`). Default instance uses the main repo directly (backward-compatible). On daemon stop, fast-forward merge attempted; if diverged, branch left for manual merge. `--cleanup` flag removes worktree + branch. `daemon list` shows worktree paths. See `src/worktree.ts`.
 
 ### Phase 4b: Scheduling (DEFERRED)
 Cron triggers, config hot-reload via SIGHUP.
