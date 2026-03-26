@@ -264,6 +264,8 @@ export interface Job {
   error?: string;
   reportPath?: string;
   designDoc?: string;
+  failureCategory?: FailureCategory;
+  retryable?: boolean;
 }
 
 export interface DaemonState {
@@ -349,6 +351,31 @@ export const ORACLE_MEMORY_BUDGETS = {
   decisionOutcomes: 12_000,
   memoryMd: 6_000,
 } as const;
+
+// ── Failure Taxonomy ─────────────────────────────────────────────
+
+export type FailureCategory =
+  | "garyclaw-bug"    // Bug in GaryClaw harness code
+  | "skill-bug"       // Skill (gstack skill) misbehavior
+  | "project-bug"     // Target project issue (test failures, lint errors)
+  | "sdk-bug"         // Agent SDK issue (crashes, protocol errors)
+  | "auth-issue"      // Authentication/token expiry
+  | "infra-issue"     // Disk, network, OOM, timeout
+  | "budget-exceeded" // Per-job or daily cost limit hit
+  | "unknown";        // Unclassifiable — conservative fallback
+
+export interface FailureRecord {
+  timestamp: string;
+  jobId: string;
+  skills: string[];
+  category: FailureCategory;
+  retryable: boolean;
+  errorMessage: string;
+  errorName?: string;       // err.name (e.g., "PerJobCostExceededError")
+  stackTrace?: string;      // First 5 lines of stack trace
+  instanceName?: string;    // Daemon instance that ran this job
+  suggestion?: string;      // Human-readable next step
+}
 
 // ── Domain research ─────────────────────────────────────────────
 
