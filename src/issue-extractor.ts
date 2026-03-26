@@ -15,7 +15,10 @@ import type { Issue, IssueSeverity } from "./types.js";
  * Rejects anything with shell metacharacters to prevent injection.
  */
 function isValidGitRef(ref: string): boolean {
-  return /^[a-zA-Z0-9._\-/]+$/.test(ref);
+  // Allow alphanumeric, dots, hyphens, single slashes (for origin/main),
+  // but reject '..' sequences (path traversal) and leading/trailing slashes
+  if (/\.\./.test(ref)) return false;
+  return /^[a-zA-Z0-9._\-/]+$/.test(ref) && !ref.startsWith("/") && !ref.endsWith("/");
 }
 
 // ── Regex patterns ─────────────────────────────────────────────────
