@@ -383,6 +383,28 @@ describe("Job Runner", () => {
     });
   });
 
+  describe("updateBudget", () => {
+    it("applies new budget limits to subsequent enqueue checks", () => {
+      const config = createTestConfig({ budget: { dailyCostLimitUsd: 5, perJobCostLimitUsd: 1, maxJobsPerDay: 1 } });
+      const runner = createJobRunner(config, TEST_DIR, createMockDeps());
+
+      // First enqueue succeeds
+      const id1 = runner.enqueue(["qa"], "manual", "t1");
+      expect(id1).toBeTruthy();
+
+      // Second enqueue blocked by maxJobsPerDay=1
+      const state = runner.getState();
+      state.dailyCost.jobCount = 1;
+      const id2 = runner.enqueue(["ship"], "manual", "t2");
+      expect(id2).toBeNull();
+
+      // Update budget to allow more jobs
+      runner.updateBudget({ dailyCostLimitUsd: 10, perJobCostLimitUsd: 2, maxJobsPerDay: 5 });
+      const id3 = runner.enqueue(["ship"], "manual", "t3");
+      expect(id3).toBeTruthy();
+    });
+  });
+
   describe("daily reset", () => {
     it("resets daily counters on new day", () => {
       const state: DaemonState = {

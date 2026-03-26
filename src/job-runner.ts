@@ -13,6 +13,7 @@ import { runPipeline } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
 import { notifyJobComplete, notifyJobError, writeSummary } from "./notifier.js";
 import type {
+  BudgetConfig,
   DaemonConfig,
   DaemonState,
   Job,
@@ -29,6 +30,8 @@ export interface JobRunner {
   processNext(): Promise<void>;
   getState(): DaemonState;
   isRunning(): boolean;
+  /** Update budget config for hot-reload. Running jobs keep their original config. */
+  updateBudget(budget: BudgetConfig): void;
 }
 
 export interface JobRunnerDeps {
@@ -60,6 +63,7 @@ export function createJobRunner(
   deps: Partial<JobRunnerDeps> = {},
 ): JobRunner {
   const d = { ...defaultDeps, ...deps };
+  let currentConfig = config;
   let state = loadState(checkpointDir);
   let running = false;
 
@@ -82,15 +86,15 @@ export function createJobRunner(
     const today = todayDateStr();
     resetDailyIfNeeded(state, today);
 
-    if (state.dailyCost.jobCount >= config.budget.maxJobsPerDay) {
-      d.log("warn", `Budget: max jobs/day (${config.budget.maxJobsPerDay}) reached`);
+    if (state.dailyCost.jobCount >= currentConfig.budget.maxJobsPerDay) {
+      d.log("warn", `Budget: max jobs/day (${currentConfig.budget.maxJobsPerDay}) reached`);
       return null;
     }
 
     // Budget check: cost headroom
-    const headroom = config.budget.dailyCostLimitUsd - state.dailyCost.totalUsd;
+    const headroom = currentConfig.budget.dailyCostLimitUsd - state.dailyCost.totalUsd;
     if (headroom < 0.001) {
-      d.log("warn", `Budget: daily cost limit ($${config.budget.dailyCostLimitUsd}) reached`);
+      d.log("warn", `Budget: daily cost limit ($${currentConfig.budget.dailyCostLimitUsd}) reached`);
       return null;
     }
 
@@ -136,8 +140,10 @@ export function createJobRunner(
     const jobDir = join(checkpointDir, "jobs", nextJob.id);
     mkdirSync(jobDir, { recursive: true });
 
-    const callbacks = buildCallbacks(nextJob, config, d);
-    const clawConfig = buildGaryClawConfig(config, nextJob, jobDir, d);
+    // Snapshot config at job start — reload-safe: running jobs keep original config
+    const jobConfig = currentConfig;
+    const callbacks = buildCallbacks(nextJob, jobConfig, d);
+    const clawConfig = buildGaryClawConfig(jobConfig, nextJob, jobDir, d);
 
     try {
       if (nextJob.skills.length === 1) {
@@ -157,7 +163,7 @@ export function createJobRunner(
       state.dailyCost.jobCount++;
 
       d.writeSummary(nextJob, jobDir);
-      d.notifyJobComplete(nextJob, config);
+      d.notifyJobComplete(nextJob, jobConfig);
       d.log("info", `Completed ${nextJob.id}: $${nextJob.costUsd.toFixed(3)}`);
     } catch (err) {
       nextJob.status = "failed";
@@ -165,7 +171,7 @@ export function createJobRunner(
       nextJob.error = err instanceof Error ? err.message : String(err);
 
       d.writeSummary(nextJob, jobDir);
-      d.notifyJobError(nextJob, config);
+      d.notifyJobError(nextJob, jobConfig);
       d.log("error", `Failed ${nextJob.id}: ${nextJob.error}`);
     }
 
@@ -173,11 +179,17 @@ export function createJobRunner(
     running = false;
   }
 
+  function updateBudget(budget: BudgetConfig): void {
+    currentConfig = { ...currentConfig, budget };
+    d.log("info", `Budget updated: $${budget.dailyCostLimitUsd}/day, $${budget.perJobCostLimitUsd}/job, ${budget.maxJobsPerDay} jobs/day`);
+  }
+
   return {
     enqueue,
     processNext,
     getState: () => state,
     isRunning: () => running,
+    updateBudget,
   };
 }
 
