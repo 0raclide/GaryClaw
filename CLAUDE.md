@@ -17,10 +17,11 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Structured Issue Extraction: COMPLETE** (2026-03-25) — Real-time + git log hybrid extraction
 **Phase 4a: COMPLETE** (2026-03-25) — Daemon Mode MVP: lifecycle, IPC, job queue, git poll, notifications
 **Phase 5a: COMPLETE** (2026-03-26) — Oracle Memory Infrastructure + Enhanced Oracle Prompt
-- 18 source modules + CLI
+**Phase 5b: COMPLETE** (2026-03-26) — Post-Job Reflection + Quality Tracking
+- 19 source modules + CLI
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
-**Next:** Phase 5b (Post-Job Reflection + Quality Tracking)
+**Next:** Phase 5c (Domain Expertise Research)
 
 ---
 
@@ -104,7 +105,7 @@ CLI (args, readline, display, daemon subcommands)
 | `src/sdk-wrapper.ts` | SDK isolation layer: `startSegment`, `extractTurnUsage`, `buildSdkEnv` |
 | `src/relay.ts` | Git stash + fresh relay segment + stash pop |
 | `src/report.ts` | Merge issues/findings/decisions, markdown report |
-| `src/oracle.ts` | Decision Oracle — 6 Principles, confidence scoring, escalation |
+| `src/oracle.ts` | Decision Oracle — 7 Principles, confidence scoring, escalation, memory injection |
 | `src/issue-extractor.ts` | Hybrid issue extraction from SDK stream + git log |
 | `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state |
 | `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
@@ -115,6 +116,7 @@ CLI (args, readline, display, daemon subcommands)
 | `src/notifier.ts` | macOS notifications via osascript, job summary files |
 | `src/safe-json.ts` | Shared atomic JSON/text I/O — `safeReadJSON`, `safeWriteJSON`, corruption recovery |
 | `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics |
+| `src/reflection.ts` | Post-job reflection: decision outcomes, reopened detection, quality metrics |
 | `src/cli.ts` | `garyclaw run/resume/replay/oracle/daemon`, multi-skill, daemon subcommands |
 
 ### Key Design Decisions
@@ -173,6 +175,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/daemon.test.ts` | 12 | Config validation, PID lifecycle, IPC handler, logger |
 | `test/safe-json.test.ts` | 21 | Atomic write/read, corruption recovery, .bak rename, validation |
 | `test/oracle-memory.test.ts` | 47 | Two-layer resolution, sanitization, metrics, circuit breaker, outcomes |
+| `test/reflection.test.ts` | 48 | Levenshtein, reopened detection, outcome mapping, reflection runner, sandboxing |
 
 ---
 
@@ -199,8 +202,8 @@ Persistent background daemon: `garyclaw daemon start/stop/status/trigger/log`. F
 ### Phase 5a: Oracle Memory Infrastructure — COMPLETE
 Two-layer memory (global + per-project), `safe-json.ts` shared I/O, `oracle-memory.ts` read/write with budget enforcement, 7th Decision Principle ("Local evidence trumps general knowledge"), oracle prompt memory injection, `otherProposal` response parsing, `--no-memory` CLI flag, `garyclaw oracle init` command, circuit breaker (accuracy < 60% disables memory), prompt injection sanitization.
 
-### Phase 5b: Post-Job Reflection + Quality Tracking (NEXT)
-`src/reflection.ts` — post-job reflection runner, decision outcomes tracking, reopened issue detection.
+### Phase 5b: Post-Job Reflection + Quality Tracking — COMPLETE
+`src/reflection.ts` — post-job reflection runner, Levenshtein-based reopened issue detection (normalized distance < 0.3), decision outcome mapping (fixed→success, skipped→neutral, reopened→failure), rolling decision-outcomes.md, metrics accumulation, sandboxed canUseTool for Write-only to oracle-memory dirs, path traversal prevention. Wired into orchestrator post-completion (autonomous + memory enabled).
 
 ### Phase 4b: Scheduling (DEFERRED)
 Cron triggers, config hot-reload via SIGHUP.
