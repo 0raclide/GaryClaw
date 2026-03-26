@@ -102,6 +102,25 @@ describe("parseArgs", () => {
     expect(result.noMemory).toBe(true);
   });
 
+  it("parses --design-doc flag in run command", () => {
+    const result = parseArgs(["node", "cli.ts", "run", "implement", "--design-doc", "docs/designs/my-feature.md"]);
+    expect(result.command).toBe("run");
+    expect(result.skills).toEqual(["implement"]);
+    expect(result.designDoc).toBe("docs/designs/my-feature.md");
+  });
+
+  it("parses --design-doc flag in daemon trigger command", () => {
+    const result = parseArgs(["node", "cli.ts", "daemon", "trigger", "implement", "--design-doc", "plan.md"]);
+    expect(result.command).toBe("daemon");
+    expect(result.subcommand).toBe("trigger");
+    expect(result.designDoc).toBe("plan.md");
+  });
+
+  it("defaults designDoc to undefined", () => {
+    const result = parseArgs(["node", "cli.ts", "run", "qa"]);
+    expect(result.designDoc).toBeUndefined();
+  });
+
   it("parses oracle init command", () => {
     const result = parseArgs(["node", "cli.ts", "oracle", "init"]);
     expect(result.command).toBe("oracle");
