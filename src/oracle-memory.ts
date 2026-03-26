@@ -27,7 +27,6 @@ import type {
   OracleMemoryFiles,
   OracleMetrics,
   DecisionOutcome,
-  ORACLE_MEMORY_BUDGETS,
 } from "./types.js";
 import { ORACLE_MEMORY_BUDGETS as BUDGETS } from "./types.js";
 
@@ -163,9 +162,11 @@ export function readOracleMemory(
     ? readAndSanitize(memoryMdPath, BUDGETS.memoryMd)
     : null;
 
+  // resolveLayered() already sanitizes and truncates via readAndSanitize(),
+  // so no additional truncation needed here.
   return {
-    taste: taste ? truncateToTokenBudget(taste, BUDGETS.taste) : null,
-    domainExpertise: domainExpertise ? truncateToTokenBudget(domainExpertise, BUDGETS.domainExpertise) : null,
+    taste,
+    domainExpertise,
     decisionOutcomes,
     memoryMd,
   };

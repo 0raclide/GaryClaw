@@ -256,7 +256,6 @@ export interface ReflectionResult {
   outcomes: DecisionOutcome[];
   metrics: OracleMetrics;
   reopenedCount: number;
-  skippedPreExisting: number;
 }
 
 /**
@@ -306,7 +305,6 @@ export function runReflection(input: ReflectionInput): ReflectionResult {
     outcomes: newOutcomes,
     metrics,
     reopenedCount: reopenedIds.size,
-    skippedPreExisting: 0, // Pre-5b decisions don't have outcomes to skip
   };
 }
 
