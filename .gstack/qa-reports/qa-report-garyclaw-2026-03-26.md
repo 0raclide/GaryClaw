@@ -242,3 +242,123 @@ Exported pure functions (no behavior change):
 **Final Score: 99/100**
 
 **PR Summary:** QA Run 3 found 1 bug (budget enforcement gap in job runner), fixed it, and expanded test coverage from 322 → 516 tests across 22 files. All 17 source modules now have dedicated test coverage.
+
+---
+
+# QA Report — GaryClaw (Run 4: Code Hygiene & Dead Code)
+
+**Date:** 2026-03-26
+**Branch:** main
+**Mode:** Codebase health — dead code, repo hygiene, dependency audit
+**Tier:** Standard
+**Duration:** ~5 minutes
+**Test Framework:** Vitest 3.2.4
+
+---
+
+## Summary
+
+| Metric | Value |
+|--------|-------|
+| Total issues found | 9 |
+| Fixes applied | 8 (all verified) |
+| Deferred | 1 (spike files — out of scope) |
+| Health score | 89 → 97 |
+| Tests before | 516 passing (22 files) |
+| Tests after | 516 passing (22 files) |
+| TypeScript strict | ✅ Clean (0 errors, 0 unused vars in src/) |
+| npm audit | ✅ 0 vulnerabilities |
+
+**PR Summary:** QA Run 4 found 9 issues (1 high, 8 medium), fixed 8. Removed committed test artifacts, eliminated all dead code from production source. 516 tests still passing, zero TypeScript errors.
+
+---
+
+## Fixed Issues
+
+### ISSUE-001: Test temp directory committed to repo
+- **Severity:** High
+- **Category:** Code Hygiene
+- **File:** `.test-jobrunner-tmp-2/daemon-state.json`
+- **Fix Status:** ✅ verified
+- **Commit:** `8914e7e`
+- **Description:** A 250-line test fixture file (`.test-jobrunner-tmp-2/daemon-state.json`) containing synthetic job runner state was tracked in git. This is test output that should never have been committed.
+- **Fix:** Removed from git via `git rm`. Added `.test-*-tmp*/` pattern to `.gitignore` to prevent recurrence.
+
+### ISSUE-002/003: Unused `dirname` import and `totalFixed` variable in checkpoint.ts
+- **Severity:** Medium
+- **Category:** Dead Code
+- **Fix Status:** ✅ verified
+- **Commit:** `68ffbfd`
+- **Description:** `dirname` was imported from `node:path` but never used. `totalFixed` was computed but never referenced in the relay prompt template.
+- **Fix:** Removed both.
+
+### ISSUE-004: Unused `DaemonState` type import in daemon.ts
+- **Severity:** Medium
+- **Category:** Dead Code
+- **Fix Status:** ✅ verified
+- **Commit:** `df7328e`
+- **Fix:** Removed from type import.
+
+### ISSUE-005: Unused `skillName` param in `parseCommitMessage()`
+- **Severity:** Medium
+- **Category:** Dead Code
+- **Fix Status:** ✅ verified
+- **Commit:** `e9c3c83`
+- **Description:** Parameter accepted but never used in function body. Retained in signature (callers pass it) with `_` prefix to signal intentional non-use.
+- **Fix:** Renamed `skillName` → `_skillName`.
+
+### ISSUE-006/007: Unused imports in pipeline.ts
+- **Severity:** Medium
+- **Category:** Dead Code
+- **Fix Status:** ✅ verified
+- **Commit:** `61f0fa9`
+- **Fix:** Removed `formatReportMarkdown` value import and `PipelineSkillEntry` type import.
+
+### ISSUE-008: Unused `JobStatus` type import in job-runner.ts
+- **Severity:** Medium
+- **Category:** Dead Code
+- **Fix Status:** ✅ verified
+- **Commit:** `1a0124d`
+- **Fix:** Removed from type import.
+
+### ISSUE-009: Unused `SdkModelUsageEntry` type import in sdk-wrapper.ts
+- **Severity:** Medium
+- **Category:** Dead Code
+- **Fix Status:** ✅ verified
+- **Commit:** `3fa854c`
+- **Fix:** Removed from type import.
+
+---
+
+## Deferred
+
+| Item | Reason |
+|------|--------|
+| 3 unused vars in `src/spikes/*.ts` | Proof-of-concept scripts, not production code |
+
+---
+
+## Positive Findings
+
+- **516 tests, 22 files, 2.6s runtime** — excellent coverage and speed
+- **Zero npm vulnerabilities**
+- **Zero TypeScript errors** under strict mode with `--noUnusedLocals --noUnusedParameters` (excluding spikes)
+- **Clean ANTHROPIC_API_KEY handling** — all references strip the key from env (secure pattern)
+- **No credential files** in repo
+- **No TODO/FIXME/HACK comments** in source
+- **Atomic commit history** throughout
+
+---
+
+## Health Score
+
+| Category | Weight | Baseline | Final |
+|----------|--------|----------|-------|
+| Tests | 20% | 100 | 100 |
+| TypeScript strict | 15% | 100 | 100 |
+| Dependencies | 10% | 100 | 100 |
+| Dead code | 15% | 40 | 95 |
+| Code hygiene | 15% | 70 | 100 |
+| Security | 15% | 100 | 100 |
+| Documentation | 10% | 90 | 90 |
+| **Weighted Total** | | **89** | **97** |
