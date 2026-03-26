@@ -63,7 +63,7 @@ import type {
  * Extract assistant text content from an SDK message for live progress.
  */
 export function extractAssistantText(msg: any): string | null {
-  if (msg.type !== "assistant") return null;
+  if (!msg || msg.type !== "assistant") return null;
   const content = msg.message?.content;
   if (!Array.isArray(content)) return null;
   const texts: string[] = [];
@@ -79,7 +79,7 @@ export function extractAssistantText(msg: any): string | null {
  * Extract tool use info from an SDK message for live progress.
  */
 export function extractToolUse(msg: any): { toolName: string; inputSummary: string } | null {
-  if (msg.type !== "assistant") return null;
+  if (!msg || msg.type !== "assistant") return null;
   const content = msg.message?.content;
   if (!Array.isArray(content)) return null;
   for (const block of content) {
