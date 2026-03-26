@@ -334,11 +334,12 @@ export async function startDaemon(checkpointDir: string, instanceName?: string):
   log("info", `Daemon [${name}] starting...`);
 
   // 1. Load config (instance dir → parent dir fallback)
-  const config = loadDaemonConfig(instDir, checkpointDir);
-  if (!config) {
+  const configOrNull = loadDaemonConfig(instDir, checkpointDir);
+  if (!configOrNull) {
     log("error", `Invalid or missing config at ${join(instDir, CONFIG_FILE)} or ${join(checkpointDir, CONFIG_FILE)}`);
     process.exit(1);
   }
+  const config = configOrNull; // Narrow: process.exit above guarantees non-null
 
   // Update logger with config level
   const configLog = createDaemonLogger(instDir, config.logging.level);
