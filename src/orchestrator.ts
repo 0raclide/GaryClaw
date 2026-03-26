@@ -165,6 +165,15 @@ async function runSkillInternal(
     sessionIndex < config.maxRelaySessions;
     sessionIndex++
   ) {
+    // Check abort signal at session boundary
+    if (config.abortSignal?.aborted) {
+      callbacks.onEvent({
+        type: "error",
+        message: "Aborted by signal",
+        recoverable: false,
+      });
+      return;
+    }
     const monitor = createTokenMonitorState();
     const askHandler = createAskHandler({
       onAskUser: callbacks.onAskUser,
@@ -193,6 +202,16 @@ async function runSkillInternal(
 
     // 3. Segment loop (within a session)
     for (let segmentIndex = 0; ; segmentIndex++) {
+      // Check abort signal at segment boundary
+      if (config.abortSignal?.aborted) {
+        callbacks.onEvent({
+          type: "error",
+          message: "Aborted by signal",
+          recoverable: false,
+        });
+        return;
+      }
+
       callbacks.onEvent({
         type: "segment_start",
         sessionIndex,

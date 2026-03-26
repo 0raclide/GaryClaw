@@ -98,6 +98,7 @@ export interface GaryClawConfig {
   askTimeoutMs: number;
   maxRelaySessions: number;
   autonomous: boolean;
+  abortSignal?: AbortSignal;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────
