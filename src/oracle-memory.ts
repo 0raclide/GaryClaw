@@ -362,26 +362,24 @@ export function writeDecisionOutcomesRolling(
 
 /**
  * Truncate text to fit within a token budget.
- * Removes lines from the beginning (oldest content) until under budget.
+ * Uses a direct proportional cut (O(1)) instead of line-by-line removal (O(n²)).
+ * estimateTokens uses chars/4 heuristic, so we can compute target chars directly.
  */
 export function truncateToTokenBudget(content: string, maxTokens: number): string {
   if (estimateTokens(content) <= maxTokens) return content;
 
-  const lines = content.split("\n");
-  // Keep removing oldest lines until under budget
-  while (lines.length > 1 && estimateTokens(lines.join("\n")) > maxTokens) {
-    lines.shift();
+  const maxChars = maxTokens * 4;
+
+  // Slice from the end (keep newest content, drop oldest)
+  const sliced = content.slice(-maxChars);
+
+  // Snap to the next newline to avoid cutting mid-line
+  const firstNewline = sliced.indexOf("\n");
+  if (firstNewline >= 0 && firstNewline < sliced.length - 1) {
+    return sliced.slice(firstNewline + 1);
   }
 
-  // If a single remaining line still exceeds budget, truncate by characters.
-  // estimateTokens uses chars/4 heuristic, so maxTokens * 4 chars ≈ budget.
-  const result = lines.join("\n");
-  if (estimateTokens(result) > maxTokens) {
-    const maxChars = maxTokens * 4;
-    return result.slice(0, maxChars);
-  }
-
-  return result;
+  return sliced;
 }
 
 function defaultMetrics(): OracleMetrics {

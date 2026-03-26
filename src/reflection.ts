@@ -37,8 +37,16 @@ import { safeReadJSON, safeReadText } from "./safe-json.js";
 // ── Levenshtein distance ────────────────────────────────────────
 
 /**
+ * Maximum string length for Levenshtein comparison.
+ * Strings longer than this are considered "not similar" (returns max length)
+ * to prevent O(m*n) memory allocation with pathologically long inputs.
+ */
+const MAX_LEVENSHTEIN_LENGTH = 500;
+
+/**
  * Compute Levenshtein edit distance between two strings.
  * Standard dynamic programming approach, O(m*n) time and space.
+ * Bails out for strings > 500 chars to prevent OOM on corrupt data.
  */
 export function levenshteinDistance(a: string, b: string): number {
   const m = a.length;
@@ -46,6 +54,11 @@ export function levenshteinDistance(a: string, b: string): number {
 
   if (m === 0) return n;
   if (n === 0) return m;
+
+  // Length guard: prevent OOM on pathologically long strings (e.g., stack traces)
+  if (m > MAX_LEVENSHTEIN_LENGTH || n > MAX_LEVENSHTEIN_LENGTH) {
+    return Math.max(m, n);
+  }
 
   const dp: number[][] = Array.from({ length: m + 1 }, () =>
     Array(n + 1).fill(0),

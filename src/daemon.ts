@@ -169,19 +169,27 @@ export function createDaemonLogger(
 
   const MAX_LOG_BYTES = 10 * 1024 * 1024; // 10 MB
 
+  // Track bytes written in-memory to avoid stat() syscall on every log write.
+  // Seed from actual file size on creation, then track incrementally.
+  let bytesWritten = 0;
+  try {
+    if (existsSync(logPath)) {
+      bytesWritten = statSync(logPath).size;
+    }
+  } catch { /* start from 0 */ }
+
   return (msgLevel: string, message: string) => {
     if ((levels[msgLevel] ?? 1) < threshold) return;
     const line = `[${new Date().toISOString()}] [${msgLevel.toUpperCase()}] ${message}\n`;
     try {
-      // Rotate if log exceeds max size: rename current → .1, start fresh
-      if (existsSync(logPath)) {
-        const size = statSync(logPath).size;
-        if (size > MAX_LOG_BYTES) {
-          const rotatedPath = logPath + ".1";
-          try { renameSync(logPath, rotatedPath); } catch { /* ignore */ }
-        }
+      // Rotate if tracked bytes exceed max size
+      if (bytesWritten > MAX_LOG_BYTES) {
+        const rotatedPath = logPath + ".1";
+        try { renameSync(logPath, rotatedPath); } catch { /* ignore */ }
+        bytesWritten = 0;
       }
       appendFileSync(logPath, line, "utf-8");
+      bytesWritten += Buffer.byteLength(line, "utf-8");
     } catch {
       // Can't write to log — silently ignore
     }

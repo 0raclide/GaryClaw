@@ -9,12 +9,13 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { runSkill } from "./orchestrator.js";
 import { buildReport } from "./report.js";
 import { readCheckpoint } from "./checkpoint.js";
+import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
 
 import type {
   GaryClawConfig,
@@ -30,20 +31,11 @@ const PIPELINE_FILE = "pipeline.json";
 // ── Pipeline state persistence ──────────────────────────────────
 
 export function writePipelineState(state: PipelineState, dir: string): void {
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, PIPELINE_FILE), JSON.stringify(state, null, 2), "utf-8");
+  safeWriteJSON(join(dir, PIPELINE_FILE), state);
 }
 
 export function readPipelineState(dir: string): PipelineState | null {
-  const path = join(dir, PIPELINE_FILE);
-  if (!existsSync(path)) return null;
-  try {
-    const data = JSON.parse(readFileSync(path, "utf-8"));
-    if (validatePipelineState(data)) return data;
-    return null;
-  } catch {
-    return null;
-  }
+  return safeReadJSON<PipelineState>(join(dir, PIPELINE_FILE), validatePipelineState);
 }
 
 export function validatePipelineState(data: unknown): data is PipelineState {

@@ -683,6 +683,11 @@ function buildCheckpoint(
     issueTracker.mergeGitLogIssues(gitLogIssues);
   }
 
+  // Deduplicate decisions by timestamp to prevent inflation when
+  // multiple checkpoints are built in the same segment (e.g., error + relay).
+  const prevDecisionTimestamps = new Set(prevDecisions.map((d) => d.timestamp));
+  const newDecisions = decisions.filter((d) => !prevDecisionTimestamps.has(d.timestamp));
+
   return {
     version: 1,
     timestamp: new Date().toISOString(),
@@ -690,7 +695,7 @@ function buildCheckpoint(
     skillName: config.skillName,
     issues: deduplicateIssues(prevIssues, issueTracker.getIssues()),
     findings: prevFindings,
-    decisions: [...prevDecisions, ...decisions],
+    decisions: [...prevDecisions, ...newDecisions],
     gitBranch,
     gitHead,
     tokenUsage: usageSnapshot,

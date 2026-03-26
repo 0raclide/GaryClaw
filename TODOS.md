@@ -80,22 +80,6 @@
 **Depends on:** Phase 4a (complete)
 **Added by:** /qa Run 6 on 2026-03-26
 
-## P4: Narrow Oracle Escalation Keywords
-
-**What:** Replace overly broad `ESCALATION_KEYWORDS` in `src/oracle.ts` (`"token"`, `"remove"`) with more specific patterns (`"api token"`, `"auth token"`, `"remove database"`, `"remove user"`) to reduce false-positive escalations in autonomous mode.
-
-**Why:** Questions about "token tracking" or "remove unused import" currently trigger security escalation, defeating the purpose of autonomous execution.
-
-**Pros:** Fewer false-positive escalations. Smoother autonomous runs.
-
-**Cons:** Risk of missing a real security-sensitive question. Needs careful calibration.
-
-**Context:** Found by /qa Run 4 on main, 2026-03-26. Deferred as low-severity design concern.
-
-**Effort:** XS (human: ~2 hours / CC: ~10 min)
-**Depends on:** None
-**Added by:** /qa on 2026-03-26
-
 ## P3: Oracle Decision Batching (Latency Optimization)
 
 **What:** Batch nearby Oracle decisions into a single API call when multiple AskUserQuestions fire within the same segment. Currently each decision is a separate 40K-token API call (~2-5s). Batching could reduce total Oracle latency by 50-70%.

@@ -103,54 +103,55 @@ export async function runResearch(
     ?.content ?? null;
   const prompt = buildResearchPrompt(config.topic, existingKnowledge);
 
-  // Run SDK session with timeout
+  // Run SDK session with timeout + AbortController for clean cancellation
   let resultText = "";
   let searchesUsed = 0;
   let timedOut = false;
 
-  const timeoutPromise = new Promise<"timeout">((resolve) =>
-    setTimeout(() => resolve("timeout"), config.timeoutMs),
-  );
+  const abortController = new AbortController();
+  const timeoutTimer = setTimeout(() => {
+    abortController.abort();
+  }, config.timeoutMs);
 
   try {
-    const segmentPromise = (async () => {
-      const segment = startSegmentFn({
-        prompt,
-        maxTurns: config.maxSearches,
-        cwd: config.projectDir,
-        env: {},
-        settingSources: ["user", "project"],
-        canUseTool: async (toolName: string, _input: Record<string, unknown>) =>
-          createResearchCanUseTool(toolName),
-      });
+    const segment = startSegmentFn({
+      prompt,
+      maxTurns: config.maxSearches,
+      cwd: config.projectDir,
+      env: {},
+      settingSources: ["user", "project"],
+      canUseTool: async (toolName: string, _input: Record<string, unknown>) =>
+        createResearchCanUseTool(toolName),
+    });
 
-      for await (const msg of segment) {
-        if (msg.type === "assistant") {
-          // Count search tool uses
-          const content = (msg as any).message?.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === "tool_use" && (block.name === "WebSearch" || block.name === "WebFetch")) {
-                searchesUsed++;
-              }
+    for await (const msg of segment) {
+      // Check abort signal between messages
+      if (abortController.signal.aborted) {
+        timedOut = true;
+        break;
+      }
+
+      if (msg.type === "assistant") {
+        // Count search tool uses
+        const content = (msg as any).message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === "tool_use" && (block.name === "WebSearch" || block.name === "WebFetch")) {
+              searchesUsed++;
             }
           }
         }
-        if (msg.type === "result" && (msg as any).subtype === "success") {
-          resultText = (msg as any).result ?? "";
-        }
       }
-      return "done" as const;
-    })();
-
-    const result = await Promise.race([segmentPromise, timeoutPromise]);
-    if (result === "timeout") {
-      timedOut = true;
+      if (msg.type === "result" && (msg as any).subtype === "success") {
+        resultText = (msg as any).result ?? "";
+      }
     }
   } catch (err) {
-    // WebSearch unavailable or other SDK error — graceful degradation
-    const partial = timedOut || resultText.length > 0;
-    if (!resultText) {
+    // Check if this was an abort-triggered error
+    if (abortController.signal.aborted) {
+      timedOut = true;
+    } else if (!resultText) {
+      // WebSearch unavailable or other SDK error — graceful degradation
       // No results at all — return existing content unchanged
       return {
         topic: config.topic,
@@ -161,6 +162,8 @@ export async function runResearch(
         skipped: false,
       };
     }
+  } finally {
+    clearTimeout(timeoutTimer);
   }
 
   // Parse and merge results
@@ -252,14 +255,21 @@ export function parseDomainSections(content: string): DomainSection[] {
 
   const sections: DomainSection[] = [];
 
-  // Split on section boundaries: "---\ntopic:" pattern
-  // Each section starts with --- and ends before the next ---\ntopic: or end of string
-  const sectionRegex = /---\n([\s\S]*?)---\n([\s\S]*?)(?=\n---\ntopic:|\n---\nlast_researched:|$)/g;
+  // Split on "---" delimiter, then pair frontmatter + body chunks.
+  // This avoids complex regex lookaheads and handles any YAML field order.
+  const chunks = content.split("\n---\n");
 
-  let match;
-  while ((match = sectionRegex.exec(content)) !== null) {
-    const frontmatter = match[1];
-    const body = match[2].trim();
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i].trim();
+    // Skip chunks that don't look like frontmatter (e.g., the file header)
+    if (!chunk.includes("topic:")) continue;
+
+    // This chunk is frontmatter; the next chunk (if any) is the body
+    const frontmatter = chunk;
+    const body = (i + 1 < chunks.length ? chunks[i + 1] : "").trim();
+
+    // If body itself contains topic: it's actually another frontmatter block, not a body
+    const isBodyActuallyFrontmatter = body.includes("topic:") && body.includes("last_researched:");
 
     const topic = extractYamlField(frontmatter, "topic");
     const lastResearched = extractYamlField(frontmatter, "last_researched");
@@ -272,8 +282,10 @@ export function parseDomainSections(content: string): DomainSection[] {
         lastResearched: lastResearched || new Date().toISOString(),
         searchCount: isNaN(searchCount) ? 0 : searchCount,
         partial,
-        content: body,
+        content: isBodyActuallyFrontmatter ? "" : body,
       });
+      // Skip the body chunk since we consumed it
+      if (!isBodyActuallyFrontmatter && body) i++;
     }
   }
 

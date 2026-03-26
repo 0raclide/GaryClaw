@@ -40,10 +40,25 @@ vi.mock("node:child_process", () => ({
   execSync: vi.fn().mockReturnValue("main\n"),
 }));
 
+vi.mock("../src/reflection.js", () => ({
+  runReflection: vi.fn().mockReturnValue({ outcomes: [], metrics: { totalDecisions: 0 }, reopenedCount: 0 }),
+}));
+
+vi.mock("../src/oracle-memory.js", () => ({
+  defaultMemoryConfig: vi.fn().mockReturnValue({ globalDir: "/tmp/global", projectDir: "/tmp/project" }),
+  readOracleMemory: vi.fn().mockReturnValue({ taste: null, domainExpertise: null, decisionOutcomes: null, memoryMd: null }),
+  isCircuitBreakerTripped: vi.fn().mockReturnValue(false),
+}));
+
+vi.mock("../src/notifier.js", () => ({
+  sendNotification: vi.fn(),
+}));
+
 import { startSegment, extractTurnUsage, extractResultData, verifyAuth } from "../src/sdk-wrapper.js";
 import { executeRelay } from "../src/relay.js";
 import { writeCheckpoint, readCheckpoint } from "../src/checkpoint.js";
 import { runSkill, runSkillWithInitialPrompt, resumeSkill } from "../src/orchestrator.js";
+import { runReflection } from "../src/reflection.js";
 
 const TEST_DIR = join(tmpdir(), `garyclaw-orch-test-${Date.now()}`);
 
@@ -879,5 +894,74 @@ describe("cost accumulation across relays", () => {
       const lastCostEvent = costEvents[costEvents.length - 1] as any;
       expect(lastCostEvent.costUsd).toBeGreaterThan(0.30); // Must be more than just session 2
     }
+  });
+});
+
+describe("Post-job reflection integration (9A)", () => {
+  function setupSuccessfulSkill() {
+    const resultMsg = makeResultMsg("success");
+    vi.mocked(startSegment).mockReturnValue(
+      makeSegmentIterator([makeAssistantTextMsg("Working..."), resultMsg]),
+    );
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") return msg as SegmentResult;
+      return null;
+    });
+  }
+
+  it("calls runReflection after successful autonomous job with memory enabled", async () => {
+    setupSuccessfulSkill();
+    vi.mocked(runReflection).mockReset();
+
+    const config = createTestConfig({ autonomous: true, noMemory: false });
+    const callbacks = createMockCallbacks();
+    await runSkill(config, callbacks);
+
+    expect(runReflection).toHaveBeenCalledTimes(1);
+    expect(runReflection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectDir: config.projectDir,
+      }),
+    );
+  });
+
+  it("does NOT call runReflection when noMemory is true", async () => {
+    setupSuccessfulSkill();
+    vi.mocked(runReflection).mockReset();
+
+    const config = createTestConfig({ autonomous: true, noMemory: true });
+    const callbacks = createMockCallbacks();
+    await runSkill(config, callbacks);
+
+    expect(runReflection).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call runReflection when not autonomous", async () => {
+    setupSuccessfulSkill();
+    vi.mocked(runReflection).mockReset();
+
+    const config = createTestConfig({ autonomous: false });
+    const callbacks = createMockCallbacks();
+    await runSkill(config, callbacks);
+
+    expect(runReflection).not.toHaveBeenCalled();
+  });
+
+  it("survives reflection failure without crashing the orchestrator", async () => {
+    setupSuccessfulSkill();
+    vi.mocked(runReflection).mockReset();
+    vi.mocked(runReflection).mockImplementation(() => {
+      throw new Error("Reflection I/O failure");
+    });
+
+    const config = createTestConfig({ autonomous: true, noMemory: false });
+    const callbacks = createMockCallbacks();
+
+    // Should not throw
+    await runSkill(config, callbacks);
+
+    // Skill should still complete successfully
+    const completeEvent = callbacks.events.find((e) => e.type === "skill_complete");
+    expect(completeEvent).toBeDefined();
   });
 });
