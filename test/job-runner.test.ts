@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createJobRunner } from "../src/job-runner.js";
+import { createJobRunner, PerJobCostExceededError } from "../src/job-runner.js";
 import type { DaemonConfig, DaemonState, GaryClawConfig, OrchestratorCallbacks } from "../src/types.js";
 
 const TEST_DIR = join(process.cwd(), ".test-jobrunner-tmp");
@@ -276,6 +276,24 @@ describe("Job Runner", () => {
       const state = runner.getState();
       const job = state.jobs.find((j) => j.id === id)!;
       expect(job.costUsd).toBe(0.1);
+    });
+
+    it("fails job when per-job cost limit exceeded", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        // Report cost that exceeds the per-job limit ($1)
+        cbs.onEvent({ type: "cost_update", costUsd: 1.5, sessionIndex: 0 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+
+      await runner.processNext();
+
+      const state = runner.getState();
+      const job = state.jobs.find((j) => j.id === id)!;
+      expect(job.status).toBe("failed");
+      expect(job.error).toContain("Per-job cost limit exceeded");
     });
 
     it("updates daily cost after completion", async () => {

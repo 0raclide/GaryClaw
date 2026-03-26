@@ -136,7 +136,7 @@ export function createJobRunner(
     const jobDir = join(checkpointDir, "jobs", nextJob.id);
     mkdirSync(jobDir, { recursive: true });
 
-    const callbacks = buildCallbacks(nextJob, d);
+    const callbacks = buildCallbacks(nextJob, config, d);
     const clawConfig = buildGaryClawConfig(config, nextJob, jobDir, d);
 
     try {
@@ -203,7 +203,14 @@ function buildGaryClawConfig(
   };
 }
 
-function buildCallbacks(job: Job, deps: JobRunnerDeps): OrchestratorCallbacks {
+export class PerJobCostExceededError extends Error {
+  constructor(cost: number, limit: number) {
+    super(`Per-job cost limit exceeded: $${cost.toFixed(3)} > $${limit.toFixed(3)}`);
+    this.name = "PerJobCostExceededError";
+  }
+}
+
+function buildCallbacks(job: Job, config: DaemonConfig, deps: JobRunnerDeps): OrchestratorCallbacks {
   return {
     onEvent: (event: OrchestratorEvent) => {
       // Track cost from events
@@ -215,6 +222,10 @@ function buildCallbacks(job: Job, deps: JobRunnerDeps): OrchestratorCallbacks {
       }
       if (event.type === "pipeline_complete") {
         job.costUsd = Math.max(job.costUsd, event.totalCostUsd);
+      }
+      // Enforce per-job cost limit
+      if (job.costUsd > config.budget.perJobCostLimitUsd) {
+        throw new PerJobCostExceededError(job.costUsd, config.budget.perJobCostLimitUsd);
       }
       // Log key events
       if (event.type === "error") {
