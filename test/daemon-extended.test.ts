@@ -303,9 +303,9 @@ describe("validateDaemonConfig edge cases", () => {
     expect(validateDaemonConfig(bad)).toContain("perJobCostLimitUsd");
   });
 
-  it("rejects trigger with non-git_poll type", () => {
-    const bad = { ...validConfig, triggers: [{ type: "cron", intervalSeconds: 60, skills: ["qa"] }] };
-    expect(validateDaemonConfig(bad)).toContain('type must be "git_poll"');
+  it("rejects trigger with unknown type", () => {
+    const bad = { ...validConfig, triggers: [{ type: "webhook", intervalSeconds: 60, skills: ["qa"] }] };
+    expect(validateDaemonConfig(bad)).toContain('type must be "git_poll" or "cron"');
   });
 
   it("rejects trigger with zero intervalSeconds", () => {

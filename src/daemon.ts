@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync, appendFileSync, mk
 import { join } from "node:path";
 import { createIPCServer, type IPCHandler } from "./daemon-ipc.js";
 import { createJobRunner, type JobRunner } from "./job-runner.js";
-import { createGitPoller, type GitPoller } from "./triggers.js";
+import { createGitPoller, createCronPoller, validateCronExpression, type GitPoller } from "./triggers.js";
 import type { DaemonConfig, IPCRequest, IPCResponse } from "./types.js";
 import type { Server } from "node:net";
 
@@ -68,12 +68,27 @@ export function validateDaemonConfig(data: unknown): string | null {
   for (let i = 0; i < (d.triggers as unknown[]).length; i++) {
     const t = (d.triggers as unknown[])[i] as Record<string, unknown>;
     if (typeof t !== "object" || t === null) return `triggers[${i}] must be an object`;
-    if (t.type !== "git_poll") return `triggers[${i}].type must be "git_poll"`;
-    if (typeof t.intervalSeconds !== "number" || t.intervalSeconds <= 0) {
-      return `triggers[${i}].intervalSeconds must be a positive number`;
-    }
-    if (!Array.isArray(t.skills) || t.skills.length === 0) {
-      return `triggers[${i}].skills must be a non-empty array`;
+
+    if (t.type === "git_poll") {
+      if (typeof t.intervalSeconds !== "number" || t.intervalSeconds <= 0) {
+        return `triggers[${i}].intervalSeconds must be a positive number`;
+      }
+      if (!Array.isArray(t.skills) || t.skills.length === 0) {
+        return `triggers[${i}].skills must be a non-empty array`;
+      }
+    } else if (t.type === "cron") {
+      if (typeof t.expression !== "string" || t.expression.length === 0) {
+        return `triggers[${i}].expression is required for cron triggers`;
+      }
+      const cronError = validateCronExpression(t.expression);
+      if (cronError) {
+        return `triggers[${i}]: ${cronError}`;
+      }
+      if (!Array.isArray(t.skills) || t.skills.length === 0) {
+        return `triggers[${i}].skills must be a non-empty array`;
+      }
+    } else {
+      return `triggers[${i}].type must be "git_poll" or "cron"`;
     }
   }
 
@@ -280,7 +295,7 @@ export async function startDaemon(checkpointDir: string): Promise<void> {
   const server = createIPCServer(socketPath, handler);
   configLog("info", `IPC server listening on ${socketPath}`);
 
-  // 6. Start git pollers
+  // 6. Start pollers (git poll + cron)
   const pollers: GitPoller[] = [];
   for (const trigger of config.triggers) {
     if (trigger.type === "git_poll") {
@@ -291,6 +306,18 @@ export async function startDaemon(checkpointDir: string): Promise<void> {
       poller.start();
       pollers.push(poller);
       configLog("info", `Git poller started: every ${trigger.intervalSeconds}s, skills=[${trigger.skills.join(",")}]`);
+    } else if (trigger.type === "cron") {
+      const poller = createCronPoller(trigger, (skills, detail) => {
+        configLog("info", `Cron triggered: ${detail}`);
+        runner.enqueue(skills, "cron", detail, trigger.designDoc);
+      });
+      if (poller) {
+        poller.start();
+        pollers.push(poller);
+        configLog("info", `Cron poller started: "${trigger.expression}", skills=[${trigger.skills.join(",")}]`);
+      } else {
+        configLog("warn", `Invalid cron expression "${trigger.expression}", skipping trigger`);
+      }
     }
   }
 

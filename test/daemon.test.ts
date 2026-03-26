@@ -90,10 +90,11 @@ describe("validateDaemonConfig", () => {
     expect(validateDaemonConfig(config)).toContain("skills");
   });
 
-  it("rejects trigger with wrong type", () => {
+  it("rejects trigger with unknown type", () => {
     const config = createValidConfig();
-    (config.triggers[0] as any).type = "cron";
+    (config.triggers[0] as any).type = "webhook";
     expect(validateDaemonConfig(config)).toContain("git_poll");
+    expect(validateDaemonConfig(config)).toContain("cron");
   });
 });
 
