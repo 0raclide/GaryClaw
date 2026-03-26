@@ -47,6 +47,7 @@ import {
   isCircuitBreakerTripped,
 } from "./oracle-memory.js";
 import { sendNotification } from "./notifier.js";
+import { runReflection } from "./reflection.js";
 
 import { IssueTracker, extractAllToolUse, parseGitLog } from "./issue-extractor.js";
 
@@ -496,6 +497,22 @@ async function runSkillInternal(
           totalTurns,
           costUsd: estimatedCostUsd,
         });
+
+        // Phase 5b: Post-job reflection — map decisions to outcomes and update metrics
+        if (config.autonomous && !config.noMemory) {
+          try {
+            const allDecisions = checkpoint.decisions;
+            const allIssues = checkpoint.issues;
+            runReflection({
+              decisions: allDecisions,
+              issues: allIssues,
+              jobId: runId,
+              projectDir: config.projectDir,
+            });
+          } catch {
+            // Reflection failure is non-fatal — don't block completion
+          }
+        }
 
         return;
       }
