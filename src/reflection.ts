@@ -242,8 +242,10 @@ export function findRelatedIssue(
   // Check for description keyword overlap (at least 3 words matching)
   for (const issue of issues) {
     if (!issue.description) continue; // Guard against corrupt/missing description
+    // Cap description to prevent excessive memory from malformed checkpoint data
+    const descText = issue.description.length > 2000 ? issue.description.slice(0, 2000) : issue.description;
     const issueWords = new Set(
-      issue.description.toLowerCase().split(/\s+/).filter((w) => w.length > 3),
+      descText.toLowerCase().split(/\s+/).filter((w) => w.length > 3),
     );
     const decisionWords = decisionText.split(/\s+/).filter((w) => w.length > 3);
     const matches = decisionWords.filter((w) => issueWords.has(w)).length;
