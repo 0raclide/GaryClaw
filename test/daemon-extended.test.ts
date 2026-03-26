@@ -399,3 +399,77 @@ describe("PID helpers", () => {
     expect(() => cleanupDaemonFiles(TEST_DIR)).not.toThrow();
   });
 });
+
+// ── Additional edge cases ────────────────────────────────────────
+
+describe("createDaemonLogger — additional edge cases", () => {
+  it("handles unknown log level as info threshold", () => {
+    const log = createDaemonLogger(TEST_DIR, "unknown" as any);
+    log("debug", "should not appear");
+    log("info", "should appear");
+
+    const content = readFileSync(join(TEST_DIR, "daemon.log"), "utf-8");
+    expect(content).not.toContain("[DEBUG]");
+    expect(content).toContain("[INFO]");
+  });
+
+  it("silently ignores write errors to unwritable path", () => {
+    const badDir = join(TEST_DIR, "non-existent-deep", "path");
+    const log = createDaemonLogger(badDir, "info");
+    expect(() => log("info", "This should not throw")).not.toThrow();
+  });
+});
+
+describe("buildIPCHandler — designDoc passthrough", () => {
+  function createMockRunnerForDesignDoc() {
+    return {
+      getState: vi.fn().mockReturnValue({
+        version: 1,
+        jobs: [],
+        dailyCost: { date: "2026-03-26", totalUsd: 0, jobCount: 0 },
+      }),
+      isRunning: vi.fn().mockReturnValue(false),
+      enqueue: vi.fn().mockReturnValue("job-doc-001"),
+      processNext: vi.fn(),
+      updateBudget: vi.fn(),
+    };
+  }
+
+  it("passes designDoc through trigger request", async () => {
+    const runner = createMockRunnerForDesignDoc();
+    const handler = buildIPCHandler(runner, Date.now());
+
+    const resp = await handler({
+      type: "trigger",
+      skills: ["implement"],
+      designDoc: "/path/to/design.md",
+    });
+    expect(resp.ok).toBe(true);
+    expect(runner.enqueue).toHaveBeenCalledWith(
+      ["implement"],
+      "manual",
+      "CLI trigger",
+      "/path/to/design.md",
+    );
+  });
+});
+
+describe("validateDaemonConfig — null/non-object triggers", () => {
+  const baseConfig = {
+    version: 1,
+    projectDir: "/tmp/project",
+    triggers: [] as any[],
+    budget: { dailyCostLimitUsd: 5, perJobCostLimitUsd: 1, maxJobsPerDay: 10 },
+    notifications: { enabled: true, onComplete: true, onError: true, onEscalation: false },
+    orchestrator: { maxTurnsPerSegment: 15, relayThresholdRatio: 0.85, maxRelaySessions: 10, askTimeoutMs: 300000 },
+    logging: { level: "info", retainDays: 7 },
+  };
+
+  it("rejects null trigger in array", () => {
+    expect(validateDaemonConfig({ ...baseConfig, triggers: [null] })).toContain("must be an object");
+  });
+
+  it("rejects string trigger in array", () => {
+    expect(validateDaemonConfig({ ...baseConfig, triggers: ["not-an-object"] })).toContain("must be an object");
+  });
+});
