@@ -3,3 +3,4 @@ dist/
 .garyclaw/
 *.tsbuildinfo
 .test-*-tmp*/
+.gstack/
