@@ -33,6 +33,7 @@ import {
   defaultMemoryConfig,
 } from "./oracle-memory.js";
 import { safeReadJSON, safeReadText } from "./safe-json.js";
+import { acquireReflectionLock, releaseReflectionLock } from "./reflection-lock.js";
 
 // ── Levenshtein distance ────────────────────────────────────────
 
@@ -283,44 +284,65 @@ export interface ReflectionResult {
 export function runReflection(input: ReflectionInput): ReflectionResult {
   const memConfig = input.memoryConfig ?? defaultMemoryConfig(input.projectDir);
 
-  // Read existing outcomes for reopened detection
-  const existingOutcomes = readDecisionOutcomes(memConfig);
+  // Acquire lock before reading+writing oracle memory (prevents concurrent clobber)
+  const lockAcquired = acquireReflectionLock(memConfig.projectDir);
+  if (!lockAcquired) {
+    console.warn("[GaryClaw] Could not acquire reflection lock (timeout) — skipping reflection writes");
+    // Still compute outcomes for the return value, but don't write to disk
+    const existingOutcomes = readDecisionOutcomes(memConfig);
+    const reopenedIds = findReopenedDecisions(input.issues, existingOutcomes);
+    const newOutcomes: DecisionOutcome[] = input.decisions.map((d) =>
+      mapDecisionToOutcome(d, input.issues, reopenedIds, input.jobId),
+    );
+    return {
+      outcomes: newOutcomes,
+      metrics: readMetrics(memConfig),
+      reopenedCount: reopenedIds.size,
+    };
+  }
 
-  // Find reopened decisions
-  const reopenedIds = findReopenedDecisions(input.issues, existingOutcomes);
-
-  // Map each decision to an outcome
-  const newOutcomes: DecisionOutcome[] = input.decisions.map((d) =>
-    mapDecisionToOutcome(d, input.issues, reopenedIds, input.jobId),
-  );
-
-  // Merge with existing outcomes
-  const allOutcomes = [...existingOutcomes, ...newOutcomes];
-
-  // Write updated outcomes (rolling window of ~50)
   try {
-    writeDecisionOutcomesRolling(memConfig, allOutcomes);
-  } catch (err) {
-    console.warn(`[GaryClaw] Failed to write decision outcomes: ${err instanceof Error ? err.message : String(err)}`);
-  }
+    // Read existing outcomes for reopened detection
+    const existingOutcomes = readDecisionOutcomes(memConfig);
 
-  // Update metrics
-  let metrics = readMetrics(memConfig);
-  for (const outcome of newOutcomes) {
-    metrics = updateMetricsWithOutcome(metrics, outcome);
-  }
-  metrics.lastReflectionTimestamp = new Date().toISOString();
-  try {
-    writeMetrics(memConfig, metrics);
-  } catch (err) {
-    console.warn(`[GaryClaw] Failed to write metrics: ${err instanceof Error ? err.message : String(err)}`);
-  }
+    // Find reopened decisions
+    const reopenedIds = findReopenedDecisions(input.issues, existingOutcomes);
 
-  return {
-    outcomes: newOutcomes,
-    metrics,
-    reopenedCount: reopenedIds.size,
-  };
+    // Map each decision to an outcome
+    const newOutcomes: DecisionOutcome[] = input.decisions.map((d) =>
+      mapDecisionToOutcome(d, input.issues, reopenedIds, input.jobId),
+    );
+
+    // Merge with existing outcomes
+    const allOutcomes = [...existingOutcomes, ...newOutcomes];
+
+    // Write updated outcomes (rolling window of ~50)
+    try {
+      writeDecisionOutcomesRolling(memConfig, allOutcomes);
+    } catch (err) {
+      console.warn(`[GaryClaw] Failed to write decision outcomes: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Update metrics
+    let metrics = readMetrics(memConfig);
+    for (const outcome of newOutcomes) {
+      metrics = updateMetricsWithOutcome(metrics, outcome);
+    }
+    metrics.lastReflectionTimestamp = new Date().toISOString();
+    try {
+      writeMetrics(memConfig, metrics);
+    } catch (err) {
+      console.warn(`[GaryClaw] Failed to write metrics: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return {
+      outcomes: newOutcomes,
+      metrics,
+      reopenedCount: reopenedIds.size,
+    };
+  } finally {
+    releaseReflectionLock(memConfig.projectDir);
+  }
 }
 
 // ── Read decisions from JSONL ───────────────────────────────────
