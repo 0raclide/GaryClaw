@@ -162,6 +162,7 @@ async function runSkillInternal(
   let totalTurns = 0;
   let sessionId = "";
   let estimatedCostUsd = 0;
+  let currentSessionCost = 0;
 
   // Initial prompt — use override if provided (pipeline context handoff), else default
   let currentPrompt = initialPromptOverride
@@ -230,6 +231,8 @@ async function runSkillInternal(
           }
         : {}),
     });
+
+    currentSessionCost = 0; // Reset per session
 
     let relayFlag = false;
     let relayReason = "";
@@ -331,13 +334,16 @@ async function runSkillInternal(
             // Set context window denominator
             setContextWindow(monitor, result.modelUsage);
 
-            // Update cost before relay re-check so checkpoint has accurate data
+            // Update cost before relay re-check so checkpoint has accurate data.
+            // result.totalCostUsd is the session's cumulative cost (not a delta).
+            // Track per-session cost separately and accumulate across sessions
+            // to avoid losing prior sessions' costs on relay.
             if (result.totalCostUsd > 0) {
               setCost(monitor, result.totalCostUsd);
-              estimatedCostUsd = result.totalCostUsd;
+              currentSessionCost = result.totalCostUsd;
               callbacks.onEvent({
                 type: "cost_update",
-                costUsd: estimatedCostUsd,
+                costUsd: estimatedCostUsd + currentSessionCost,
                 sessionIndex,
               });
             }
@@ -455,11 +461,17 @@ async function runSkillInternal(
           }
         }
 
+        // Accumulate this session's cost before moving to next session
+        estimatedCostUsd += currentSessionCost;
+
         break; // Break segment loop → new session
       }
 
       // Check if skill is complete
       if (segmentResult?.subtype === "success") {
+        // Accumulate final session's cost
+        estimatedCostUsd += currentSessionCost;
+
         // Save final checkpoint
         const checkpoint = buildCheckpoint(
           runId,
