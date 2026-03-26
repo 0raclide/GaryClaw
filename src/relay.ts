@@ -53,10 +53,12 @@ export function prepareRelay(projectDir: string): PrepareRelayResult {
 
 /**
  * Build segment options for a relay (fresh session with checkpoint prompt).
+ * Accepts canUseTool so relayed sessions preserve AskUserQuestion handling.
  */
 export function buildRelaySegment(
   checkpoint: Checkpoint,
   config: GaryClawConfig,
+  canUseTool?: SegmentOptions["canUseTool"],
 ): SegmentOptions {
   const relayPrompt = generateRelayPrompt(checkpoint);
 
@@ -67,7 +69,7 @@ export function buildRelaySegment(
     env: config.env,
     settingSources: config.settingSources,
     // No resume — fresh session for clean context
-    canUseTool: async () => ({ behavior: "allow" as const }),
+    canUseTool: canUseTool ?? (async () => ({ behavior: "allow" as const })),
   };
 }
 
@@ -101,11 +103,12 @@ export function finalizeRelay(
 export function executeRelay(
   checkpoint: Checkpoint,
   config: GaryClawConfig,
+  canUseTool?: SegmentOptions["canUseTool"],
 ): {
   segmentOptions: SegmentOptions;
   prepareResult: PrepareRelayResult;
 } {
   const prepareResult = prepareRelay(config.projectDir);
-  const segmentOptions = buildRelaySegment(checkpoint, config);
+  const segmentOptions = buildRelaySegment(checkpoint, config, canUseTool);
   return { segmentOptions, prepareResult };
 }

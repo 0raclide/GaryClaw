@@ -331,9 +331,11 @@ async function runSkillInternal(
         });
 
         // Execute relay — git stash + build new segment
+        // Pass canUseTool so relayed sessions preserve AskUserQuestion handling
         const { segmentOptions, prepareResult } = executeRelay(
           checkpoint,
           config,
+          askHandler.canUseTool,
         );
 
         if (prepareResult.error) {
