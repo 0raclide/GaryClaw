@@ -7,8 +7,16 @@
  * 2. Post-hoc: verify via git log between checkpoint refs
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import type { Issue, IssueSeverity } from "./types.js";
+
+/**
+ * Validate that a string looks like a git ref (hex SHA or branch name).
+ * Rejects anything with shell metacharacters to prevent injection.
+ */
+function isValidGitRef(ref: string): boolean {
+  return /^[a-zA-Z0-9._\-/]+$/.test(ref);
+}
 
 // ── Regex patterns ─────────────────────────────────────────────────
 
@@ -158,8 +166,14 @@ export function parseGitLog(
   skillName: string,
 ): Issue[] {
   try {
-    const output = execSync(
-      `git log --oneline ${baseHead}..${currentHead}`,
+    // Validate refs to prevent shell injection from corrupted checkpoint data
+    if (!isValidGitRef(baseHead) || !isValidGitRef(currentHead)) {
+      return [];
+    }
+
+    const output = execFileSync(
+      "git",
+      ["log", "--oneline", `${baseHead}..${currentHead}`],
       { cwd: projectDir, encoding: "utf-8", timeout: 5000 },
     );
 
