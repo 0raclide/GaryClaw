@@ -20,6 +20,13 @@ import { createIPCServer, type IPCHandler } from "./daemon-ipc.js";
 import { createJobRunner, type JobRunner } from "./job-runner.js";
 import { createGitPoller, createCronPoller, validateCronExpression, type GitPoller } from "./triggers.js";
 import { defaultMemoryConfig, readMetrics } from "./oracle-memory.js";
+import {
+  instanceDir,
+  ensureInstanceDir,
+  resolveInstanceName,
+  listInstances,
+  migrateToInstanceDir,
+} from "./daemon-registry.js";
 import type { DaemonConfig, IPCRequest, IPCResponse } from "./types.js";
 import type { Server } from "node:net";
 
@@ -98,18 +105,36 @@ export function validateDaemonConfig(data: unknown): string | null {
 
 /**
  * Load daemon config from the checkpoint directory.
+ * Supports config fallback: checks instanceDir first, then parentDir.
  */
-export function loadDaemonConfig(checkpointDir: string): DaemonConfig | null {
+export function loadDaemonConfig(checkpointDir: string, fallbackDir?: string): DaemonConfig | null {
+  // Try primary location first
   const configPath = join(checkpointDir, CONFIG_FILE);
-  if (!existsSync(configPath)) return null;
-  try {
-    const data = JSON.parse(readFileSync(configPath, "utf-8"));
-    const error = validateDaemonConfig(data);
-    if (error) return null;
-    return data as DaemonConfig;
-  } catch {
-    return null;
+  if (existsSync(configPath)) {
+    try {
+      const data = JSON.parse(readFileSync(configPath, "utf-8"));
+      const error = validateDaemonConfig(data);
+      if (!error) return data as DaemonConfig;
+    } catch {
+      // Fall through to fallback
+    }
   }
+
+  // Try fallback location (parent checkpoint dir for shared config)
+  if (fallbackDir) {
+    const fallbackPath = join(fallbackDir, CONFIG_FILE);
+    if (existsSync(fallbackPath)) {
+      try {
+        const data = JSON.parse(readFileSync(fallbackPath, "utf-8"));
+        const error = validateDaemonConfig(data);
+        if (!error) return data as DaemonConfig;
+      } catch {
+        // Give up
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -203,6 +228,7 @@ export function buildIPCHandler(
   runner: JobRunner,
   startTime: number,
   projectDir?: string,
+  parentCheckpointDir?: string,
 ): IPCHandler {
   return async (request: IPCRequest): Promise<IPCResponse> => {
     switch (request.type) {
@@ -278,6 +304,14 @@ export function buildIPCHandler(
         };
       }
 
+      case "instances": {
+        if (!parentCheckpointDir) {
+          return { ok: false, error: "Instance listing not available (no parent checkpoint dir)" };
+        }
+        const instances = listInstances(parentCheckpointDir);
+        return { ok: true, data: { instances } };
+      }
+
       default:
         return { ok: false, error: `Unknown request type` };
     }
@@ -287,47 +321,58 @@ export function buildIPCHandler(
 /**
  * Start the daemon process. This is the main entry point when the daemon
  * is spawned as a detached child process.
+ *
+ * @param checkpointDir - Parent .garyclaw/ directory
+ * @param instanceName - Instance name (default: "default")
  */
-export async function startDaemon(checkpointDir: string): Promise<void> {
-  const log = createDaemonLogger(checkpointDir, "info");
-  log("info", "Daemon starting...");
+export async function startDaemon(checkpointDir: string, instanceName?: string): Promise<void> {
+  const name = resolveInstanceName(instanceName);
 
-  // 1. Load config
-  const config = loadDaemonConfig(checkpointDir);
+  // Migrate flat layout to instance dirs on first start
+  migrateToInstanceDir(checkpointDir);
+
+  // Instance-specific directory for all daemon files
+  const instDir = ensureInstanceDir(checkpointDir, name);
+
+  const log = createDaemonLogger(instDir, "info");
+  log("info", `Daemon [${name}] starting...`);
+
+  // 1. Load config (instance dir → parent dir fallback)
+  const config = loadDaemonConfig(instDir, checkpointDir);
   if (!config) {
-    log("error", `Invalid or missing config at ${join(checkpointDir, CONFIG_FILE)}`);
+    log("error", `Invalid or missing config at ${join(instDir, CONFIG_FILE)} or ${join(checkpointDir, CONFIG_FILE)}`);
     process.exit(1);
   }
 
   // Update logger with config level
-  const configLog = createDaemonLogger(checkpointDir, config.logging.level);
+  const configLog = createDaemonLogger(instDir, config.logging.level);
 
   // 2. Check for stale PID
-  const existingPid = readPidFile(checkpointDir);
+  const existingPid = readPidFile(instDir);
   if (existingPid !== null) {
     if (isPidAlive(existingPid)) {
-      configLog("error", `Daemon already running (PID ${existingPid})`);
+      configLog("error", `Daemon [${name}] already running (PID ${existingPid})`);
       process.exit(1);
     }
     configLog("warn", `Cleaning up stale PID file (PID ${existingPid} not alive)`);
-    cleanupDaemonFiles(checkpointDir);
+    cleanupDaemonFiles(instDir);
   }
 
   // 3. Write PID file
-  writePidFile(checkpointDir, process.pid);
-  configLog("info", `PID ${process.pid} written to ${join(checkpointDir, PID_FILE)}`);
+  writePidFile(instDir, process.pid);
+  configLog("info", `PID ${process.pid} written to ${join(instDir, PID_FILE)}`);
 
-  // 4. Create job runner
-  const runner = createJobRunner(config, checkpointDir, { log: configLog });
-  configLog("info", "Job runner created");
+  // 4. Create job runner (with global budget + cross-instance dedup via parentCheckpointDir)
+  const runner = createJobRunner(config, instDir, { log: configLog }, name, checkpointDir);
+  configLog("info", `Job runner created for instance [${name}]`);
 
   // 5. Start IPC server
-  const socketPath = join(checkpointDir, SOCKET_FILE);
+  const socketPath = join(instDir, SOCKET_FILE);
   // Clean up stale socket
   try { if (existsSync(socketPath)) unlinkSync(socketPath); } catch { /* ignore */ }
 
   const startTime = Date.now();
-  const handler = buildIPCHandler(runner, startTime, config.projectDir);
+  const handler = buildIPCHandler(runner, startTime, config.projectDir, checkpointDir);
   const server = createIPCServer(socketPath, handler);
   configLog("info", `IPC server listening on ${socketPath}`);
 
@@ -346,7 +391,7 @@ export async function startDaemon(checkpointDir: string): Promise<void> {
   // 8. SIGHUP handler for config reload
   process.on("SIGHUP", () => {
     configLog("info", "Received SIGHUP — reloading config...");
-    const newConfig = loadDaemonConfig(checkpointDir);
+    const newConfig = loadDaemonConfig(instDir, checkpointDir);
     if (!newConfig) {
       configLog("warn", "SIGHUP reload failed: invalid config, keeping old config");
       return;
@@ -402,8 +447,8 @@ export async function startDaemon(checkpointDir: string): Promise<void> {
     });
 
     // Clean up files
-    cleanupDaemonFiles(checkpointDir);
-    configLog("info", "Daemon stopped");
+    cleanupDaemonFiles(instDir);
+    configLog("info", `Daemon [${name}] stopped`);
     process.exit(0);
   }
 
@@ -453,10 +498,15 @@ export function startPollers(
 }
 
 // If this file is executed directly (as a forked process), start the daemon.
-// The checkpoint directory is passed as the first CLI argument.
+// Args: --start <checkpointDir> [--instance <name>]
 const args = process.argv.slice(2);
 if (args[0] === "--start" && args[1]) {
-  startDaemon(args[1]).catch((err) => {
+  const checkpointDirArg = args[1];
+  let instanceNameArg: string | undefined;
+  if (args[2] === "--instance" && args[3]) {
+    instanceNameArg = args[3];
+  }
+  startDaemon(checkpointDirArg, instanceNameArg).catch((err) => {
     console.error("Daemon fatal error:", err);
     process.exit(1);
   });
