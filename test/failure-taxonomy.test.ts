@@ -77,6 +77,11 @@ describe("Failure Taxonomy", () => {
       const result = classifyError(new Error("AUTH_TIMEOUT waiting for session"));
       expect(result.category).toBe("auth-issue");
     });
+
+    it("classifies 'authentication'", () => {
+      const result = classifyError(new Error("authentication required"));
+      expect(result.category).toBe("auth-issue");
+    });
   });
 
   // ── classifyError: Infrastructure / transient ───────────────────
@@ -124,6 +129,41 @@ describe("Failure Taxonomy", () => {
       expect(result.category).toBe("infra-issue");
     });
 
+    it("classifies ECONNRESET", () => {
+      const result = classifyError(new Error("read ECONNRESET"));
+      expect(result.category).toBe("infra-issue");
+    });
+
+    it("classifies EPIPE", () => {
+      const result = classifyError(new Error("write EPIPE"));
+      expect(result.category).toBe("infra-issue");
+    });
+
+    it("classifies EAI_AGAIN (DNS)", () => {
+      const result = classifyError(new Error("getaddrinfo EAI_AGAIN api.anthropic.com"));
+      expect(result.category).toBe("infra-issue");
+    });
+
+    it("classifies 'network error'", () => {
+      const result = classifyError(new Error("network error: connection lost"));
+      expect(result.category).toBe("infra-issue");
+    });
+
+    it("classifies 'status 429' (rate limit HTTP)", () => {
+      const result = classifyError(new Error("Request failed with status 429"));
+      expect(result.category).toBe("infra-issue");
+    });
+
+    it("classifies 'HTTP 502' (bad gateway)", () => {
+      const result = classifyError(new Error("HTTP 502 Bad Gateway"));
+      expect(result.category).toBe("infra-issue");
+    });
+
+    it("classifies 'capacity'", () => {
+      const result = classifyError(new Error("API at capacity, try again later"));
+      expect(result.category).toBe("infra-issue");
+    });
+
     it("classifies daemon restart", () => {
       const result = classifyError(new Error("Daemon restarted — job was interrupted"));
       expect(result.category).toBe("infra-issue");
@@ -142,6 +182,21 @@ describe("Failure Taxonomy", () => {
 
     it("classifies 'stream error' in message", () => {
       const result = classifyError(new Error("stream error: unexpected EOF"));
+      expect(result.category).toBe("sdk-bug");
+    });
+
+    it("classifies 'unexpected message type'", () => {
+      const result = classifyError(new Error("unexpected message type received"));
+      expect(result.category).toBe("sdk-bug");
+    });
+
+    it("classifies 'invalid json'", () => {
+      const result = classifyError(new Error("invalid json in response chunk"));
+      expect(result.category).toBe("sdk-bug");
+    });
+
+    it("classifies 'chunk parsing'", () => {
+      const result = classifyError(new Error("chunk parsing failed at offset 42"));
       expect(result.category).toBe("sdk-bug");
     });
 
@@ -228,6 +283,31 @@ describe("Failure Taxonomy", () => {
       const result = classifyError(new Error("CONFLICT (content): Merge conflict in file.ts"));
       expect(result.category).toBe("project-bug");
     });
+
+    it("classifies 'tests failed' (plural)", () => {
+      const result = classifyError(new Error("tests failed: 5 of 20"));
+      expect(result.category).toBe("project-bug");
+    });
+
+    it("classifies 'lint error'", () => {
+      const result = classifyError(new Error("lint error in src/app.ts"));
+      expect(result.category).toBe("project-bug");
+    });
+
+    it("classifies 'tsc error'", () => {
+      const result = classifyError(new Error("tsc error TS2322: Type 'string' not assignable"));
+      expect(result.category).toBe("project-bug");
+    });
+
+    it("classifies 'TypeError'", () => {
+      const result = classifyError(new Error("TypeError: Cannot read property 'foo'"));
+      expect(result.category).toBe("project-bug");
+    });
+
+    it("classifies 'compilation failed'", () => {
+      const result = classifyError(new Error("compilation failed with 3 errors"));
+      expect(result.category).toBe("project-bug");
+    });
   });
 
   // ── classifyError: Skill bugs ───────────────────────────────────
@@ -248,6 +328,11 @@ describe("Failure Taxonomy", () => {
       const err = new Error("runtime error");
       err.stack = `Error: runtime error\n    at executeSkill (.claude/skills/qa/SKILL.md:10)`;
       const result = classifyError(err);
+      expect(result.category).toBe("skill-bug");
+    });
+
+    it("classifies 'skill error'", () => {
+      const result = classifyError(new Error("skill error: timeout in design-review"));
       expect(result.category).toBe("skill-bug");
     });
   });

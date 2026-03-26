@@ -68,9 +68,12 @@ export const RULES: readonly ClassificationRule[] = [
       "socket hang up",
       "network error",
       "rate limit",
-      "429",
-      "503",
-      "502",
+      "status 429",
+      "HTTP 429",
+      "status 503",
+      "HTTP 503",
+      "status 502",
+      "HTTP 502",
       "overloaded",
       "capacity",
     ],
@@ -110,17 +113,7 @@ export const RULES: readonly ClassificationRule[] = [
     retryable: false,
     suggestion: "GaryClaw internal error — file a bug",
     stackPatterns: [
-      "src/orchestrator.ts",
-      "src/pipeline.ts",
-      "src/relay.ts",
-      "src/checkpoint.ts",
-      "src/token-monitor.ts",
-      "src/ask-handler.ts",
-      "src/oracle.ts",
-      "src/reflection.ts",
-      "src/job-runner.ts",
-      "src/daemon",
-      "src/worktree.ts",
+      "src/",
     ],
   },
 
@@ -135,7 +128,7 @@ export const RULES: readonly ClassificationRule[] = [
       "lint error",
       "eslint",
       "tsc error",
-      "type error",
+      "TypeError",
       "compilation failed",
       "build failed",
       "merge conflict",
@@ -271,10 +264,12 @@ export function appendFailureRecord(
 // ── Helpers ─────────────────────────────────────────────────────
 
 /**
- * Extract first 5 lines of stack trace from an error.
+ * Extract first 5 stack frame lines from an error.
+ * Skips line 0 (the error message) — that's matched by messagePatterns,
+ * not stackPatterns. Stack frames start at line 1.
  */
 function getStackLines(err: unknown): string {
   if (!(err instanceof Error) || !err.stack) return "";
   const lines = err.stack.split("\n");
-  return lines.slice(0, 5).join("\n");
+  return lines.slice(1, 6).join("\n");
 }

@@ -16,21 +16,9 @@
 **Depends on:** Nothing
 **Added by:** /plan-ceo-review on 2026-03-26
 
-## P2: Failure Taxonomy in Job Runner
+## ~~P2: Failure Taxonomy in Job Runner~~ — COMPLETE (2026-03-27)
 
-**What:** When a daemon job fails, classify the error into: `garyclaw-bug` (harness issue), `skill-bug` (gstack skill misbehavior), `project-bug` (target project issue), `sdk-bug` (Agent SDK issue), `auth-issue` (token/login), `infra-issue` (disk/network/OOM). Store as structured JSON in `.garyclaw/failures.jsonl`.
-
-**Why:** Right now when a job fails, the error message is whatever the exception says. Classification enables: auto-retry for infra issues, skip for project bugs, escalate for GaryClaw bugs. Makes overnight runs resilient instead of fragile.
-
-**Pros:** Structured failure data. Enables smart retry logic. Makes debugging overnight runs trivial.
-
-**Cons:** Classification heuristic may misclassify edge cases.
-
-**Context:** Identified in CEO review battle-test dogfood plan (2026-03-26). Eng review: classify in job-runner.ts where all errors converge (single classification point).
-
-**Effort:** S (human: ~2 days / CC: ~20 min)
-**Depends on:** Nothing
-**Added by:** /plan-ceo-review on 2026-03-26
+Implemented in 5 commits (ad94ab7..49e34a9). Eng review hardened patterns + added 17 per-pattern tests. 8 failure categories, table-driven classification, failures.jsonl output, notification integration. 72 tests covering all codepaths.
 
 ## P2: Dogfood Dashboard
 
