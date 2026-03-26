@@ -98,30 +98,11 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
             principle: oracleResult.principle,
           };
 
-          // Escalation: fall back to human if configured
+          // Escalation: log to escalated.jsonl for audit trail.
+          // In autonomous mode, the oracle's choice is used regardless of escalation
+          // (no human to fall back to). The escalation log enables post-hoc review.
           if (oracleResult.escalate) {
             writeEscalatedLog(config.escalatedLogPath, decision, oracleResult);
-
-            // If human callback available and not in fully autonomous mode,
-            // ask the human instead
-            if (!config.autonomous && config.onAskUser) {
-              try {
-                const humanChoice = await withTimeout(
-                  config.onAskUser(
-                    `[ESCALATED - confidence: ${oracleResult.confidence}/10] ${questionText}`,
-                    options,
-                    multiSelect,
-                  ),
-                  config.askTimeoutMs,
-                );
-                decision.chosen = humanChoice;
-                decision.confidence = 10;
-                decision.rationale = `Escalated to human (oracle: ${oracleResult.rationale})`;
-                decision.principle = "Human override";
-              } catch {
-                // Human not available — use oracle's choice anyway
-              }
-            }
           }
 
           answers[questionText] = decision.chosen;
