@@ -293,6 +293,19 @@ async function runSkillInternal(
           // Set context window denominator
           setContextWindow(monitor, result.modelUsage);
 
+          // Re-check relay now that contextWindow is known
+          // (shouldRelay returns false when contextWindow is null,
+          // which is the case during assistant message processing
+          // before the first result message arrives)
+          if (!relayFlag) {
+            const decision = shouldRelay(monitor, config.relayThresholdRatio);
+            if (decision.relay) {
+              relayFlag = true;
+              relayReason = decision.reason;
+              relayContextSize = decision.contextSize;
+            }
+          }
+
           // Update cost
           if (result.totalCostUsd > 0) {
             setCost(monitor, result.totalCostUsd);
