@@ -812,3 +812,72 @@ describe("relay re-check on first segment", () => {
     expect(executeRelay).toHaveBeenCalled();
   });
 });
+
+describe("cost accumulation across relays", () => {
+  it("accumulates cost across relay sessions, not resetting on each session", async () => {
+    // Session 1: segment triggers relay with $0.50 cost
+    // Session 2: segment completes successfully with $0.30 cost
+    // Total should be $0.80, not $0.30 (which was the bug before the fix)
+
+    let segmentCall = 0;
+    vi.mocked(startSegment).mockImplementation(() => {
+      segmentCall++;
+      if (segmentCall === 1) {
+        // Session 1: high usage triggers relay
+        return makeSegmentIterator([
+          makeAssistantTextMsg("Session 1 work..."),
+          makeResultMsg("max_turns"),
+        ]);
+      }
+      // Session 2 (after relay): completes successfully
+      return makeSegmentIterator([makeResultMsg("success")]);
+    });
+
+    vi.mocked(extractTurnUsage).mockImplementation((msg: any) => {
+      if (msg.type === "assistant") {
+        return {
+          input_tokens: 900000,
+          output_tokens: 1000,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        };
+      }
+      return null;
+    });
+
+    let resultCallCount = 0;
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        resultCallCount++;
+        return {
+          sessionId: `s${resultCallCount}`,
+          subtype: msg.subtype,
+          resultText: "ok",
+          usage: null,
+          modelUsage: { "claude-sonnet-4-5-20250929": { contextWindow: 1000000 } },
+          // Session 1 costs $0.50, Session 2 costs $0.30
+          totalCostUsd: resultCallCount <= 1 ? 0.50 : 0.30,
+          numTurns: 5,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    // Find the skill_complete event and verify accumulated cost
+    const completeEvent = callbacks.events.find((e) => e.type === "skill_complete");
+    expect(completeEvent).toBeDefined();
+    // Cost should be $0.50 (session 1) + $0.30 (session 2) = $0.80
+    expect((completeEvent as any).costUsd).toBeCloseTo(0.80, 2);
+
+    // Also verify cost_update events show accumulation
+    const costEvents = callbacks.events.filter((e) => e.type === "cost_update");
+    // Last cost_update should reflect the accumulated total
+    if (costEvents.length > 0) {
+      const lastCostEvent = costEvents[costEvents.length - 1] as any;
+      expect(lastCostEvent.costUsd).toBeGreaterThan(0.30); // Must be more than just session 2
+    }
+  });
+});
