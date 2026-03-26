@@ -225,6 +225,41 @@ describe("parseArgs", () => {
     const result = parseArgs(["node", "cli.ts", "run", "qa", "--max-turns"]);
     expect(result.maxTurns).toBe(15); // unchanged default
   });
+
+  // ── research command ──────────────────────────────────────────
+
+  it("parses 'research' with a single-word topic", () => {
+    const result = parseArgs(["node", "cli.ts", "research", "WebSockets"]);
+    expect(result.command).toBe("research");
+    expect(result.researchTopic).toBe("WebSockets");
+    expect(result.force).toBe(false);
+  });
+
+  it("parses 'research' with a multi-word topic", () => {
+    const result = parseArgs(["node", "cli.ts", "research", "WebSocket", "libraries", "for", "Node.js"]);
+    expect(result.command).toBe("research");
+    expect(result.researchTopic).toBe("WebSocket libraries for Node.js");
+  });
+
+  it("parses 'research' with --force flag", () => {
+    const result = parseArgs(["node", "cli.ts", "research", "OAuth", "2.1", "--force"]);
+    expect(result.command).toBe("research");
+    expect(result.researchTopic).toBe("OAuth 2.1");
+    expect(result.force).toBe(true);
+  });
+
+  it("parses 'research' with --project-dir", () => {
+    const result = parseArgs(["node", "cli.ts", "research", "WebSockets", "--project-dir", "/tmp/proj"]);
+    expect(result.command).toBe("research");
+    expect(result.researchTopic).toBe("WebSockets");
+    expect(result.projectDir).toBe("/tmp/proj");
+  });
+
+  it("returns undefined researchTopic when no topic given", () => {
+    const result = parseArgs(["node", "cli.ts", "research"]);
+    expect(result.command).toBe("research");
+    expect(result.researchTopic).toBeUndefined();
+  });
 });
 
 // ── parseSingleAnswer ────────────────────────────────────────────

@@ -48,6 +48,8 @@ export function parseArgs(argv: string[]): {
   noMemory: boolean;
   tailLines: number;
   designDoc?: string;
+  force: boolean;
+  researchTopic?: string;
 } {
   const args = argv.slice(2);
   const command = args[0] ?? "help";
@@ -64,6 +66,8 @@ export function parseArgs(argv: string[]): {
   let autonomous = false;
   let noMemory = false;
   let tailLines = 50;
+  let force = false;
+  let researchTopic: string | undefined;
 
   // Collect skills (positional args after "run") and flags
   if (command === "run") {
@@ -141,6 +145,19 @@ export function parseArgs(argv: string[]): {
         skills.push(args[i].replace(/^\//, ""));
       }
     }
+  } else if (command === "research") {
+    // research <topic> [--force] [--project-dir <dir>]
+    const topicParts: string[] = [];
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === "--project-dir" && args[i + 1]) {
+        projectDir = resolve(args[++i]);
+      } else if (args[i] === "--force") {
+        force = true;
+      } else if (!args[i].startsWith("--")) {
+        topicParts.push(args[i]);
+      }
+    }
+    researchTopic = topicParts.join(" ") || undefined;
   } else {
     // Non-run commands: parse flags only
     for (let i = 1; i < args.length; i++) {
@@ -177,7 +194,7 @@ export function parseArgs(argv: string[]): {
     }
   }
 
-  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, tailLines, designDoc };
+  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, tailLines, designDoc, force, researchTopic };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -349,6 +366,7 @@ ${BOLD}Usage:${RESET}
   garyclaw run <skill> [skill2 ...]   Run one or more skills (pipeline if multiple)
   garyclaw resume                     Resume from last checkpoint or pipeline
   garyclaw replay                     Replay decision log as timeline
+  garyclaw research <topic>           Research a topic for oracle domain expertise
   garyclaw oracle init                Initialize oracle memory directories + templates
   garyclaw daemon start               Start background daemon
   garyclaw daemon stop                Stop running daemon
@@ -365,6 +383,7 @@ ${BOLD}Options:${RESET}
   --autonomous             Use Decision Oracle instead of human prompts
   --no-memory              Disable Oracle memory injection (kill switch)
   --config <path>          Daemon config file (default: .garyclaw/daemon.json)
+  --force                  Force re-research even if topic is fresh (research command)
 
 ${BOLD}Examples:${RESET}
   garyclaw run qa
@@ -380,6 +399,8 @@ ${BOLD}Examples:${RESET}
   garyclaw daemon trigger qa design-review    # enqueue skills
   garyclaw daemon status                      # check daemon state
   garyclaw daemon log --tail 100              # view recent log
+  garyclaw research "WebSocket libraries"    # research a topic
+  garyclaw research "OAuth 2.1" --force      # re-research ignoring freshness
 
 ${BOLD}Daemon Config (daemon.json triggers):${RESET}
   Git poll:  { "type": "git_poll", "intervalSeconds": 60, "skills": ["qa"] }
@@ -575,6 +596,56 @@ async function main(): Promise<void> {
           }
         }
       }
+    }
+
+    return;
+  }
+
+  if (parsed.command === "research") {
+    if (!parsed.researchTopic) {
+      console.error(`${RED}Error:${RESET} topic required. Usage: garyclaw research <topic> [--force]`);
+      process.exit(1);
+    }
+
+    const { defaultMemoryConfig } = await import("./oracle-memory.js");
+    const { runResearch } = await import("./researcher.js");
+    const { startSegment } = await import("./sdk-wrapper.js");
+
+    const oracleMemoryConfig = defaultMemoryConfig(parsed.projectDir);
+
+    console.log(`${BOLD}GaryClaw Research${RESET} — ${CYAN}${parsed.researchTopic}${RESET}${parsed.force ? ` ${YELLOW}[FORCE]${RESET}` : ""}`);
+    console.log(`${DIM}  Project: ${parsed.projectDir}${RESET}`);
+    console.log("");
+
+    const result = await runResearch(
+      {
+        topic: parsed.researchTopic,
+        projectDir: parsed.projectDir,
+        maxSearches: 10,
+        timeoutMs: 300_000,
+        force: parsed.force,
+        oracleMemoryConfig,
+      },
+      (opts) =>
+        startSegment({
+          prompt: opts.prompt,
+          maxTurns: opts.maxTurns,
+          cwd: opts.cwd,
+          env: buildSdkEnv(process.env as Record<string, string>),
+          settingSources: opts.settingSources,
+          canUseTool: opts.canUseTool,
+        }),
+    );
+
+    if (result.skipped) {
+      console.log(`${YELLOW}Topic is fresh${RESET} — skipping (fresh until ${result.freshUntil})`);
+      console.log(`${DIM}Use --force to re-research.${RESET}`);
+    } else {
+      console.log(`${GREEN}Research complete${RESET}`);
+      console.log(`${DIM}  Sections: ${result.sectionsFound}${RESET}`);
+      console.log(`${DIM}  Searches: ${result.searchesUsed}${RESET}`);
+      console.log(`${DIM}  Partial:  ${result.partial}${RESET}`);
+      console.log(`${DIM}  Fresh until: ${result.freshUntil}${RESET}`);
     }
 
     return;
