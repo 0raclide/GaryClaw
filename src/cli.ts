@@ -690,6 +690,17 @@ async function main(): Promise<void> {
           console.log(`    Started: ${d.currentJob.startedAt}`);
           console.log(`    Cost:    $${d.currentJob.costUsd.toFixed(3)}`);
         }
+
+        if (d.oracleHealth) {
+          const oh = d.oracleHealth;
+          const accColor = oh.accuracyPercent >= 80 ? GREEN : oh.accuracyPercent >= 60 ? YELLOW : RED;
+          console.log(`\n  ${BOLD}Oracle Health:${RESET}`);
+          console.log(`    ${BOLD}Accuracy:${RESET}     ${accColor}${oh.accuracyPercent.toFixed(1)}%${RESET} (${oh.totalDecisions} decisions)`);
+          console.log(`    ${BOLD}Last reflect:${RESET} ${oh.lastReflectionTimestamp ?? `${DIM}never${RESET}`}`);
+          if (oh.circuitBreakerTripped) {
+            console.log(`    ${RED}${BOLD}⚠ Circuit breaker TRIPPED${RESET}${RED} — Oracle memory disabled${RESET}`);
+          }
+        }
       } catch (err) {
         const pid = readPidFile(checkpointDir);
         if (pid !== null && isPidAlive(pid)) {

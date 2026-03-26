@@ -227,6 +227,53 @@ describe("buildIPCHandler", () => {
     expect((resp.data as any).uptimeSeconds).toBeGreaterThanOrEqual(59);
   });
 
+  it("includes oracleHealth in status when metrics exist", async () => {
+    // Create a project dir with oracle metrics
+    const projectDir = join(TEST_DIR, "oracle-project");
+    const oracleDir = join(projectDir, ".garyclaw", "oracle-memory");
+    mkdirSync(oracleDir, { recursive: true });
+    writeFileSync(join(oracleDir, "metrics.json"), JSON.stringify({
+      totalDecisions: 25,
+      accurateDecisions: 20,
+      neutralDecisions: 3,
+      failedDecisions: 2,
+      accuracyPercent: 90.9,
+      confidenceTrend: [8, 7, 9],
+      lastReflectionTimestamp: "2026-03-26T10:00:00Z",
+      circuitBreakerTripped: false,
+    }), "utf-8");
+
+    const runner = createMockRunner();
+    const handler = buildIPCHandler(runner, Date.now(), projectDir);
+
+    const resp = await handler({ type: "status" });
+    expect(resp.ok).toBe(true);
+    const data = resp.data as any;
+    expect(data.oracleHealth).not.toBeNull();
+    expect(data.oracleHealth.accuracyPercent).toBeCloseTo(90.9);
+    expect(data.oracleHealth.totalDecisions).toBe(25);
+    expect(data.oracleHealth.lastReflectionTimestamp).toBe("2026-03-26T10:00:00Z");
+    expect(data.oracleHealth.circuitBreakerTripped).toBe(false);
+  });
+
+  it("returns null oracleHealth when no metrics exist", async () => {
+    const runner = createMockRunner();
+    const handler = buildIPCHandler(runner, Date.now(), "/tmp/nonexistent-project");
+
+    const resp = await handler({ type: "status" });
+    expect(resp.ok).toBe(true);
+    expect((resp.data as any).oracleHealth).toBeNull();
+  });
+
+  it("returns null oracleHealth when projectDir not provided", async () => {
+    const runner = createMockRunner();
+    const handler = buildIPCHandler(runner, Date.now());
+
+    const resp = await handler({ type: "status" });
+    expect(resp.ok).toBe(true);
+    expect((resp.data as any).oracleHealth).toBeNull();
+  });
+
   it("handles trigger request", async () => {
     const runner = createMockRunner();
     const handler = buildIPCHandler(runner, Date.now());

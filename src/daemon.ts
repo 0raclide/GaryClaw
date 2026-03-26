@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { createIPCServer, type IPCHandler } from "./daemon-ipc.js";
 import { createJobRunner, type JobRunner } from "./job-runner.js";
 import { createGitPoller, createCronPoller, validateCronExpression, type GitPoller } from "./triggers.js";
+import { defaultMemoryConfig, readMetrics } from "./oracle-memory.js";
 import type { DaemonConfig, IPCRequest, IPCResponse } from "./types.js";
 import type { Server } from "node:net";
 
@@ -193,6 +194,7 @@ export function createDaemonLogger(
 export function buildIPCHandler(
   runner: JobRunner,
   startTime: number,
+  projectDir?: string,
 ): IPCHandler {
   return async (request: IPCRequest): Promise<IPCResponse> => {
     switch (request.type) {
@@ -200,6 +202,31 @@ export function buildIPCHandler(
         const state = runner.getState();
         const runningJob = state.jobs.find((j) => j.status === "running");
         const queuedJobs = state.jobs.filter((j) => j.status === "queued");
+
+        // Read Oracle health metrics if projectDir is available
+        let oracleHealth: {
+          accuracyPercent: number;
+          lastReflectionTimestamp: string | null;
+          circuitBreakerTripped: boolean;
+          totalDecisions: number;
+        } | null = null;
+        if (projectDir) {
+          try {
+            const memConfig = defaultMemoryConfig(projectDir);
+            const metrics = readMetrics(memConfig);
+            if (metrics.totalDecisions > 0 || metrics.lastReflectionTimestamp) {
+              oracleHealth = {
+                accuracyPercent: metrics.accuracyPercent,
+                lastReflectionTimestamp: metrics.lastReflectionTimestamp,
+                circuitBreakerTripped: metrics.circuitBreakerTripped,
+                totalDecisions: metrics.totalDecisions,
+              };
+            }
+          } catch {
+            // Oracle metrics unavailable — non-fatal
+          }
+        }
+
         return {
           ok: true,
           data: {
@@ -209,6 +236,7 @@ export function buildIPCHandler(
             dailyCost: state.dailyCost,
             uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
             totalJobs: state.jobs.length,
+            oracleHealth,
           },
         };
       }
@@ -291,7 +319,7 @@ export async function startDaemon(checkpointDir: string): Promise<void> {
   try { if (existsSync(socketPath)) unlinkSync(socketPath); } catch { /* ignore */ }
 
   const startTime = Date.now();
-  const handler = buildIPCHandler(runner, startTime);
+  const handler = buildIPCHandler(runner, startTime, config.projectDir);
   const server = createIPCServer(socketPath, handler);
   configLog("info", `IPC server listening on ${socketPath}`);
 
