@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { askOracle, DECISION_PRINCIPLES, buildOraclePrompt, parseOracleResponse } from "../src/oracle.js";
+import { askOracle, DECISION_PRINCIPLES, ESCALATION_PHRASES, buildOraclePrompt, parseOracleResponse } from "../src/oracle.js";
 import type { OracleConfig, OracleInput } from "../src/oracle.js";
 import type { OracleMemoryFiles } from "../src/types.js";
 
@@ -547,6 +547,104 @@ describe("oracle", () => {
       const result = await askOracle(makeInput(), config);
       expect(result.choice).toBe("Approach A");
       expect(result.confidence).toBe(9);
+    });
+  });
+
+  describe("askOracle — narrowed escalation phrases (Phase 4b)", () => {
+    it('"token tracking" does NOT escalate', async () => {
+      const config = makeConfig(
+        JSON.stringify({
+          choice: "Approach A",
+          confidence: 9,
+          rationale: "test",
+          principle: "test",
+        }),
+      );
+
+      const input = makeInput({
+        question: "How should we implement token tracking?",
+        options: [
+          { label: "Approach A", description: "Track token usage per turn" },
+          { label: "Approach B", description: "Track token usage per session" },
+        ],
+      });
+
+      const result = await askOracle(input, config);
+      expect(result.escalate).toBe(false);
+    });
+
+    it('"remove unused import" does NOT escalate', async () => {
+      const config = makeConfig(
+        JSON.stringify({
+          choice: "Yes",
+          confidence: 9,
+          rationale: "Clean code",
+          principle: "DRY",
+        }),
+      );
+
+      const input = makeInput({
+        question: "Should we remove unused imports?",
+        options: [
+          { label: "Yes", description: "Remove unused import statements" },
+          { label: "No", description: "Keep them" },
+        ],
+      });
+
+      const result = await askOracle(input, config);
+      expect(result.escalate).toBe(false);
+    });
+
+    it('"delete the production database" DOES escalate', async () => {
+      const config = makeConfig(
+        JSON.stringify({
+          choice: "Yes",
+          confidence: 9,
+          rationale: "Clean slate",
+          principle: "Bias toward action",
+        }),
+      );
+
+      const input = makeInput({
+        question: "Should we delete the production database?",
+        options: [
+          { label: "Yes", description: "Delete it" },
+          { label: "No", description: "Keep it" },
+        ],
+      });
+
+      const result = await askOracle(input, config);
+      expect(result.escalate).toBe(true);
+    });
+
+    it('"api token exposed" DOES escalate', async () => {
+      const config = makeConfig(
+        JSON.stringify({
+          choice: "Rotate",
+          confidence: 9,
+          rationale: "Security",
+          principle: "Bias toward action",
+        }),
+      );
+
+      const input = makeInput({
+        question: "An api token was exposed in the logs",
+        options: [
+          { label: "Rotate", description: "Rotate the api token immediately" },
+          { label: "Ignore", description: "Leave it" },
+        ],
+      });
+
+      const result = await askOracle(input, config);
+      expect(result.escalate).toBe(true);
+    });
+
+    it("ESCALATION_PHRASES does not contain broad 'token' or 'remove'", () => {
+      expect(ESCALATION_PHRASES).not.toContain("token");
+      expect(ESCALATION_PHRASES).not.toContain("remove");
+      // But does contain specific phrases
+      expect(ESCALATION_PHRASES).toContain("api token");
+      expect(ESCALATION_PHRASES).toContain("remove database");
     });
   });
 });
