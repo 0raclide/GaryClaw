@@ -183,6 +183,8 @@ export function createJobRunner(
       d.log("error", `Failed ${nextJob.id}: ${nextJob.error}`);
     }
 
+    // Prune old completed/failed jobs to prevent unbounded growth
+    pruneOldJobs(state);
     persistState(state, checkpointDir);
     running = false;
   }
@@ -256,6 +258,26 @@ function buildCallbacks(job: Job, config: DaemonConfig, deps: JobRunnerDeps): Or
       return "deny";
     },
   };
+}
+
+const MAX_COMPLETED_JOBS = 100;
+
+/**
+ * Prune old completed/failed jobs to prevent unbounded state growth.
+ * Keeps the most recent MAX_COMPLETED_JOBS finished jobs; queued/running are never pruned.
+ */
+function pruneOldJobs(state: DaemonState): void {
+  const finished = state.jobs.filter((j) => j.status === "complete" || j.status === "failed");
+  if (finished.length <= MAX_COMPLETED_JOBS) return;
+
+  // Keep only the most recent MAX_COMPLETED_JOBS finished jobs
+  const toRemove = new Set(
+    finished
+      .sort((a, b) => (a.completedAt ?? "").localeCompare(b.completedAt ?? ""))
+      .slice(0, finished.length - MAX_COMPLETED_JOBS)
+      .map((j) => j.id),
+  );
+  state.jobs = state.jobs.filter((j) => !toRemove.has(j.id));
 }
 
 function todayDateStr(): string {
