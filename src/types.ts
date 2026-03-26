@@ -200,6 +200,7 @@ export interface PipelineReport {
 
 export interface DaemonConfig {
   version: 1;
+  name?: string;
   projectDir: string;
   triggers: TriggerConfig[];
   budget: BudgetConfig;
@@ -273,12 +274,30 @@ export interface DaemonState {
 export type IPCRequest =
   | { type: "status" }
   | { type: "trigger"; skills: string[]; designDoc?: string }
-  | { type: "queue" };
+  | { type: "queue" }
+  | { type: "instances" };
 
 export interface IPCResponse {
   ok: boolean;
   data?: unknown;
   error?: string;
+}
+
+// ── Parallel daemon instances ────────────────────────────────────
+
+export interface GlobalBudget {
+  date: string;
+  totalUsd: number;
+  jobCount: number;
+  byInstance: Record<string, { totalUsd: number; jobCount: number }>;
+}
+
+export interface InstanceInfo {
+  name: string;
+  pid: number;
+  alive: boolean;
+  socketPath: string;
+  instanceDir: string;
 }
 
 // ── Oracle memory ────────────────────────────────────────────────
