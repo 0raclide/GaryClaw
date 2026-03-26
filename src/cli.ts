@@ -132,6 +132,9 @@ export function parseArgs(argv: string[]): {
   name?: string;
   all: boolean;
   cleanup: boolean;
+  doctorFix: boolean;
+  doctorJson: boolean;
+  doctorSkipAuth: boolean;
 } {
   const args = argv.slice(2);
   const command = args[0] ?? "help";
@@ -153,6 +156,9 @@ export function parseArgs(argv: string[]): {
   let name: string | undefined;
   let all = false;
   let cleanup = false;
+  let doctorFix = false;
+  let doctorJson = false;
+  let doctorSkipAuth = false;
 
   // Collect skills (positional args after "run") and flags
   let shared: SharedFlags = { projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, designDoc };
@@ -232,6 +238,23 @@ export function parseArgs(argv: string[]): {
       }
     }
     researchTopic = topicParts.join(" ") || undefined;
+  } else if (command === "doctor") {
+    // doctor [--fix] [--json] [--skip-auth] [--project-dir <dir>]
+    for (let i = 1; i < args.length; i++) {
+      if (args[i].startsWith("--")) {
+        const { consumed, updated } = parseSharedFlag(args[i], args[i + 1], shared);
+        if (consumed > 0) {
+          shared = updated;
+          if (consumed === 2) i++;
+        } else if (args[i] === "--fix") {
+          doctorFix = true;
+        } else if (args[i] === "--json") {
+          doctorJson = true;
+        } else if (args[i] === "--skip-auth") {
+          doctorSkipAuth = true;
+        }
+      }
+    }
   } else {
     // Non-run commands: parse shared flags only
     for (let i = 1; i < args.length; i++) {
@@ -248,7 +271,7 @@ export function parseArgs(argv: string[]): {
   // Merge shared flags back into return value
   ({ projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, designDoc } = shared);
 
-  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, tailLines, designDoc, force, researchTopic, name, all, cleanup };
+  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, tailLines, designDoc, force, researchTopic, name, all, cleanup, doctorFix, doctorJson, doctorSkipAuth };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -422,6 +445,7 @@ ${BOLD}Usage:${RESET}
   garyclaw replay                     Replay decision log as timeline
   garyclaw research <topic>           Research a topic for oracle domain expertise
   garyclaw oracle init                Initialize oracle memory directories + templates
+  garyclaw doctor [--fix] [--json]    Run self-diagnostics on all subsystems
   garyclaw daemon start [--name <n>]   Start background daemon instance
   garyclaw daemon stop [--name <n>]   Stop running daemon instance
   garyclaw daemon stop [--name <n>] --cleanup  Stop + remove worktree/branch
@@ -444,6 +468,9 @@ ${BOLD}Options:${RESET}
   --name <instance>        Daemon instance name (default: "default")
   --all                    Apply to all daemon instances (stop --all, status --all)
   --cleanup                Remove worktree + branch on daemon stop (named instances)
+  --fix                    Auto-fix fixable issues (doctor command)
+  --json                   Output as JSON (doctor command)
+  --skip-auth              Skip auth verification check (doctor command)
   --force                  Force re-research even if topic is fresh (research command)
 
 ${BOLD}Examples:${RESET}
@@ -464,6 +491,9 @@ ${BOLD}Examples:${RESET}
   garyclaw daemon status                      # check default daemon
   garyclaw daemon stop --all                  # stop all instances
   garyclaw daemon log --name review-bot       # view instance log
+  garyclaw doctor                            # run self-diagnostics
+  garyclaw doctor --fix                      # diagnose + auto-fix
+  garyclaw doctor --json --skip-auth         # JSON output, skip auth check
   garyclaw research "WebSocket libraries"    # research a topic
   garyclaw research "OAuth 2.1" --force      # re-research ignoring freshness
 
@@ -738,6 +768,29 @@ async function main(): Promise<void> {
     console.error(`${RED}Unknown oracle subcommand:${RESET} ${parsed.subcommand || parsed.skills[0] || ""}`);
     console.error(`${DIM}Available: init${RESET}`);
     process.exit(1);
+  }
+
+  if (parsed.command === "doctor") {
+    const { runDoctor, formatDoctorReport } = await import("./doctor.js");
+
+    const report = await runDoctor({
+      projectDir: parsed.projectDir,
+      fix: parsed.doctorFix,
+      skipAuth: parsed.doctorSkipAuth,
+    });
+
+    if (parsed.doctorJson) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      console.log(formatDoctorReport(report, parsed.doctorFix));
+    }
+
+    // Exit with non-zero if any FAIL checks
+    if (report.summary.fail > 0) {
+      process.exit(1);
+    }
+
+    return;
   }
 
   if (parsed.command === "daemon") {

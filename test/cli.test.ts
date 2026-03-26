@@ -260,6 +260,43 @@ describe("parseArgs", () => {
     expect(result.command).toBe("research");
     expect(result.researchTopic).toBeUndefined();
   });
+
+  // ── doctor command ──────────────────────────────────────────
+
+  it("parses 'doctor' command", () => {
+    const result = parseArgs(["node", "cli.ts", "doctor"]);
+    expect(result.command).toBe("doctor");
+    expect(result.doctorFix).toBe(false);
+    expect(result.doctorJson).toBe(false);
+    expect(result.doctorSkipAuth).toBe(false);
+  });
+
+  it("parses 'doctor --fix'", () => {
+    const result = parseArgs(["node", "cli.ts", "doctor", "--fix"]);
+    expect(result.command).toBe("doctor");
+    expect(result.doctorFix).toBe(true);
+  });
+
+  it("parses 'doctor --json'", () => {
+    const result = parseArgs(["node", "cli.ts", "doctor", "--json"]);
+    expect(result.command).toBe("doctor");
+    expect(result.doctorJson).toBe(true);
+  });
+
+  it("parses 'doctor --skip-auth'", () => {
+    const result = parseArgs(["node", "cli.ts", "doctor", "--skip-auth"]);
+    expect(result.command).toBe("doctor");
+    expect(result.doctorSkipAuth).toBe(true);
+  });
+
+  it("parses 'doctor' with all flags", () => {
+    const result = parseArgs(["node", "cli.ts", "doctor", "--fix", "--json", "--skip-auth", "--project-dir", "/tmp/proj"]);
+    expect(result.command).toBe("doctor");
+    expect(result.doctorFix).toBe(true);
+    expect(result.doctorJson).toBe(true);
+    expect(result.doctorSkipAuth).toBe(true);
+    expect(result.projectDir).toBe("/tmp/proj");
+  });
 });
 
 // ── parseSingleAnswer ────────────────────────────────────────────
