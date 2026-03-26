@@ -13,6 +13,11 @@ import { runPipeline } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
 import { notifyJobComplete, notifyJobError, writeSummary } from "./notifier.js";
 import {
+  readGlobalBudget,
+  updateGlobalBudget,
+  isSkillSetActive,
+} from "./daemon-registry.js";
+import {
   PerJobCostExceededError,
 } from "./types.js";
 import type {
@@ -61,13 +66,22 @@ const defaultDeps: JobRunnerDeps = {
 
 /**
  * Create a job runner bound to a daemon config and checkpoint directory.
+ *
+ * @param config - Daemon config
+ * @param checkpointDir - Instance-specific checkpoint dir (e.g., .garyclaw/daemons/default/)
+ * @param deps - Injectable dependencies for testability
+ * @param instanceName - Name of this daemon instance (for global budget attribution)
+ * @param parentCheckpointDir - Parent .garyclaw/ dir (for global budget + cross-instance dedup). If not provided, global budget and cross-instance dedup are disabled.
  */
 export function createJobRunner(
   config: DaemonConfig,
   checkpointDir: string,
   deps: Partial<JobRunnerDeps> = {},
+  instanceName?: string,
+  parentCheckpointDir?: string,
 ): JobRunner {
   const d = { ...defaultDeps, ...deps };
+  const resolvedInstanceName = instanceName ?? "default";
   let currentConfig = config;
   let state = loadState(checkpointDir);
   let running = false;
@@ -105,15 +119,30 @@ export function createJobRunner(
       return null;
     }
 
-    // Budget check: cost headroom
-    const headroom = currentConfig.budget.dailyCostLimitUsd - state.dailyCost.totalUsd;
-    if (headroom < 0.001) {
-      d.log("warn", `Budget: daily cost limit ($${currentConfig.budget.dailyCostLimitUsd}) reached`);
+    // Budget check: cost headroom (use global budget if available, else local)
+    if (parentCheckpointDir) {
+      const globalBudget = readGlobalBudget(parentCheckpointDir);
+      const globalHeadroom = currentConfig.budget.dailyCostLimitUsd - globalBudget.totalUsd;
+      if (globalHeadroom < 0.001) {
+        d.log("warn", `Budget: global daily cost limit ($${currentConfig.budget.dailyCostLimitUsd}) reached across all instances`);
+        return null;
+      }
+    } else {
+      const headroom = currentConfig.budget.dailyCostLimitUsd - state.dailyCost.totalUsd;
+      if (headroom < 0.001) {
+        d.log("warn", `Budget: daily cost limit ($${currentConfig.budget.dailyCostLimitUsd}) reached`);
+        return null;
+      }
+    }
+
+    // Cross-instance dedup: check if skills are active in ANY other instance
+    const skillKey = designDoc ? `${skills.join(",")};${designDoc}` : skills.join(",");
+    if (parentCheckpointDir && isSkillSetActive(parentCheckpointDir, skills, resolvedInstanceName)) {
+      d.log("info", `Cross-instance dedup: skills [${skillKey}] already active in another instance`);
       return null;
     }
 
-    // Dedup: skip if same skills + designDoc already queued or running
-    const skillKey = designDoc ? `${skills.join(",")};${designDoc}` : skills.join(",");
+    // Local dedup: skip if same skills + designDoc already queued or running in this instance
     const duplicate = state.jobs.find(
       (j) => {
         const jKey = j.designDoc ? `${j.skills.join(",")};${j.designDoc}` : j.skills.join(",");
@@ -174,11 +203,20 @@ export function createJobRunner(
       nextJob.completedAt = new Date().toISOString();
       nextJob.reportPath = join(jobDir, nextJob.skills.length > 1 ? "pipeline-report.md" : "report.md");
 
-      // Update daily cost
+      // Update daily cost (local)
       const today = todayDateStr();
       resetDailyIfNeeded(state, today);
       state.dailyCost.totalUsd += nextJob.costUsd;
       state.dailyCost.jobCount++;
+
+      // Update global budget (shared across all instances)
+      if (parentCheckpointDir) {
+        try {
+          updateGlobalBudget(parentCheckpointDir, nextJob.costUsd, resolvedInstanceName);
+        } catch (err) {
+          d.log("warn", `Failed to update global budget: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
 
       d.writeSummary(nextJob, jobDir);
       d.notifyJobComplete(nextJob, jobConfig);
