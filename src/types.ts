@@ -202,6 +202,7 @@ export interface DaemonConfig {
   version: 1;
   name?: string;
   projectDir: string;
+  worktreePath?: string;    // Absolute path to git worktree (named instances only)
   triggers: TriggerConfig[];
   budget: BudgetConfig;
   notifications: {
