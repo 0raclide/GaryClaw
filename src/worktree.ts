@@ -137,12 +137,28 @@ export function createWorktree(
       cwd: repoDir,
       stdio: "pipe",
     });
-    // Branch exists — reset to base branch HEAD
+    // Branch exists — check for unmerged commits before resetting
+    const aheadCount = execFileSync(
+      "git",
+      ["rev-list", "--count", `${baseBranch}..${branch}`],
+      { cwd: repoDir, stdio: "pipe", encoding: "utf-8" },
+    ).trim();
+    if (parseInt(aheadCount, 10) > 0) {
+      throw new Error(
+        `Branch ${branch} has ${aheadCount} unmerged commit(s) ahead of ${baseBranch}. ` +
+        `Merge or delete the branch first: git branch -D ${branch}`,
+      );
+    }
+    // Branch exists with no unmerged commits — safe to reset
     execFileSync("git", ["branch", "-f", branch, baseHead], {
       cwd: repoDir,
       stdio: "pipe",
     });
-  } catch {
+  } catch (err) {
+    // Re-throw if it's our own unmerged-commit guard error
+    if (err instanceof Error && err.message.includes("unmerged commit")) {
+      throw err;
+    }
     // Branch doesn't exist — create it
     execFileSync("git", ["branch", branch, baseHead], {
       cwd: repoDir,

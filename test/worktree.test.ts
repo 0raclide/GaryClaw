@@ -125,13 +125,12 @@ describe("createWorktree", () => {
     expect(info.head).toBe(mainHead);
   });
 
-  it("resets branch to base HEAD when branch already exists", () => {
-    // Create worktree, make a commit, remove worktree, create again
-    const info1 = createWorktree(repoDir, "builder", "main");
-    makeCommit(info1.path, "file.txt", "content", "worktree commit");
+  it("resets branch to base HEAD when branch already exists with no unmerged commits", () => {
+    // Create worktree, remove it without committing (branch at same HEAD as main)
+    createWorktree(repoDir, "builder", "main");
     removeWorktree(repoDir, "builder");
 
-    // Make a new commit on main so heads diverge
+    // Make a new commit on main
     makeCommit(repoDir, "main-file.txt", "main content", "main commit");
     const newMainHead = execFileSync("git", ["rev-parse", "main"], {
       cwd: repoDir,
@@ -139,9 +138,23 @@ describe("createWorktree", () => {
       encoding: "utf-8",
     }).trim();
 
-    // Re-create: should reset branch to new main HEAD
+    // Re-create: branch has no unmerged commits, should reset to new main HEAD
     const info2 = createWorktree(repoDir, "builder", "main");
     expect(info2.head).toBe(newMainHead);
+  });
+
+  it("throws when branch has unmerged commits ahead of base", () => {
+    // Regression: ISSUE-002 — createWorktree force-reset losing unmerged commits
+    // Found by /qa on 2026-03-26
+    // Report: .gstack/qa-reports/qa-report-garyclaw-2026-03-26.md
+    const info1 = createWorktree(repoDir, "builder", "main");
+    makeCommit(info1.path, "feature.txt", "new feature", "worktree commit");
+    removeWorktree(repoDir, "builder");
+
+    // Branch still exists with 1 unmerged commit — createWorktree should refuse
+    expect(() => createWorktree(repoDir, "builder", "main")).toThrow(
+      /unmerged commit/,
+    );
   });
 
   it("replaces existing worktree directory cleanly", () => {
