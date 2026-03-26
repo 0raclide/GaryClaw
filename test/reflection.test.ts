@@ -409,23 +409,44 @@ describe("reflection", () => {
       const config = makeConfig();
       initOracleMemory(config);
 
-      // First reflection: decision succeeds
+      // First reflection: decision maps to success because question contains "ISSUE-001"
+      // (matched by findRelatedIssue via ID). The outcome stores the decision's question
+      // text + relatedFilePath. findReopenedDecisions later compares outcome.question
+      // against current issue descriptions via normalizedLevenshtein < 0.3.
+      //
+      // The question text must be very similar to the future issue's description
+      // for Levenshtein reopened detection to trigger.
+      // For reopened detection to trigger via runReflection:
+      // 1. First outcome must be "success" — findRelatedIssue matches by issue ID in question
+      // 2. outcome.question vs new issue description must have normalizedLevenshtein < 0.3
+      // 3. Same filePath
+      //
+      // We use long, nearly-identical strings so the small differences stay under the
+      // 0.3 threshold. The "ISSUE-001" prefix in the question adds edit distance, so
+      // longer strings dilute that noise in the normalized metric.
       runReflection({
-        decisions: [makeDecision({ question: "Fix ISSUE-001?" })],
-        issues: [makeIssue({ id: "ISSUE-001", status: "fixed" })],
+        decisions: [makeDecision({
+          question: "ISSUE-001 the horizontal padding on the submit button component is misaligned with the design spec",
+          chosen: "Yes",
+        })],
+        issues: [makeIssue({
+          id: "ISSUE-001",
+          status: "fixed",
+          description: "The horizontal padding on the submit button component is misaligned with the design spec",
+          filePath: "src/components/Button.tsx",
+        })],
         jobId: "job-1",
         projectDir: BASE_DIR,
         memoryConfig: config,
       });
 
-      // Second reflection: same issue reappears (reopened)
-      // The reopened detection checks current issues against previous outcomes
+      // Second reflection: same issue reappears with a very similar description + same file.
       const result = runReflection({
-        decisions: [makeDecision({ question: "Fix the color issue?" })],
+        decisions: [makeDecision({ question: "Unrelated color question" })],
         issues: [
           makeIssue({
             id: "ISSUE-005",
-            description: "Button alignment is off by 3px",
+            description: "The horizontal padding on the submit button component is still misaligned with the design spec",
             filePath: "src/components/Button.tsx",
           }),
         ],
@@ -434,9 +455,7 @@ describe("reflection", () => {
         memoryConfig: config,
       });
 
-      // The reopened detection operates on *existing* outcomes vs *current* issues
-      // It marks previously-successful outcomes as reopened
-      expect(result.reopenedCount).toBeGreaterThanOrEqual(0);
+      expect(result.reopenedCount).toBe(1);
     });
 
     it("handles empty decisions gracefully", () => {
