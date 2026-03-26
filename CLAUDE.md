@@ -16,10 +16,11 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 3: COMPLETE** (2026-03-25) — Skill Chaining, pipeline runner, context handoff, pipeline resume
 **Structured Issue Extraction: COMPLETE** (2026-03-25) — Real-time + git log hybrid extraction
 **Phase 4a: COMPLETE** (2026-03-25) — Daemon Mode MVP: lifecycle, IPC, job queue, git poll, notifications
-- 16 source modules + CLI
+**Phase 5a: COMPLETE** (2026-03-26) — Oracle Memory Infrastructure + Enhanced Oracle Prompt
+- 18 source modules + CLI
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
-**Next:** Phase 4b (Scheduling: cron triggers, config hot-reload)
+**Next:** Phase 5b (Post-Job Reflection + Quality Tracking)
 
 ---
 
@@ -36,11 +37,20 @@ npx tsx src/cli.ts run qa --autonomous
 npx tsx src/cli.ts run qa design-review ship
 npx tsx src/cli.ts run /qa /design-review /ship   # slashes stripped automatically
 
+# Review then implement (implement reads design doc + review context)
+npx tsx src/cli.ts run plan-ceo-review plan-eng-review implement --autonomous
+
+# Just implement from design doc (no review step)
+npx tsx src/cli.ts run implement --autonomous
+
 # Resume from last checkpoint or pipeline
 npx tsx src/cli.ts resume --checkpoint-dir .garyclaw
 
 # Replay decision timeline
 npx tsx src/cli.ts replay
+
+# Oracle memory management
+npx tsx src/cli.ts oracle init                   # create memory dirs + templates
 
 # Daemon mode (background process)
 npx tsx src/cli.ts daemon start                    # start daemon (reads .garyclaw/daemon.json)
@@ -54,7 +64,8 @@ npx tsx src/cli.ts run qa \
   --max-turns 15 \         # turns per segment (default: 15)
   --threshold 0.85 \       # relay at 85% context (default: 0.85)
   --max-sessions 10 \      # max relay sessions (default: 10)
-  --autonomous             # use Decision Oracle
+  --autonomous \           # use Decision Oracle
+  --no-memory              # disable Oracle memory injection
 
 # Run tests
 npm test
@@ -102,7 +113,9 @@ CLI (args, readline, display, daemon subcommands)
 | `src/job-runner.ts` | FIFO job queue, budget enforcement, state persistence |
 | `src/triggers.ts` | Git poll trigger with HEAD change detection + debounce |
 | `src/notifier.ts` | macOS notifications via osascript, job summary files |
-| `src/cli.ts` | `garyclaw run/resume/replay/daemon`, multi-skill, daemon subcommands |
+| `src/safe-json.ts` | Shared atomic JSON/text I/O — `safeReadJSON`, `safeWriteJSON`, corruption recovery |
+| `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics |
+| `src/cli.ts` | `garyclaw run/resume/replay/oracle/daemon`, multi-skill, daemon subcommands |
 
 ### Key Design Decisions
 
@@ -113,6 +126,10 @@ CLI (args, readline, display, daemon subcommands)
 - **Context window:** `modelUsage.contextWindow` = 1,000,000
 - **Strip ANTHROPIC_API_KEY** from env so SDK uses Claude Max login (not API billing)
 - **Git stash with `--include-untracked`** for relay — new files must be included
+- **7 Decision Principles** — P7 "Local evidence trumps general knowledge" added in Phase 5a
+- **Two-layer oracle memory** — global `~/.garyclaw/oracle-memory/` + per-project `.garyclaw/oracle-memory/`. decision-outcomes.md per-project only.
+- **Circuit breaker** — accuracy < 60% with 10+ decisions disables memory injection + notifies
+- **Prompt injection sanitization** — strip known patterns before memory injection into Oracle prompt
 
 ---
 
@@ -142,8 +159,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 |-----------|-------|----------|
 | `test/token-monitor.test.ts` | 24 | recordTurnUsage, shouldRelay, growthRate, edge cases |
 | `test/checkpoint.test.ts` | 25 | write/read/rotation, relay prompt tiering, token budget |
-| `test/ask-handler.test.ts` | 16 | Multi-question, multi-select, decision audit log, timeout→deny |
-| `test/oracle.test.ts` | 16 | Oracle decisions, confidence, escalation, error handling |
+| `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
+| `test/oracle.test.ts` | 33 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
 | `test/sdk-wrapper.test.ts` | 12 | env stripping, usage extraction, result parsing |
 | `test/report.test.ts` | 13 | merge/dedup, markdown formatting |
 | `test/relay.test.ts` | 7 | git stash/pop, relay segment construction |
@@ -154,6 +171,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner.test.ts` | 20 | FIFO queue, dedup, budget, state persistence, job lifecycle |
 | `test/triggers.test.ts` | 15 | Git poll HEAD detection, debounce, interval, branch filtering |
 | `test/daemon.test.ts` | 12 | Config validation, PID lifecycle, IPC handler, logger |
+| `test/safe-json.test.ts` | 21 | Atomic write/read, corruption recovery, .bak rename, validation |
+| `test/oracle-memory.test.ts` | 47 | Two-layer resolution, sanitization, metrics, circuit breaker, outcomes |
 
 ---
 
@@ -176,6 +195,12 @@ Hybrid extraction from SDK message stream (git commit tool_use blocks) + post-ho
 
 ### Phase 4a: Daemon Mode MVP — COMPLETE
 Persistent background daemon: `garyclaw daemon start/stop/status/trigger/log`. FIFO job queue with budget enforcement and dedup. Git poll trigger with HEAD change detection and debounce. macOS notifications via osascript. Unix domain socket IPC. Job state persistence in `.garyclaw/daemon-state.json`. Always autonomous mode. See `src/daemon.ts`.
+
+### Phase 5a: Oracle Memory Infrastructure — COMPLETE
+Two-layer memory (global + per-project), `safe-json.ts` shared I/O, `oracle-memory.ts` read/write with budget enforcement, 7th Decision Principle ("Local evidence trumps general knowledge"), oracle prompt memory injection, `otherProposal` response parsing, `--no-memory` CLI flag, `garyclaw oracle init` command, circuit breaker (accuracy < 60% disables memory), prompt injection sanitization.
+
+### Phase 5b: Post-Job Reflection + Quality Tracking (NEXT)
+`src/reflection.ts` — post-job reflection runner, decision outcomes tracking, reopened issue detection.
 
 ### Phase 4b: Scheduling (DEFERRED)
 Cron triggers, config hot-reload via SIGHUP.
