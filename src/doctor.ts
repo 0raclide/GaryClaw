@@ -13,7 +13,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { readPidFile, isPidAlive, removePidFile } from "./pid-utils.js";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
-import { listWorktrees, removeWorktree, branchName } from "./worktree.js";
+import { listWorktrees, removeWorktree, branchName, resolveBaseBranch } from "./worktree.js";
+import { validateGlobalBudget } from "./daemon-registry.js";
 import { execFileSync } from "node:child_process";
 import type { GlobalBudget, OracleMetrics } from "./types.js";
 
@@ -336,15 +337,26 @@ export function checkOracleMemory(options: DoctorOptions): CheckResult {
 
 // ── Check 3: Orphaned Worktrees ─────────────────────────────────
 
-export function checkOrphanedWorktrees(options: DoctorOptions): CheckResult {
+export function checkOrphanedWorktrees(
+  options: DoctorOptions,
+  deps?: {
+    listWorktrees: (repoDir: string) => { path: string; branch: string; head: string }[];
+    removeWorktree: (repoDir: string, instanceName: string, deleteBranch: boolean) => void;
+    worktreeHasUnmergedCommits: (repoDir: string, instanceName: string) => boolean;
+  },
+): CheckResult {
   const checkpointDir = join(options.projectDir, ".garyclaw");
   const details: string[] = [];
   let hasIssue = false;
   let fixedCount = 0;
 
+  const _listWorktrees = deps?.listWorktrees ?? listWorktrees;
+  const _removeWorktree = deps?.removeWorktree ?? removeWorktree;
+  const _worktreeHasUnmergedCommits = deps?.worktreeHasUnmergedCommits ?? worktreeHasUnmergedCommits;
+
   let worktrees: { path: string; branch: string; head: string }[];
   try {
-    worktrees = listWorktrees(options.projectDir);
+    worktrees = _listWorktrees(options.projectDir);
   } catch {
     return {
       name: "worktrees",
@@ -382,7 +394,7 @@ export function checkOrphanedWorktrees(options: DoctorOptions): CheckResult {
 
     // Orphaned worktree — check for unmerged commits
     hasIssue = true;
-    const hasUnmerged = worktreeHasUnmergedCommits(options.projectDir, instanceName);
+    const hasUnmerged = _worktreeHasUnmergedCommits(options.projectDir, instanceName);
 
     if (hasUnmerged) {
       details.push(
@@ -396,7 +408,7 @@ export function checkOrphanedWorktrees(options: DoctorOptions): CheckResult {
       );
       if (options.fix) {
         try {
-          removeWorktree(options.projectDir, instanceName, true);
+          _removeWorktree(options.projectDir, instanceName, true);
           fixedCount++;
           details.push(`  Fixed: removed worktree and branch`);
         } catch (err) {
@@ -535,8 +547,9 @@ export function checkBudgetStatus(options: DoctorOptions): CheckResult {
   const budgetPath = join(checkpointDir, GLOBAL_BUDGET_FILE);
   const details: string[] = [];
 
-  const dailyLimit = options.dailyCostLimitUsd ?? loadBudgetLimitFromConfig(checkpointDir) ?? DEFAULT_DAILY_COST_LIMIT;
-  const maxJobs = options.maxJobsPerDay ?? loadMaxJobsFromConfig(checkpointDir) ?? DEFAULT_MAX_JOBS_PER_DAY;
+  const configLimits = loadDaemonBudgetConfig(checkpointDir);
+  const dailyLimit = options.dailyCostLimitUsd ?? configLimits.dailyCostLimitUsd ?? DEFAULT_DAILY_COST_LIMIT;
+  const maxJobs = options.maxJobsPerDay ?? configLimits.maxJobsPerDay ?? DEFAULT_MAX_JOBS_PER_DAY;
 
   if (!existsSync(budgetPath)) {
     return {
@@ -547,7 +560,7 @@ export function checkBudgetStatus(options: DoctorOptions): CheckResult {
     };
   }
 
-  // Try to read budget
+  // Use shared validateGlobalBudget from daemon-registry (single source of truth for budget validation).
   const budget = safeReadJSON<GlobalBudget>(budgetPath, validateGlobalBudget);
 
   if (!budget) {
@@ -769,40 +782,10 @@ function defaultMetrics(): OracleMetrics {
   };
 }
 
-function validateGlobalBudget(data: unknown): data is GlobalBudget {
-  if (typeof data !== "object" || data === null) return false;
-  const d = data as Record<string, unknown>;
-  return (
-    typeof d.date === "string" &&
-    typeof d.totalUsd === "number" &&
-    typeof d.jobCount === "number" &&
-    typeof d.byInstance === "object" &&
-    d.byInstance !== null
-  );
-}
-
-function worktreeHasUnmergedCommits(repoDir: string, instanceName: string): boolean {
+export function worktreeHasUnmergedCommits(repoDir: string, instanceName: string): boolean {
   const branch = branchName(instanceName);
   try {
-    // Try to find the base branch
-    let baseBranch = "main";
-    try {
-      execFileSync("git", ["rev-parse", "--verify", "refs/heads/main"], {
-        cwd: repoDir,
-        stdio: "pipe",
-      });
-    } catch {
-      baseBranch = "master";
-      try {
-        execFileSync("git", ["rev-parse", "--verify", "refs/heads/master"], {
-          cwd: repoDir,
-          stdio: "pipe",
-        });
-      } catch {
-        // Can't determine base branch — assume unmerged for safety
-        return true;
-      }
-    }
+    const baseBranch = resolveBaseBranch(repoDir);
 
     const count = execFileSync(
       "git",
@@ -817,30 +800,18 @@ function worktreeHasUnmergedCommits(repoDir: string, instanceName: string): bool
   }
 }
 
-function loadBudgetLimitFromConfig(checkpointDir: string): number | null {
-  // Try to read daemon.json for budget config
+function loadDaemonBudgetConfig(checkpointDir: string): { dailyCostLimitUsd: number | null; maxJobsPerDay: number | null } {
   try {
     const configPath = join(checkpointDir, "daemon.json");
-    if (!existsSync(configPath)) return null;
+    if (!existsSync(configPath)) return { dailyCostLimitUsd: null, maxJobsPerDay: null };
     const raw = readFileSync(configPath, "utf-8");
     const config = JSON.parse(raw);
-    if (config?.budget?.dailyCostLimitUsd && typeof config.budget.dailyCostLimitUsd === "number") {
-      return config.budget.dailyCostLimitUsd;
-    }
+    const budget = config?.budget;
+    return {
+      dailyCostLimitUsd: typeof budget?.dailyCostLimitUsd === "number" ? budget.dailyCostLimitUsd : null,
+      maxJobsPerDay: typeof budget?.maxJobsPerDay === "number" ? budget.maxJobsPerDay : null,
+    };
   } catch { /* ignore */ }
-  return null;
-}
-
-function loadMaxJobsFromConfig(checkpointDir: string): number | null {
-  try {
-    const configPath = join(checkpointDir, "daemon.json");
-    if (!existsSync(configPath)) return null;
-    const raw = readFileSync(configPath, "utf-8");
-    const config = JSON.parse(raw);
-    if (config?.budget?.maxJobsPerDay && typeof config.budget.maxJobsPerDay === "number") {
-      return config.budget.maxJobsPerDay;
-    }
-  } catch { /* ignore */ }
-  return null;
+  return { dailyCostLimitUsd: null, maxJobsPerDay: null };
 }
 

@@ -103,7 +103,7 @@ export function listInstances(checkpointDir: string): InstanceInfo[] {
 
 // ── Global budget ────────────────────────────────────────────────
 
-function validateGlobalBudget(data: unknown): data is GlobalBudget {
+export function validateGlobalBudget(data: unknown): data is GlobalBudget {
   if (typeof data !== "object" || data === null) return false;
   const d = data as Record<string, unknown>;
   return (
