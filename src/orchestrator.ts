@@ -521,8 +521,9 @@ async function runSkillInternal(
               jobId: runId,
               projectDir: config.projectDir,
             });
-          } catch {
+          } catch (err) {
             // Reflection failure is non-fatal — don't block completion
+            console.warn(`[GaryClaw] Reflection failed: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
 
