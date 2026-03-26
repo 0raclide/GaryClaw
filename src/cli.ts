@@ -836,13 +836,28 @@ async function main(): Promise<void> {
       console.log(`${GREEN}SIGTERM sent${RESET} — daemon will shut down gracefully`);
 
       // --cleanup: remove worktree + branch after stop
+      // Must wait for daemon to fully exit before removing worktree
       if (parsed.cleanup && instName !== "default") {
-        console.log(`${DIM}Removing worktree and branch for [${instName}]...${RESET}`);
-        try {
-          removeWorktree(parsed.projectDir, instName, true);
-          console.log(`${GREEN}Worktree and branch garyclaw/${instName} removed${RESET}`);
-        } catch (err) {
-          console.log(`${YELLOW}Failed to remove worktree: ${err instanceof Error ? err.message : String(err)}${RESET}`);
+        // Poll until daemon process exits (max 30s)
+        const maxWaitMs = 30_000;
+        const pollMs = 250;
+        const deadline = Date.now() + maxWaitMs;
+        let exited = false;
+        while (Date.now() < deadline) {
+          if (!isPidAlive(pid)) { exited = true; break; }
+          await new Promise((r) => setTimeout(r, pollMs));
+        }
+        if (!exited) {
+          console.log(`${YELLOW}Daemon [${instName}] still running after ${maxWaitMs / 1000}s — skipping worktree cleanup${RESET}`);
+          console.log(`${DIM}Run 'garyclaw daemon stop --name ${instName} --cleanup' again after it exits${RESET}`);
+        } else {
+          console.log(`${DIM}Removing worktree and branch for [${instName}]...${RESET}`);
+          try {
+            removeWorktree(parsed.projectDir, instName, true);
+            console.log(`${GREEN}Worktree and branch garyclaw/${instName} removed${RESET}`);
+          } catch (err) {
+            console.log(`${YELLOW}Failed to remove worktree: ${err instanceof Error ? err.message : String(err)}${RESET}`);
+          }
         }
       }
       return;
