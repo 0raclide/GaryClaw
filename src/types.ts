@@ -221,7 +221,7 @@ export interface DaemonConfig {
   };
 }
 
-export type TriggerConfig = GitPollTrigger;
+export type TriggerConfig = GitPollTrigger | CronTrigger;
 
 export interface GitPollTrigger {
   type: "git_poll";
@@ -229,6 +229,13 @@ export interface GitPollTrigger {
   skills: string[];
   branch?: string;
   debounceSeconds?: number;
+}
+
+export interface CronTrigger {
+  type: "cron";
+  expression: string;     // standard 5-field cron: "0 2 * * *" = 2am daily
+  skills: string[];
+  designDoc?: string;     // optional design doc for implement skill
 }
 
 export interface BudgetConfig {
@@ -241,7 +248,7 @@ export type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelle
 
 export interface Job {
   id: string;
-  triggeredBy: "git_poll" | "manual";
+  triggeredBy: "git_poll" | "cron" | "manual";
   triggerDetail: string;
   skills: string[];
   projectDir: string;
