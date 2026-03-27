@@ -146,6 +146,47 @@ describe("checkpoint", () => {
       expect(validateCheckpoint("string")).toBe(false);
       expect(validateCheckpoint(42)).toBe(false);
     });
+
+    it("accepts checkpoint without codebaseSummary (backward compatible)", () => {
+      const cp = createMockCheckpoint();
+      expect(validateCheckpoint(cp)).toBe(true);
+      expect(cp.codebaseSummary).toBeUndefined();
+    });
+
+    it("accepts checkpoint with valid codebaseSummary", () => {
+      const cp = createMockCheckpoint({
+        codebaseSummary: {
+          observations: ["Uses kebab-case"],
+          failedApproaches: ["Tried X but Y"],
+          lastSessionIndex: 1,
+        },
+      });
+      expect(validateCheckpoint(cp)).toBe(true);
+    });
+
+    it("rejects checkpoint with invalid codebaseSummary (not an object)", () => {
+      const cp = createMockCheckpoint() as any;
+      cp.codebaseSummary = "invalid";
+      expect(validateCheckpoint(cp)).toBe(false);
+    });
+
+    it("rejects checkpoint with invalid codebaseSummary (null)", () => {
+      const cp = createMockCheckpoint() as any;
+      cp.codebaseSummary = null;
+      expect(validateCheckpoint(cp)).toBe(false);
+    });
+
+    it("rejects checkpoint with codebaseSummary missing observations array", () => {
+      const cp = createMockCheckpoint() as any;
+      cp.codebaseSummary = { failedApproaches: [], lastSessionIndex: 0 };
+      expect(validateCheckpoint(cp)).toBe(false);
+    });
+
+    it("rejects checkpoint with codebaseSummary missing failedApproaches array", () => {
+      const cp = createMockCheckpoint() as any;
+      cp.codebaseSummary = { observations: [], lastSessionIndex: 0 };
+      expect(validateCheckpoint(cp)).toBe(false);
+    });
   });
 
   describe("generateRelayPrompt", () => {
@@ -273,6 +314,43 @@ describe("checkpoint", () => {
       expect(prompt).toContain("feature/fix");
       expect(prompt).toContain("deadbeef");
       expect(prompt).toContain("Continuing qa Run");
+    });
+
+    it("includes codebase summary section when present", () => {
+      const cp = createMockCheckpoint({
+        codebaseSummary: {
+          observations: ["Uses kebab-case naming", "Types in types.ts with zero imports"],
+          failedApproaches: ["Tried require() but failed in ESM"],
+          lastSessionIndex: 2,
+        },
+      });
+      const prompt = generateRelayPrompt(cp);
+      expect(prompt).toContain("Codebase Context (carried from sessions 0-2)");
+      expect(prompt).toContain("Approaches that failed");
+      expect(prompt).toContain("Tried require() but failed in ESM");
+      expect(prompt).toContain("Observations:");
+      expect(prompt).toContain("Uses kebab-case naming");
+    });
+
+    it("omits codebase summary section when not present", () => {
+      const cp = createMockCheckpoint();
+      const prompt = generateRelayPrompt(cp);
+      expect(prompt).not.toContain("Codebase Context");
+    });
+
+    it("relay prompt with summary stays under 10K tokens", () => {
+      const cp = createMockCheckpoint({
+        issues: Array.from({ length: 10 }, (_, i) =>
+          createMockIssue({ status: "open", description: `Issue ${i} description` }),
+        ),
+        codebaseSummary: {
+          observations: Array.from({ length: 20 }, (_, i) => `Observation ${i}: this is a codebase pattern`),
+          failedApproaches: Array.from({ length: 5 }, (_, i) => `Failed approach ${i}: tried X but Y`),
+          lastSessionIndex: 3,
+        },
+      });
+      const prompt = generateRelayPrompt(cp);
+      expect(estimateTokens(prompt)).toBeLessThan(10_000);
     });
   });
 
