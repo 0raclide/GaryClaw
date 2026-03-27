@@ -38,14 +38,18 @@ export function worktreeDir(repoDir: string, instanceName: string): string {
  * Git branch names cannot contain: ~ ^ : \ space, control chars, "..", "@{", or end with "." or ".lock".
  */
 export function sanitizeBranchComponent(name: string): string {
-  return name
-    .replace(/[\x00-\x1f\x7f~^:\\@{}\s]+/g, "-")  // control chars + illegal chars → dash
-    .replace(/\.{2,}/g, ".")                         // collapse ".." sequences
-    .replace(/\.lock$/i, "-lock")                    // ".lock" suffix forbidden
-    .replace(/^\./, "-")                             // leading dot forbidden
-    .replace(/\.$/, "-")                             // trailing dot forbidden
-    .replace(/-{2,}/g, "-")                          // collapse repeated dashes
-    .replace(/^-|-$/g, "");                          // trim leading/trailing dashes
+  const sanitized = name
+    .replace(/[\x00-\x1f\x7f~^:\\@{}\s/]+/g, "-")  // control chars + illegal chars + slash → dash
+    .replace(/\.{2,}/g, ".")                          // collapse ".." sequences
+    .replace(/\.lock$/i, "-lock")                     // ".lock" suffix forbidden
+    .replace(/^\./, "-")                              // leading dot forbidden
+    .replace(/\.$/, "-")                              // trailing dot forbidden
+    .replace(/-{2,}/g, "-")                           // collapse repeated dashes
+    .replace(/^-|-$/g, "");                           // trim leading/trailing dashes
+  if (sanitized.length === 0) {
+    throw new Error(`Cannot sanitize "${name}" into a valid git branch component`);
+  }
+  return sanitized;
 }
 
 /**
