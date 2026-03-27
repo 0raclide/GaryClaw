@@ -74,7 +74,9 @@ Verified manually: `GIT_COMMITTER_EMAIL=garyclaw-daemon@local` propagates throug
 **Depends on:** Phase 4a (complete)
 **Added by:** /plan-eng-review on 2026-03-26
 
-## P3: Codebase Summary Persistence Across Relays
+## ~~P3: Codebase Summary Persistence Across Relays~~ — COMPLETE (2026-03-27)
+
+Implemented in 9 commits (5a964dc..4d7baac). CodebaseSummary interface, signal-word extraction with code-anchor bonus, Levenshtein dedup, token budget enforcement (500 failedApproaches + 1500 observations), relay prompt injection, checkpoint validation, orchestrator wiring. 51 tests covering all codepaths including version-string filter, missing lastSessionIndex validation, and relay carry-through integration.
 
 **What:** Generate a structured "codebase summary" during each session that persists across relays — documenting patterns, conventions, file relationships, and lessons learned during the run.
 

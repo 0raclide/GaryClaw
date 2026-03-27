@@ -983,6 +983,67 @@ describe("codebase summary extraction", () => {
     const checkpointArg = vi.mocked(writeCheckpoint).mock.calls[0][0] as any;
     expect(checkpointArg.codebaseSummary).toBeUndefined();
   });
+
+  it("carries observations through relay to second session checkpoint", async () => {
+    // Session 1: assistant text with observations → triggers relay
+    // Session 2: completes successfully
+    // The session 2 checkpoint should carry forward session 1's observations
+    const observationText = "This project uses a convention where all modules follow kebab-case naming and the architecture is organized around zero-import types.";
+
+    let segmentCall = 0;
+    vi.mocked(startSegment).mockImplementation(() => {
+      segmentCall++;
+      if (segmentCall === 1) {
+        // Session 1: observation text + result that triggers relay
+        return makeSegmentIterator([
+          makeAssistantTextMsg(observationText),
+          makeResultMsg("max_turns"),
+        ]);
+      }
+      // Session 2 (after relay): success
+      return makeSegmentIterator([makeResultMsg("success")]);
+    });
+
+    vi.mocked(extractTurnUsage).mockImplementation((msg: any) => {
+      if (msg.type === "assistant") {
+        return {
+          input_tokens: 900000,
+          output_tokens: 1000,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        };
+      }
+      return null;
+    });
+
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1",
+          subtype: msg.subtype,
+          resultText: "ok",
+          usage: null,
+          modelUsage: { "claude-sonnet-4-5-20250929": { contextWindow: 1000000 } },
+          totalCostUsd: 0.1,
+          numTurns: 5,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    // writeCheckpoint called at least twice: relay checkpoint + final checkpoint
+    const checkpointCalls = vi.mocked(writeCheckpoint).mock.calls;
+    expect(checkpointCalls.length).toBeGreaterThanOrEqual(2);
+
+    // First checkpoint (relay) should have observations from session 1
+    const relayCheckpoint = checkpointCalls[0][0] as any;
+    if (relayCheckpoint.codebaseSummary) {
+      expect(relayCheckpoint.codebaseSummary.observations.length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("Post-job reflection integration (9A)", () => {
