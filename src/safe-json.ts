@@ -71,7 +71,22 @@ export function safeWriteJSON(
   const serialized = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
 
   writeFileSync(tmpPath, serialized, "utf-8");
-  renameSync(tmpPath, filePath);
+
+  // Retry rename once on ENOENT — under heavy parallel I/O (e.g., Vitest running
+  // 69 test files simultaneously), the filesystem can transiently report ENOENT
+  // between writeFileSync and renameSync even though both target the same directory.
+  try {
+    renameSync(tmpPath, filePath);
+  } catch (err: unknown) {
+    if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      // Re-create dir and retry once
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(tmpPath, serialized, "utf-8");
+      renameSync(tmpPath, filePath);
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -97,7 +112,19 @@ export function safeWriteText(filePath: string, content: string): void {
 
   const tmpPath = `${filePath}.tmp.${randomBytes(4).toString("hex")}`;
   writeFileSync(tmpPath, content, "utf-8");
-  renameSync(tmpPath, filePath);
+
+  // Retry rename once on ENOENT (same rationale as safeWriteJSON)
+  try {
+    renameSync(tmpPath, filePath);
+  } catch (err: unknown) {
+    if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(tmpPath, content, "utf-8");
+      renameSync(tmpPath, filePath);
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**
