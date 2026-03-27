@@ -171,8 +171,11 @@ export function mapDecisionToOutcome(
   issues: Issue[],
   reopenedDecisionIds: Set<string>,
   jobId?: string,
+  index?: number,
 ): DecisionOutcome {
-  const decisionId = `d-${decision.timestamp.replace(/[:.]/g, "-")}`;
+  // Append index to avoid collisions when multiple decisions share the same timestamp
+  const baseId = `d-${decision.timestamp.replace(/[:.]/g, "-")}`;
+  const decisionId = index != null ? `${baseId}-${index}` : baseId;
 
   // Check if any issue relates to this decision's question
   const relatedIssue = findRelatedIssue(decision, issues);
@@ -291,8 +294,8 @@ export function runReflection(input: ReflectionInput): ReflectionResult {
     // Still compute outcomes for the return value, but don't write to disk
     const existingOutcomes = readDecisionOutcomes(memConfig);
     const reopenedIds = findReopenedDecisions(input.issues, existingOutcomes);
-    const newOutcomes: DecisionOutcome[] = input.decisions.map((d) =>
-      mapDecisionToOutcome(d, input.issues, reopenedIds, input.jobId),
+    const newOutcomes: DecisionOutcome[] = input.decisions.map((d, i) =>
+      mapDecisionToOutcome(d, input.issues, reopenedIds, input.jobId, i),
     );
     return {
       outcomes: newOutcomes,
@@ -309,8 +312,8 @@ export function runReflection(input: ReflectionInput): ReflectionResult {
     const reopenedIds = findReopenedDecisions(input.issues, existingOutcomes);
 
     // Map each decision to an outcome
-    const newOutcomes: DecisionOutcome[] = input.decisions.map((d) =>
-      mapDecisionToOutcome(d, input.issues, reopenedIds, input.jobId),
+    const newOutcomes: DecisionOutcome[] = input.decisions.map((d, i) =>
+      mapDecisionToOutcome(d, input.issues, reopenedIds, input.jobId, i),
     );
 
     // Merge with existing outcomes
