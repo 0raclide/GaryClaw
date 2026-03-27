@@ -22,7 +22,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 6: COMPLETE** (2026-03-26) — Parallel Daemon Instances: registry, global budget, cross-instance dedup, reflection lock
 **Git Worktree Isolation: COMPLETE** (2026-03-26) — Worktree per named instance, branch strategy, fast-forward merge on stop
 **Dogfood Dashboard: COMPLETE** (2026-03-27) — Health score, job/oracle/budget stats, auto-regeneration after every job
-- 27 source modules + CLI
+- 30 source modules + CLI
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -149,6 +149,9 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/prioritize.ts` | Prioritize skill: TODOS.md parsing, overnight goal, oracle context, scoring prompt |
 | `src/worktree.ts` | Git worktree isolation: create, remove, merge, list worktrees for parallel instances |
 | `src/dashboard.ts` | Dogfood dashboard: job/oracle/budget aggregation, health score, markdown formatting |
+| `src/doctor.ts` | Self-diagnostic command: 6 subsystem checks, --fix/--json flags, stale PID detection |
+| `src/failure-taxonomy.ts` | 8-category failure classification, failures.jsonl persistence, notification integration |
+| `src/pid-utils.ts` | PID liveness check, process-name verification, stale PID detection |
 | `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon/dashboard`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
 
 ### Key Design Decisions
