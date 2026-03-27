@@ -35,6 +35,7 @@ import {
   shouldRelay,
   buildUsageSnapshot,
   computeAdaptiveMaxTurns,
+  HEAVY_TOOLS,
 } from "./token-monitor.js";
 import { writeCheckpoint, readCheckpoint, generateRelayPrompt } from "./checkpoint.js";
 import { createAskHandler } from "./ask-handler.js";
@@ -297,6 +298,9 @@ async function runSkillInternal(
     let relayReason = "";
     let relayContextSize = 0;
 
+    // Heavy tool tracking: flag carries from segment N to segment N+1
+    let previousHeavyToolSeen = false;
+
     // 3. Segment loop (within a session)
     for (let segmentIndex = 0; ; segmentIndex++) {
       // Check abort signal at segment boundary
@@ -309,9 +313,18 @@ async function runSkillInternal(
         return;
       }
 
+      // Read heavy tool flag from previous segment, then reset for this segment
+      const heavyToolFlag = previousHeavyToolSeen;
+      previousHeavyToolSeen = false;
+
       // Compute adaptive maxTurns based on context growth rate
+      // When config.adaptiveMaxTurns is explicitly false, skip computation and use fixed value
       const { maxTurns: adaptiveMaxTurns, reason: adaptiveReason } =
-        computeAdaptiveMaxTurns(monitor, config.relayThresholdRatio, config.maxTurnsPerSegment);
+        config.adaptiveMaxTurns === false
+          ? { maxTurns: config.maxTurnsPerSegment, reason: "adaptive disabled" }
+          : computeAdaptiveMaxTurns(monitor, config.relayThresholdRatio, config.maxTurnsPerSegment, {
+              lastHeavyToolSeen: heavyToolFlag,
+            });
 
       callbacks.onEvent({
         type: "adaptive_turns",
@@ -364,6 +377,11 @@ async function runSkillInternal(
               toolName: toolUse.toolName,
               inputSummary: toolUse.inputSummary,
             });
+
+            // Track heavy tools for adaptive maxTurns in the next segment
+            if (HEAVY_TOOLS.has(toolUse.toolName)) {
+              previousHeavyToolSeen = true;
+            }
           }
 
           // Issue extraction: feed all tool_use blocks to tracker

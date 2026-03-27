@@ -49,6 +49,7 @@ interface SharedFlags {
   maxSessions: number;
   autonomous: boolean;
   noMemory: boolean;
+  noAdaptive: boolean;
   designDoc?: string;
 }
 
@@ -104,6 +105,9 @@ export function parseSharedFlag(
   } else if (arg === "--no-memory") {
     updated.noMemory = true;
     return { consumed: 1, updated };
+  } else if (arg === "--no-adaptive") {
+    updated.noAdaptive = true;
+    return { consumed: 1, updated };
   } else if (arg === "--design-doc" && next) {
     updated.designDoc = next;
     return { consumed: 2, updated };
@@ -125,6 +129,7 @@ export function parseArgs(argv: string[]): {
   maxSessions: number;
   autonomous: boolean;
   noMemory: boolean;
+  noAdaptive: boolean;
   tailLines: number;
   designDoc?: string;
   force: boolean;
@@ -160,8 +165,10 @@ export function parseArgs(argv: string[]): {
   let doctorJson = false;
   let doctorSkipAuth = false;
 
+  let noAdaptive = false;
+
   // Collect skills (positional args after "run") and flags
-  let shared: SharedFlags = { projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, designDoc };
+  let shared: SharedFlags = { projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, noAdaptive, designDoc };
 
   if (command === "run") {
     for (let i = 1; i < args.length; i++) {
@@ -269,9 +276,9 @@ export function parseArgs(argv: string[]): {
   }
 
   // Merge shared flags back into return value
-  ({ projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, designDoc } = shared);
+  ({ projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, noAdaptive, designDoc } = shared);
 
-  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, tailLines, designDoc, force, researchTopic, name, all, cleanup, doctorFix, doctorJson, doctorSkipAuth };
+  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, noAdaptive, tailLines, designDoc, force, researchTopic, name, all, cleanup, doctorFix, doctorJson, doctorSkipAuth };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -551,9 +558,10 @@ async function main(): Promise<void> {
         autonomous: parsed.autonomous,
         designDoc: parsed.designDoc,
         noMemory: parsed.noMemory,
+        ...(parsed.noAdaptive ? { adaptiveMaxTurns: false } : {}),
       };
 
-      console.log(`${BOLD}GaryClaw${RESET} — running ${CYAN}/${config.skillName}${RESET}${config.autonomous ? ` ${YELLOW}[AUTONOMOUS]${RESET}` : ""}${config.noMemory ? ` ${DIM}[NO-MEMORY]${RESET}` : ""}`);
+      console.log(`${BOLD}GaryClaw${RESET} — running ${CYAN}/${config.skillName}${RESET}${config.autonomous ? ` ${YELLOW}[AUTONOMOUS]${RESET}` : ""}${config.noMemory ? ` ${DIM}[NO-MEMORY]${RESET}` : ""}${config.adaptiveMaxTurns === false ? ` ${DIM}[FIXED-TURNS]${RESET}` : ""}`);
       console.log(`${DIM}  Project:          ${config.projectDir}${RESET}`);
       console.log(`${DIM}  Max turns/segment: ${config.maxTurnsPerSegment}${RESET}`);
       console.log(`${DIM}  Relay threshold:   ${(config.relayThresholdRatio * 100).toFixed(0)}%${RESET}`);
@@ -576,6 +584,7 @@ async function main(): Promise<void> {
         autonomous: parsed.autonomous,
         designDoc: parsed.designDoc,
         noMemory: parsed.noMemory,
+        ...(parsed.noAdaptive ? { adaptiveMaxTurns: false } : {}),
       };
 
       const skillList = parsed.skills.map((s) => `/${s}`).join(" → ");
@@ -609,6 +618,7 @@ async function main(): Promise<void> {
       maxRelaySessions: parsed.maxSessions,
       autonomous: parsed.autonomous,
       noMemory: parsed.noMemory,
+      ...(parsed.noAdaptive ? { adaptiveMaxTurns: false } : {}),
     };
 
     const cbs: OrchestratorCallbacks = {

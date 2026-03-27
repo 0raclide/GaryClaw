@@ -128,6 +128,8 @@ export interface GaryClawConfig {
   abortSignal?: AbortSignal;
   designDoc?: string;
   noMemory?: boolean;
+  /** Disable adaptive maxTurns computation (use fixed maxTurnsPerSegment). Default: true (enabled). */
+  adaptiveMaxTurns?: boolean;
   /** Topic string for auto-research jobs (passed from job-runner to orchestrator). */
   researchTopic?: string;
   /** Main repo dir for oracle memory when projectDir points to a worktree. */
