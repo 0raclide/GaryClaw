@@ -257,6 +257,16 @@ function fallbackChoice(
   };
 }
 
+/**
+ * Build word-boundary regex for an escalation phrase.
+ * Uses \b for word chars; for phrases containing special regex chars
+ * like "--", escapes them and uses lookaround-free boundary matching.
+ */
+function phraseToRegex(phrase: string): RegExp {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i");
+}
+
 function shouldEscalateForSecurity(
   question: string,
   options: { label: string; description: string }[],
@@ -268,7 +278,7 @@ function shouldEscalateForSecurity(
     .join(" ")
     .toLowerCase();
 
-  return ESCALATION_PHRASES.some((phrase) => text.includes(phrase));
+  return ESCALATION_PHRASES.some((phrase) => phraseToRegex(phrase).test(text));
 }
 
 /**
