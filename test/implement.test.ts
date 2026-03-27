@@ -10,6 +10,7 @@ import {
   findDesignDoc,
   loadDesignDoc,
   extractImplementationOrder,
+  validateImplementationOrder,
   formatReviewContext,
   buildImplementPrompt,
 } from "../src/implement.js";
@@ -200,6 +201,38 @@ Then verify everything works.
     const steps = extractImplementationOrder(doc);
     expect(steps).toHaveLength(1);
     expect(steps[0]).toBe("1. Only step");
+  });
+});
+
+describe("validateImplementationOrder", () => {
+  it("returns null when steps are present", () => {
+    const result = validateImplementationOrder(["1. Create types"], true);
+    expect(result).toBeNull();
+  });
+
+  it("returns null when no design doc exists (no steps expected)", () => {
+    const result = validateImplementationOrder([], false);
+    expect(result).toBeNull();
+  });
+
+  it("returns warning when design doc exists but steps are empty", () => {
+    const result = validateImplementationOrder([], true);
+    expect(result).not.toBeNull();
+    expect(result).toContain("WARNING");
+    expect(result).toContain("Implementation Order");
+  });
+
+  it("warning message includes guidance on expected format", () => {
+    const result = validateImplementationOrder([], true);
+    expect(result).toContain("numbered steps");
+  });
+
+  it("returns null when steps are present even with design doc", () => {
+    const result = validateImplementationOrder(
+      ["1. First step", "2. Second step"],
+      true,
+    );
+    expect(result).toBeNull();
   });
 });
 
@@ -409,7 +442,7 @@ Run tests.`,
     expect(prompt).toContain("## Rules");
   });
 
-  it("skips implementation order section when none found in design doc", async () => {
+  it("skips implementation order section but injects warning when none found in design doc", async () => {
     writeFileSync(
       join(DESIGNS_DIR, "feature.md"),
       "# Design\n\n## Problem\nJust a problem, no implementation order.",
@@ -420,7 +453,9 @@ Run tests.`,
     const prompt = await buildImplementPrompt(config, [], TEST_DIR);
 
     expect(prompt).toContain("## Design Document");
-    expect(prompt).not.toContain("## Implementation Order");
+    // No standalone "## Implementation Order" heading (the warning text references it inline)
+    expect(prompt).not.toMatch(/^## Implementation Order$/m);
+    expect(prompt).toContain("WARNING");
     expect(prompt).toContain("## Rules");
   });
 

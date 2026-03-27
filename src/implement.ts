@@ -96,6 +96,25 @@ export function extractImplementationOrder(designDoc: string): string[] {
     .map((line) => line.trim());
 }
 
+/**
+ * Validate implementation order extraction results.
+ * Returns a warning message when a design doc exists but has no
+ * numbered implementation steps, or null if everything looks fine.
+ */
+export function validateImplementationOrder(
+  steps: string[],
+  hasDesignDoc: boolean,
+): string | null {
+  if (steps.length > 0) return null;
+  if (!hasDesignDoc) return null;
+  return (
+    "⚠️ WARNING: Design doc found but no implementation order section detected. " +
+    "The design doc is missing a '## Implementation Order' section with numbered steps (e.g. '1. Create types'). " +
+    "Without explicit steps, implementation order will be inferred from the design doc content, which may produce unpredictable results. " +
+    "Consider adding a '## Implementation Order' section to the design doc."
+  );
+}
+
 // ── Review context formatting ───────────────────────────────────
 
 /**
@@ -193,6 +212,13 @@ export async function buildImplementPrompt(
       for (const step of steps) {
         lines.push(step);
       }
+      lines.push("");
+    }
+
+    // Warn if design doc exists but has no implementation steps
+    const warning = validateImplementationOrder(steps, true);
+    if (warning) {
+      lines.push(warning);
       lines.push("");
     }
   } else {
