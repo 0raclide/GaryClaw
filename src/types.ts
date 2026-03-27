@@ -119,6 +119,8 @@ export interface GaryClawConfig {
   abortSignal?: AbortSignal;
   designDoc?: string;
   noMemory?: boolean;
+  /** Topic string for auto-research jobs (passed from job-runner to orchestrator). */
+  researchTopic?: string;
   /** Main repo dir for oracle memory when projectDir points to a worktree. */
   mainRepoDir?: string;
 }

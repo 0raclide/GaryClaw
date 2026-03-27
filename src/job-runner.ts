@@ -26,6 +26,9 @@ import {
   buildFailureRecord,
   appendFailureRecord,
 } from "./failure-taxonomy.js";
+import { readDecisionsFromLog } from "./reflection.js";
+import { getResearchTopics } from "./auto-research.js";
+import { readOracleMemory, defaultMemoryConfig } from "./oracle-memory.js";
 import type {
   BudgetConfig,
   DaemonConfig,
@@ -178,6 +181,25 @@ export function createJobRunner(
     return job.id;
   }
 
+  /**
+   * Enqueue a job with a researchTopic field (for auto-research jobs).
+   * Extends enqueue() to set researchTopic on the created job.
+   */
+  function enqueueWithTopic(
+    skills: string[],
+    triggeredBy: Job["triggeredBy"],
+    triggerDetail: string,
+    researchTopic: string,
+  ): string | null {
+    const jobId = enqueue(skills, triggeredBy, triggerDetail);
+    if (jobId) {
+      const job = state.jobs.find((j) => j.id === jobId);
+      if (job) job.researchTopic = researchTopic;
+      persistState(state, checkpointDir);
+    }
+    return jobId;
+  }
+
   async function processNext(): Promise<void> {
     if (running) return;
 
@@ -257,6 +279,37 @@ export function createJobRunner(
       d.log("warn", `Dashboard generation failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
+    // Auto-research trigger: analyze low-confidence decisions and enqueue research
+    if (nextJob.status === "complete" && currentConfig.autoResearch?.enabled) {
+      try {
+        const decisions = readDecisionsFromLog(join(jobDir, "decisions.jsonl"));
+        const memConfig = defaultMemoryConfig(currentConfig.projectDir);
+        const memoryFiles = readOracleMemory(memConfig, currentConfig.projectDir);
+        const topics = getResearchTopics(
+          decisions,
+          memoryFiles.domainExpertise,
+          currentConfig.autoResearch,
+        );
+
+        if (topics.length > 0) {
+          d.log("info", `Auto-research: extracted ${topics.length} topic(s) from ${decisions.length} decisions: [${topics.join(", ")}]`);
+        } else {
+          d.log("debug", `Auto-research: no topics extracted from ${decisions.length} decisions`);
+        }
+
+        for (const topic of topics) {
+          const jobId = enqueueWithTopic(["research"], "auto_research", `low-confidence: ${topic}`, topic);
+          if (jobId) {
+            d.log("info", `Auto-research: enqueued research job ${jobId} for topic "${topic}"`);
+          } else {
+            d.log("info", `Auto-research: skipped enqueue for "${topic}" (budget/dedup)`);
+          }
+        }
+      } catch (err) {
+        d.log("warn", `Auto-research trigger failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     running = false;
   }
 
@@ -296,6 +349,7 @@ function buildGaryClawConfig(
     maxRelaySessions: config.orchestrator.maxRelaySessions,
     autonomous: true,
     designDoc: job.designDoc,
+    researchTopic: job.researchTopic,
     // Oracle memory always reads from the main repo, not the worktree
     mainRepoDir: config.worktreePath ? config.projectDir : undefined,
   };
