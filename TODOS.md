@@ -1,6 +1,8 @@
 # TODOS
 
-## P2: garyclaw doctor — Self-Diagnostic Command
+## ~~P2: garyclaw doctor — Self-Diagnostic Command~~ — COMPLETE (2026-03-27)
+
+Implemented in 7 commits (340c87f..c2b4827). 6 subsystem checks, --fix/--json/--skip-auth flags, shared pid-utils.ts, 72 tests.
 
 **What:** A `garyclaw doctor` command that checks in 5 seconds: stale PID files, corrupt oracle memory, orphaned worktrees, stuck reflection locks, exhausted global budget, valid auth. Prints PASS/WARN/FAIL per check. Includes shared PID liveness utility with process-name verification (prevents PID reuse false positives).
 
@@ -36,7 +38,9 @@ Implemented in 5 commits (ad94ab7..49e34a9). Eng review hardened patterns + adde
 **Depends on:** Nothing
 **Added by:** /plan-ceo-review on 2026-03-26
 
-## P1: Spike — Verify GIT_COMMITTER_EMAIL Propagation Through SDK
+## ~~P1: Spike — Verify GIT_COMMITTER_EMAIL Propagation Through SDK~~ — COMPLETE (2026-03-27)
+
+Verified manually: `GIT_COMMITTER_EMAIL=garyclaw-daemon@local` propagates through git commit. Committer email shows custom value while author stays unchanged. Loop prevention via env var marker is validated.
 
 **What:** Run a 5-minute spike to confirm that setting `GIT_COMMITTER_EMAIL` in the env passed to `query()` propagates through to Claude's `git commit` calls. The dogfood plan's recursive loop prevention relies on this.
 
