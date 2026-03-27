@@ -21,7 +21,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 5c: COMPLETE** (2026-03-26) — Domain Expertise Research: researcher module, CLI command, freshness tracking
 **Phase 6: COMPLETE** (2026-03-26) — Parallel Daemon Instances: registry, global budget, cross-instance dedup, reflection lock
 **Git Worktree Isolation: COMPLETE** (2026-03-26) — Worktree per named instance, branch strategy, fast-forward merge on stop
-- 26 source modules + CLI
+**Dogfood Dashboard: COMPLETE** (2026-03-27) — Health score, job/oracle/budget stats, auto-regeneration after every job
+- 27 source modules + CLI
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -78,6 +79,9 @@ npx tsx src/cli.ts daemon stop --all               # stop all instances
 # Domain expertise research
 npx tsx src/cli.ts research "WebSocket libraries"  # research a topic
 npx tsx src/cli.ts research "OAuth 2.1" --force    # re-research ignoring freshness
+
+# Dogfood dashboard
+npx tsx src/cli.ts dashboard                       # print health score + job/oracle/budget stats
 
 # Options
 npx tsx src/cli.ts run qa \
@@ -144,7 +148,8 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/implement.ts` | Implement skill: design doc discovery, review context, prompt builder |
 | `src/prioritize.ts` | Prioritize skill: TODOS.md parsing, overnight goal, oracle context, scoring prompt |
 | `src/worktree.ts` | Git worktree isolation: create, remove, merge, list worktrees for parallel instances |
-| `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
+| `src/dashboard.ts` | Dogfood dashboard: job/oracle/budget aggregation, health score, markdown formatting |
+| `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon/dashboard`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
 
 ### Key Design Decisions
 
@@ -214,6 +219,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/researcher.test.ts` | 33 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
 | `test/prioritize.test.ts` | 30 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
 | `test/worktree.test.ts` | 26 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch |
+| `test/dashboard.test.ts` | 33 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
 
 ---
 
