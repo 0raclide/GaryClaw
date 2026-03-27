@@ -14,7 +14,7 @@ import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
-import type { GaryClawConfig, ImplementProgress, PipelineSkillEntry } from "./types.js";
+import type { Checkpoint, GaryClawConfig, ImplementProgress, PipelineSkillEntry } from "./types.js";
 
 // ── Design doc discovery ────────────────────────────────────────
 
@@ -209,13 +209,19 @@ const IMPLEMENT_RULES = `## Rules
 
 /**
  * Build the full implementation prompt from design doc + review context.
+ *
+ * When `resumeCheckpoint` is provided (pipeline resume case), completed steps
+ * from the checkpoint's implementProgress are filtered out of the Implementation
+ * Order section so the session only sees remaining work.
  */
 export async function buildImplementPrompt(
   config: GaryClawConfig,
   previousSkills: PipelineSkillEntry[],
   projectDir: string,
+  resumeCheckpoint?: Checkpoint | null,
 ): Promise<string> {
   const lines: string[] = [];
+  const progress = resumeCheckpoint?.implementProgress ?? null;
 
   lines.push(
     "You are implementing a reviewed and approved design. Your job is to write the code, write the tests, and commit each module atomically.",
@@ -232,15 +238,32 @@ export async function buildImplementPrompt(
     lines.push(doc.content);
     lines.push("");
 
-    // Implementation order
+    // Implementation order — filter to remaining steps when resuming
     const steps = extractImplementationOrder(doc.content);
     if (steps.length > 0) {
-      lines.push("## Implementation Order");
-      lines.push("");
-      for (const step of steps) {
-        lines.push(step);
+      if (progress && progress.completedSteps.length > 0) {
+        // Pipeline resume: show only remaining steps
+        const completedSet = new Set(progress.completedSteps);
+        const remaining = steps.filter((_, idx) => !completedSet.has(idx + 1));
+
+        lines.push("## Implementation Order (Remaining)");
+        lines.push("");
+        lines.push(
+          `Steps ${progress.completedSteps.join(", ")} complete (${progress.completedSteps.length}/${progress.totalSteps}). Resume at step ${progress.currentStep}.`,
+        );
+        lines.push("");
+        for (const step of remaining) {
+          lines.push(step);
+        }
+        lines.push("");
+      } else {
+        lines.push("## Implementation Order");
+        lines.push("");
+        for (const step of steps) {
+          lines.push(step);
+        }
+        lines.push("");
       }
-      lines.push("");
     }
 
     // Warn if design doc exists but has no implementation steps

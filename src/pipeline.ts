@@ -307,7 +307,9 @@ async function executePipelineFrom(
         await runSkillWithPrompt(skillConfig, callbacks, officeHoursPrompt);
       } else if (skillName === "implement") {
         const prevSkills = state.skills.slice(0, i);
-        const implPrompt = await buildImplementPrompt(config, prevSkills, config.projectDir);
+        // Check for resume checkpoint to pass step progress context
+        const implCheckpoint = readCheckpoint(skillCheckpointDir);
+        const implPrompt = await buildImplementPrompt(config, prevSkills, config.projectDir, implCheckpoint);
         await runSkillWithPrompt(skillConfig, callbacks, implPrompt);
       } else if (prevEntry?.report) {
         // Override the initial prompt via a custom prompt in the skill config
