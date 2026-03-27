@@ -17,6 +17,7 @@ import { runSkill } from "./orchestrator.js";
 import { buildReport } from "./report.js";
 import { readCheckpoint } from "./checkpoint.js";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
+import { buildImplementPrompt } from "./implement.js";
 
 import type {
   GaryClawConfig,
@@ -305,7 +306,6 @@ async function executePipelineFrom(
         const officeHoursPrompt = buildOfficeHoursPrompt(config.projectDir);
         await runSkillWithPrompt(skillConfig, callbacks, officeHoursPrompt);
       } else if (skillName === "implement") {
-        const { buildImplementPrompt } = await import("./implement.js");
         const prevSkills = state.skills.slice(0, i);
         const implPrompt = await buildImplementPrompt(config, prevSkills, config.projectDir);
         await runSkillWithPrompt(skillConfig, callbacks, implPrompt);
