@@ -1,11 +1,11 @@
 {
   "date": "2026-03-27",
   "target": "npm test (vitest)",
-  "healthScore": 95,
+  "healthScore": 97,
+  "run": 7,
   "issues": [
-    { "id": "ISSUE-001", "title": "CLAUDE.md test counts stale (55/1452 vs 67/1579)", "severity": "low", "category": "content" },
-    { "id": "ISSUE-002", "title": "CLAUDE.md module count stale (32 vs 36)", "severity": "low", "category": "content" },
-    { "id": "ISSUE-003", "title": "Stderr noise from worktree/reflection tests", "severity": "low", "category": "console" }
+    { "id": "ISSUE-005", "title": "Stderr noise from worktree tests (5x fatal: not a git repository)", "severity": "low", "category": "console" },
+    { "id": "ISSUE-006", "title": "Expected stderr from error-handling tests (by design)", "severity": "low", "category": "console" }
   ],
   "categoryScores": {
     "console": 100,
@@ -18,9 +18,9 @@
     "accessibility": 100
   },
   "testResults": {
-    "files": 67,
-    "tests": 1579,
-    "passed": 1579,
+    "files": 68,
+    "tests": 1585,
+    "passed": 1585,
     "failed": 0,
     "skipped": 0
   }

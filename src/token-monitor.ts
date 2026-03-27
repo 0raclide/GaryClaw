@@ -154,6 +154,65 @@ export function computeGrowthRate(
 }
 
 /**
+ * Compute adaptive maxTurns for the next segment based on growth rate.
+ *
+ * Predicts how many turns fit in the remaining context budget before
+ * hitting the relay threshold (with a safety margin). Clamps between
+ * a floor (default 3) and the configured max (user's --max-turns).
+ *
+ * Returns the configured default when there's insufficient data
+ * (first segment of a session, or growth rate is zero/negative).
+ */
+export function computeAdaptiveMaxTurns(
+  state: TokenMonitorState,
+  relayThresholdRatio: number,
+  configuredMaxTurns: number,
+  options?: {
+    safetyFactor?: number;    // Target this fraction of the threshold (default: 0.85)
+    minTurns?: number;        // Floor (default: 3)
+    growthWindowSize?: number; // Turns for growth rate calc (default: 5)
+  },
+): { maxTurns: number; reason: string } {
+  const safetyFactor = options?.safetyFactor ?? 0.85;
+  const minTurns = options?.minTurns ?? 3;
+  const growthWindowSize = options?.growthWindowSize ?? 5;
+
+  // No data yet — use configured default
+  const growthRate = computeGrowthRate(state, growthWindowSize);
+  if (growthRate === null || growthRate <= 0 || state.contextWindow === null) {
+    return {
+      maxTurns: configuredMaxTurns,
+      reason: "no growth data yet, using configured default",
+    };
+  }
+
+  const currentSize = state.turnHistory.length > 0
+    ? state.turnHistory[state.turnHistory.length - 1].computedContextSize
+    : 0;
+
+  // Target: land at safetyFactor * relayThreshold * contextWindow
+  const targetSize = state.contextWindow * relayThresholdRatio * safetyFactor;
+  const remainingBudget = targetSize - currentSize;
+
+  if (remainingBudget <= 0) {
+    return {
+      maxTurns: minTurns,
+      reason: `already at/past target (${currentSize} >= ${Math.round(targetSize)})`,
+    };
+  }
+
+  const predicted = Math.floor(remainingBudget / growthRate);
+  const clamped = Math.max(minTurns, Math.min(predicted, configuredMaxTurns));
+
+  return {
+    maxTurns: clamped,
+    reason: `growth rate ${growthRate.toFixed(0)} tok/turn, ` +
+            `budget ${remainingBudget.toFixed(0)} tokens, ` +
+            `predicted ${predicted} turns, clamped to ${clamped}`,
+  };
+}
+
+/**
  * Build a TokenUsageSnapshot for checkpointing.
  */
 export function buildUsageSnapshot(
