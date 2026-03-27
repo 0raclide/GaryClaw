@@ -6,7 +6,7 @@
 import { writeFileSync, readFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import type { Checkpoint, Issue, Decision } from "./types.js";
+import type { Checkpoint, ImplementProgress, Issue, Decision } from "./types.js";
 
 const CHECKPOINT_FILE = "checkpoint.json";
 const CHECKPOINT_PREV = "checkpoint.prev.json";
@@ -228,10 +228,61 @@ Total cost so far: $${checkpoint.tokenUsage.estimatedCostUsd.toFixed(3)}
     }
   }
 
-  text += `\n## Instructions
+  // Implementation progress section (implement skill only)
+  if (checkpoint.implementProgress) {
+    text += formatImplementProgress(checkpoint.implementProgress);
+  }
+
+  // Instructions — implement-aware when step progress is available
+  if (checkpoint.implementProgress) {
+    const prog = checkpoint.implementProgress;
+    if (prog.currentStep > prog.totalSteps) {
+      text += `\n## Instructions
+All implementation steps complete — verify tests pass and finalize.
+Run \`npm test\` to confirm all tests pass. If any fail, fix them before finishing.
+`;
+    } else {
+      text += `\n## Instructions
+Resume implementation at step ${prog.currentStep}. Follow the implementation order exactly.
+For each step: implement the code, write tests, run \`npm test\`, commit atomically.
+Design doc: ${prog.designDocPath}
+`;
+    }
+  } else {
+    text += `\n## Instructions
 Continue the ${checkpoint.skillName} skill. Start with the highest-severity open issue.
 For each issue: read the file, understand the bug, fix it, commit, verify.
 `;
+  }
+
+  return text;
+}
+
+/**
+ * Format implementation progress into a compact relay prompt section.
+ * Lists completed steps with commit SHAs and remaining steps.
+ */
+export function formatImplementProgress(progress: ImplementProgress): string {
+  const { completedSteps, currentStep, totalSteps, stepCommits } = progress;
+
+  let text = `\n## Implementation Progress (${completedSteps.length}/${totalSteps} steps complete)\n`;
+
+  if (completedSteps.length > 0) {
+    text += "\n**Completed:**\n";
+    for (const stepNum of completedSteps) {
+      const sha = stepCommits[stepNum] ?? "unknown";
+      text += `- ✅ Step ${stepNum} (${sha})\n`;
+    }
+  }
+
+  if (currentStep <= totalSteps) {
+    text += "\n**Remaining:**\n";
+    for (let i = 1; i <= totalSteps; i++) {
+      if (!completedSteps.includes(i)) {
+        text += `- ⬜ Step ${i}${i === currentStep ? " ← resume here" : ""}\n`;
+      }
+    }
+  }
 
   return text;
 }
