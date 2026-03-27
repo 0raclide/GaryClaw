@@ -205,15 +205,15 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 - [x] Oracle ESCALATION_PHRASES "delete" matches benign strings like "deleted" — use word boundary — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-003)
 - [ ] `(msg as any)` type assertions in `createSdkOracleQueryFn` — add runtime shape validation
 - [x] `INJECTION_PATTERNS` in oracle-memory.ts bypassable with leading whitespace — trim before matching — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-001)
-- [ ] Shallow copy in `updateMetricsWithOutcome` shares `confidenceTrend` array reference — deep copy array
-- [ ] `readDecisionsFromLog` silently drops corrupt JSONL lines — add warning log
+- [x] Shallow copy in `updateMetricsWithOutcome` shares `confidenceTrend` array reference — deep copy array — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-001)
+- [x] `readDecisionsFromLog` silently drops corrupt JSONL lines — add warning log — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-002)
 - [ ] `parseDomainSections` edge case with adjacent sections without body text — add test
-- [ ] `createResearchCanUseTool` sync return used where async expected — align signatures
+- [x] `createResearchCanUseTool` sync return used where async expected — align signatures — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-003)
 - [ ] Research cost extraction uses `(msg as any).total_cost_usd` — use extractResultData instead
 - [ ] `extractTopicKeywords` doesn't filter numeric-only tokens — add isNaN guard
 - [ ] `isTopicGroupFresh` brittle to topic naming variations — consider fuzzy matching
 - [x] `branchName` doesn't sanitize `instanceName` for illegal git branch chars — add validation — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-002)
-- [ ] `listWorktrees` swallows all git errors silently — log warning on error
+- [x] `listWorktrees` swallows all git errors silently — log warning on error — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-004)
 - [ ] Pipeline `startTime!` non-null assertion — use explicit default
 - [ ] Pipeline dynamic import of orchestrator creates circular dependency — extract shared interface
 
