@@ -254,13 +254,43 @@ export function mergeWorktreeBranch(
     return { merged: true, commitCount: 0, reason: "Already up to date" };
   }
 
-  // Ensure we're on the base branch before merging
+  // Check for dirty working tree before switching branches — never disrupt user's work.
+  // Use git diff --quiet (not status --porcelain) to ignore untracked files like .garyclaw/
   try {
-    const currentBranch = execFileSync(
+    // Staged changes to tracked files
+    execFileSync("git", ["diff", "--cached", "--quiet"], {
+      cwd: repoDir,
+      stdio: "pipe",
+    });
+    // Unstaged changes to tracked files
+    execFileSync("git", ["diff", "--quiet"], {
+      cwd: repoDir,
+      stdio: "pipe",
+    });
+  } catch {
+    // diff --quiet exits non-zero when tracked files have changes
+    return {
+      merged: false,
+      commitCount,
+      reason: `Working tree has uncommitted changes — cannot checkout ${baseBranch} for merge`,
+    };
+  }
+
+  // Save current branch so we can restore it after merge
+  let originalBranch: string | null = null;
+  try {
+    originalBranch = execFileSync(
       "git", ["rev-parse", "--abbrev-ref", "HEAD"],
       { cwd: repoDir, stdio: "pipe", encoding: "utf-8" },
     ).trim();
-    if (currentBranch !== baseBranch) {
+    if (originalBranch === "HEAD") originalBranch = null; // detached HEAD
+  } catch {
+    // Non-fatal: we just won't restore
+  }
+
+  // Ensure we're on the base branch before merging
+  try {
+    if (originalBranch !== baseBranch) {
       execFileSync("git", ["checkout", baseBranch], {
         cwd: repoDir,
         stdio: "pipe",
@@ -270,18 +300,40 @@ export function mergeWorktreeBranch(
     return {
       merged: false,
       commitCount,
-      reason: `Cannot checkout ${baseBranch} — working tree may have uncommitted changes`,
+      reason: `Cannot checkout ${baseBranch} for merge`,
     };
   }
 
-  // Attempt fast-forward merge
+  // Attempt fast-forward merge, then restore original branch
   try {
     execFileSync("git", ["merge", "--ff-only", branch], {
       cwd: repoDir,
       stdio: "pipe",
     });
+    // Restore original branch if we switched away from it
+    if (originalBranch && originalBranch !== baseBranch) {
+      try {
+        execFileSync("git", ["checkout", originalBranch], {
+          cwd: repoDir,
+          stdio: "pipe",
+        });
+      } catch {
+        // Non-fatal: merge succeeded, just couldn't restore branch
+      }
+    }
     return { merged: true, commitCount };
   } catch {
+    // Restore original branch on merge failure too
+    if (originalBranch && originalBranch !== baseBranch) {
+      try {
+        execFileSync("git", ["checkout", originalBranch], {
+          cwd: repoDir,
+          stdio: "pipe",
+        });
+      } catch {
+        // Non-fatal
+      }
+    }
     return {
       merged: false,
       commitCount,
