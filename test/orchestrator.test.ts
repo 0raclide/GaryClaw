@@ -686,6 +686,129 @@ describe("adaptive turns", () => {
   });
 });
 
+describe("adaptive turns — heavy tool lookahead", () => {
+  it("detects heavy tool (WebFetch) and passes lastHeavyToolSeen to next segment", async () => {
+    const webFetchMsg = makeAssistantToolUseMsg("WebFetch", { url: "https://example.com" });
+    const resultMsg1 = makeResultMsg("max_turns");
+    const resultMsg2 = makeResultMsg("success");
+
+    let callCount = 0;
+    vi.mocked(startSegment).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return makeSegmentIterator([webFetchMsg, resultMsg1]);
+      return makeSegmentIterator([resultMsg2]);
+    });
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "session-123", subtype: msg.subtype, resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 5,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    // Should have tool_use event for WebFetch
+    const toolEvents = callbacks.events.filter((e) => e.type === "tool_use");
+    expect(toolEvents.some((e) => (e as any).toolName === "WebFetch")).toBe(true);
+
+    // Both segments should have adaptive_turns events
+    const adaptiveEvents = callbacks.events.filter((e) => e.type === "adaptive_turns");
+    expect(adaptiveEvents).toHaveLength(2);
+  });
+
+  it("does not flag non-heavy tools (Edit, Bash)", async () => {
+    const editMsg = makeAssistantToolUseMsg("Edit", { file_path: "/tmp/test.ts" });
+    const bashMsg = makeAssistantToolUseMsg("Bash", { command: "echo hello" });
+    const resultMsg1 = makeResultMsg("max_turns");
+    const resultMsg2 = makeResultMsg("success");
+
+    let callCount = 0;
+    vi.mocked(startSegment).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return makeSegmentIterator([editMsg, bashMsg, resultMsg1]);
+      return makeSegmentIterator([resultMsg2]);
+    });
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "session-123", subtype: msg.subtype, resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 5,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    // Both segments should emit adaptive_turns but neither should mention "heavy tool"
+    const adaptiveEvents = callbacks.events.filter((e) => e.type === "adaptive_turns");
+    expect(adaptiveEvents).toHaveLength(2);
+    // With no growth data, both fall back to default — no heavy tool annotation
+    for (const e of adaptiveEvents) {
+      expect((e as any).reason).not.toContain("heavy tool");
+    }
+  });
+
+  it("respects adaptiveMaxTurns: false config (skips computation)", async () => {
+    const resultMsg = makeResultMsg("success");
+    vi.mocked(startSegment).mockReturnValue(makeSegmentIterator([resultMsg]));
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: "success", resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 1,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig({ adaptiveMaxTurns: false, maxTurnsPerSegment: 20 }), callbacks);
+
+    const adaptiveEvents = callbacks.events.filter((e) => e.type === "adaptive_turns");
+    expect(adaptiveEvents).toHaveLength(1);
+    const event = adaptiveEvents[0] as any;
+    expect(event.maxTurns).toBe(20);
+    expect(event.reason).toBe("adaptive disabled");
+
+    // startSegment should receive the fixed value
+    const call = vi.mocked(startSegment).mock.calls[0][0];
+    expect(call.maxTurns).toBe(20);
+  });
+
+  it("Screenshot and WebSearch are also detected as heavy tools", async () => {
+    const screenshotMsg = makeAssistantToolUseMsg("Screenshot", {});
+    const webSearchMsg = makeAssistantToolUseMsg("WebSearch", { query: "test" });
+    const resultMsg = makeResultMsg("success");
+
+    vi.mocked(startSegment).mockReturnValue(
+      makeSegmentIterator([screenshotMsg, webSearchMsg, resultMsg]),
+    );
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: "success", resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 3,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    const toolEvents = callbacks.events.filter((e) => e.type === "tool_use");
+    const toolNames = toolEvents.map((e) => (e as any).toolName);
+    expect(toolNames).toContain("Screenshot");
+    expect(toolNames).toContain("WebSearch");
+  });
+});
+
 describe("helper functions (via exports)", () => {
   it("extractAssistantText returns null for non-assistant messages", async () => {
     const resultMsg = makeResultMsg("success");

@@ -102,6 +102,22 @@ describe("parseArgs", () => {
     expect(result.noMemory).toBe(true);
   });
 
+  it("parses --no-adaptive flag", () => {
+    const result = parseArgs(["node", "cli.ts", "run", "qa", "--no-adaptive"]);
+    expect(result.noAdaptive).toBe(true);
+  });
+
+  it("defaults noAdaptive to false", () => {
+    const result = parseArgs(["node", "cli.ts", "run", "qa"]);
+    expect(result.noAdaptive).toBe(false);
+  });
+
+  it("parses --no-adaptive with --autonomous", () => {
+    const result = parseArgs(["node", "cli.ts", "run", "qa", "--autonomous", "--no-adaptive"]);
+    expect(result.autonomous).toBe(true);
+    expect(result.noAdaptive).toBe(true);
+  });
+
   it("parses --design-doc flag in run command", () => {
     const result = parseArgs(["node", "cli.ts", "run", "implement", "--design-doc", "docs/designs/my-feature.md"]);
     expect(result.command).toBe("run");
