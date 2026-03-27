@@ -46,6 +46,14 @@ export interface Decision {
 
 // ── Checkpoint (persisted to disk) ──────────────────────────────
 
+export interface ImplementProgress {
+  completedSteps: number[];                // 1-indexed step numbers that are done
+  currentStep: number;                     // next step to work on (1-indexed). All done: totalSteps + 1
+  totalSteps: number;                      // total steps in design doc
+  stepCommits: Record<number, string>;     // step number → commit SHA
+  designDocPath: string;                   // path to design doc (for relay prompt context)
+}
+
 export interface Checkpoint {
   version: 1;
   timestamp: string;
@@ -58,6 +66,7 @@ export interface Checkpoint {
   gitHead: string;
   tokenUsage: TokenUsageSnapshot;
   screenshotPaths: string[];
+  implementProgress?: ImplementProgress;
 }
 
 // ── Token tracking ──────────────────────────────────────────────
