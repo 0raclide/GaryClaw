@@ -154,7 +154,9 @@ Verified manually: `GIT_COMMITTER_EMAIL=garyclaw-daemon@local` propagates throug
 **Depends on:** Phase 5a (memory Oracle working)
 **Added by:** /plan-ceo-review on 2026-03-26
 
-## P3: Implement Step Tracking Across Relays — INCLUDED IN DOGFOOD PLAN
+## ~~P3: Implement Step Tracking Across Relays~~ — COMPLETE (2026-03-27)
+
+Implemented in 6 commits (fbe24f8..b7a74e5). ImplementProgress interface, detectCompletedSteps with two-tier commit matching (exact step number + fuzzy token overlap), formatImplementProgress for relay prompts, orchestrator wiring, pipeline resume awareness, 45 tests.
 
 **What:** Track which implementation steps from the design doc's "Implementation Order" have been completed, so that after a checkpoint/relay the fresh session knows where to resume instead of re-reading the full design doc from scratch.
 
