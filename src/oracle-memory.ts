@@ -45,23 +45,45 @@ const MEMORY_MD = "MEMORY.md";
  * before injecting into Oracle prompt.
  */
 const INJECTION_PATTERNS = [
-  /^\s*<\/?system[^>]*>/gim,
-  /^\s*<\/?instructions[^>]*>/gim,
-  /^\s*IGNORE ALL PREVIOUS INSTRUCTIONS/gim,
-  /^\s*YOU ARE NOW/gim,
-  /^\s*FORGET EVERYTHING/gim,
-  /^\s*NEW INSTRUCTIONS:/gim,
-  /^\s*OVERRIDE:/gim,
-  /^\s*SYSTEM:/gim,
+  // XML-like tags: match anywhere on a line (never legitimate in memory content)
+  /<\/?system[^>]*>/gi,
+  /<\/?instructions[^>]*>/gi,
+  // Text phrases: match at line start (with optional whitespace) to avoid false positives.
+  // Each line is processed independently so multiple patterns can match the same line.
+  /^\s*IGNORE ALL PREVIOUS INSTRUCTIONS/im,
+  /^\s*YOU ARE NOW/im,
+  /^\s*FORGET EVERYTHING/im,
+  /^\s*NEW INSTRUCTIONS:/im,
+  /^\s*OVERRIDE:/im,
+  /^\s*SYSTEM:/im,
 ];
 
 /**
  * Strip known prompt injection patterns from memory content.
+ * XML-like patterns match anywhere; text patterns match at line start.
+ * Lines are processed individually so multiple patterns on one line all get caught.
  */
 export function sanitizeMemoryContent(content: string): string {
   let sanitized = content;
+  // First pass: global patterns (XML tags) — match anywhere across the whole string
   for (const pattern of INJECTION_PATTERNS) {
-    sanitized = sanitized.replace(pattern, "[REDACTED]");
+    if (!pattern.multiline) {
+      sanitized = sanitized.replace(pattern, "[REDACTED]");
+    }
+  }
+  // Second pass: line-anchored patterns — process each line so ^ anchor resets per line
+  const linePatterns = INJECTION_PATTERNS.filter((p) => p.multiline);
+  if (linePatterns.length > 0) {
+    sanitized = sanitized
+      .split("\n")
+      .map((line) => {
+        let result = line;
+        for (const pattern of linePatterns) {
+          result = result.replace(pattern, "[REDACTED]");
+        }
+        return result;
+      })
+      .join("\n");
   }
   return sanitized;
 }
