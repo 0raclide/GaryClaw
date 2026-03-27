@@ -34,10 +34,25 @@ export function worktreeDir(repoDir: string, instanceName: string): string {
 }
 
 /**
+ * Sanitize a string for use in git branch names.
+ * Git branch names cannot contain: ~ ^ : \ space, control chars, "..", "@{", or end with "." or ".lock".
+ */
+export function sanitizeBranchComponent(name: string): string {
+  return name
+    .replace(/[\x00-\x1f\x7f~^:\\@{}\s]+/g, "-")  // control chars + illegal chars → dash
+    .replace(/\.{2,}/g, ".")                         // collapse ".." sequences
+    .replace(/\.lock$/i, "-lock")                    // ".lock" suffix forbidden
+    .replace(/^\./, "-")                             // leading dot forbidden
+    .replace(/\.$/, "-")                             // trailing dot forbidden
+    .replace(/-{2,}/g, "-")                          // collapse repeated dashes
+    .replace(/^-|-$/g, "");                          // trim leading/trailing dashes
+}
+
+/**
  * Branch name convention for an instance.
  */
 export function branchName(instanceName: string): string {
-  return `garyclaw/${instanceName}`;
+  return `garyclaw/${sanitizeBranchComponent(instanceName)}`;
 }
 
 /**
