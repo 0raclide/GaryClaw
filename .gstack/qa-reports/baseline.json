@@ -1,26 +1,24 @@
 {
-  "date": "2026-03-26",
+  "date": "2026-03-27",
   "url": "CLI (test suite)",
-  "healthScore": 98,
-  "run": 8,
+  "healthScore": 96,
+  "run": 14,
   "issues": [
-    { "id": "ISSUE-001", "title": "Coverage gaps in daemon.ts, safe-json.ts, pipeline.ts", "severity": "medium", "category": "test-coverage", "status": "fixed", "commit": "f47519e" },
-    { "id": "ISSUE-002", "title": "cli.ts has 36.7% statement coverage", "severity": "low", "category": "test-coverage", "status": "deferred" }
+    { "id": "ISSUE-001", "title": "validateCheckpoint missing lastSessionIndex validation", "severity": "high", "category": "functional", "status": "fixed", "commit": "f325af2" },
+    { "id": "ISSUE-002", "title": "formatCodebaseSummaryForRelay prints undefined", "severity": "medium", "category": "functional", "status": "fixed", "commit": "9615526" }
   ],
   "categoryScores": {
     "testSuite": 100,
-    "typeSafety": 100,
+    "typeSafety": 95,
     "errorHandling": 100,
     "functional": 100,
     "codeQuality": 97,
     "documentation": 95
   },
   "testStats": {
-    "files": 39,
-    "tests": 901,
-    "passing": 901,
-    "duration": "2.58s",
-    "statementCoverage": 83.61,
-    "branchCoverage": 89.63
+    "files": 58,
+    "tests": 1477,
+    "passing": 1477,
+    "duration": "5.69s"
   }
 }

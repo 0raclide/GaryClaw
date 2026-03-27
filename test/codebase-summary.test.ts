@@ -11,6 +11,7 @@ import {
   truncateToTokenBudget,
   buildCodebaseSummary,
   formatCodebaseSummaryForRelay,
+  hasCodeAnchor,
 } from "../src/codebase-summary.js";
 import type { CodebaseSummary } from "../src/types.js";
 import { estimateTokens } from "../src/checkpoint.js";
@@ -92,6 +93,34 @@ describe("extractObservations", () => {
 
   it("handles empty string", () => {
     expect(extractObservations("")).toHaveLength(0);
+  });
+});
+
+// ── hasCodeAnchor ────────────────────────────────────────────────
+
+describe("hasCodeAnchor", () => {
+  it("detects file paths", () => {
+    expect(hasCodeAnchor("This wraps I/O through src/safe-json.ts for safety.")).toBe(true);
+  });
+
+  it("detects function calls", () => {
+    expect(hasCodeAnchor("This codebase uses safeReadJSON() for all file reads.")).toBe(true);
+  });
+
+  it("rejects version strings like v1.2.3", () => {
+    expect(hasCodeAnchor("We upgraded to v1.2.3 of the library.")).toBe(false);
+  });
+
+  it("rejects bare version numbers like 2.0.1", () => {
+    expect(hasCodeAnchor("The SDK version is 2.0.1 now.")).toBe(false);
+  });
+
+  it("accepts file paths that happen to contain numbers", () => {
+    expect(hasCodeAnchor("Check config2.json for the settings.")).toBe(true);
+  });
+
+  it("returns false for plain text with no anchors", () => {
+    expect(hasCodeAnchor("This is a normal sentence with no code references.")).toBe(false);
   });
 });
 
@@ -400,5 +429,16 @@ describe("formatCodebaseSummaryForRelay", () => {
     };
     const text = formatCodebaseSummaryForRelay(summary);
     expect(text).toContain("sessions 0-5");
+  });
+
+  it("falls back to 0 when lastSessionIndex is missing/undefined", () => {
+    // Simulate a corrupt or legacy summary missing lastSessionIndex
+    const summary = {
+      observations: ["Something about convention patterns"],
+      failedApproaches: [],
+    } as unknown as CodebaseSummary;
+    const text = formatCodebaseSummaryForRelay(summary);
+    expect(text).toContain("sessions 0-0");
+    expect(text).not.toContain("undefined");
   });
 });

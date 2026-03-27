@@ -187,6 +187,12 @@ describe("checkpoint", () => {
       cp.codebaseSummary = { observations: [], lastSessionIndex: 0 };
       expect(validateCheckpoint(cp)).toBe(false);
     });
+
+    it("rejects checkpoint with codebaseSummary missing lastSessionIndex", () => {
+      const cp = createMockCheckpoint() as any;
+      cp.codebaseSummary = { observations: [], failedApproaches: [] };
+      expect(validateCheckpoint(cp)).toBe(false);
+    });
   });
 
   describe("generateRelayPrompt", () => {
