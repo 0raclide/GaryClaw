@@ -25,7 +25,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Auto-Research Trigger: COMPLETE** (2026-03-27) — Post-job low-confidence analysis, keyword clustering, auto-enqueue research
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
-- 32 source modules + CLI, 69 test files, 1631 tests
+- 32 source modules + CLI, 69 test files, 1630 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -211,7 +211,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
 | `test/token-monitor.test.ts` | 24 | recordTurnUsage, shouldRelay, growthRate, edge cases |
-| `test/adaptive-turns.test.ts` | 26 | computeAdaptiveMaxTurns: fallback, growth prediction, heavy tools, clamping, relay, HEAVY_TOOLS constant |
+| `test/adaptive-turns.test.ts` | 25 | computeAdaptiveMaxTurns: fallback, growth prediction, heavy tools, clamping, relay, HEAVY_TOOLS constant |
 | `test/checkpoint.test.ts` | 35 | write/read/rotation, relay prompt tiering, token budget, codebaseSummary validation + relay |
 | `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
