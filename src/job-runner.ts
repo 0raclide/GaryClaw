@@ -269,50 +269,55 @@ export function createJobRunner(
       d.log("error", `Failed ${nextJob.id} [${classification.category}]: ${nextJob.error}`);
     }
 
-    // Prune old completed/failed jobs to prevent unbounded growth
-    pruneOldJobs(state);
-    persistState(state, checkpointDir);
-
-    // Regenerate dogfood dashboard (best-effort — never affects job completion)
+    // Post-job cleanup wrapped in finally to guarantee running=false reset.
+    // If any post-job step throws past its catch guard, the job runner would
+    // otherwise be permanently stuck (processNext returns when running=true).
     try {
-      generateDashboard(checkpointDir, parentCheckpointDir, currentConfig);
-    } catch (err) {
-      d.log("warn", `Dashboard generation failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+      // Prune old completed/failed jobs to prevent unbounded growth
+      pruneOldJobs(state);
+      persistState(state, checkpointDir);
 
-    // Auto-research trigger: analyze low-confidence decisions and enqueue research
-    if (nextJob.status === "complete" && currentConfig.autoResearch?.enabled) {
+      // Regenerate dogfood dashboard (best-effort — never affects job completion)
       try {
-        // Read decisions from top-level AND pipeline skill subdirs
-        const decisions = collectAllDecisions(jobDir);
-        const memConfig = defaultMemoryConfig(currentConfig.projectDir);
-        const memoryFiles = readOracleMemory(memConfig, currentConfig.projectDir);
-        const topics = getResearchTopics(
-          decisions,
-          memoryFiles.domainExpertise,
-          currentConfig.autoResearch,
-        );
-
-        if (topics.length > 0) {
-          d.log("info", `Auto-research: extracted ${topics.length} topic(s) from ${decisions.length} decisions: [${topics.join(", ")}]`);
-        } else {
-          d.log("debug", `Auto-research: no topics extracted from ${decisions.length} decisions`);
-        }
-
-        for (const topic of topics) {
-          const jobId = enqueueWithTopic(["research"], "auto_research", `low-confidence: ${topic}`, topic);
-          if (jobId) {
-            d.log("info", `Auto-research: enqueued research job ${jobId} for topic "${topic}"`);
-          } else {
-            d.log("info", `Auto-research: skipped enqueue for "${topic}" (budget/dedup)`);
-          }
-        }
+        generateDashboard(checkpointDir, parentCheckpointDir, currentConfig);
       } catch (err) {
-        d.log("warn", `Auto-research trigger failed: ${err instanceof Error ? err.message : String(err)}`);
+        d.log("warn", `Dashboard generation failed: ${err instanceof Error ? err.message : String(err)}`);
       }
-    }
 
-    running = false;
+      // Auto-research trigger: analyze low-confidence decisions and enqueue research
+      if (nextJob.status === "complete" && currentConfig.autoResearch?.enabled) {
+        try {
+          // Read decisions from top-level AND pipeline skill subdirs
+          const decisions = collectAllDecisions(jobDir);
+          const memConfig = defaultMemoryConfig(currentConfig.projectDir);
+          const memoryFiles = readOracleMemory(memConfig, currentConfig.projectDir);
+          const topics = getResearchTopics(
+            decisions,
+            memoryFiles.domainExpertise,
+            currentConfig.autoResearch,
+          );
+
+          if (topics.length > 0) {
+            d.log("info", `Auto-research: extracted ${topics.length} topic(s) from ${decisions.length} decisions: [${topics.join(", ")}]`);
+          } else {
+            d.log("debug", `Auto-research: no topics extracted from ${decisions.length} decisions`);
+          }
+
+          for (const topic of topics) {
+            const jobId = enqueueWithTopic(["research"], "auto_research", `low-confidence: ${topic}`, topic);
+            if (jobId) {
+              d.log("info", `Auto-research: enqueued research job ${jobId} for topic "${topic}"`);
+            } else {
+              d.log("info", `Auto-research: skipped enqueue for "${topic}" (budget/dedup)`);
+            }
+          }
+        } catch (err) {
+          d.log("warn", `Auto-research trigger failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } finally {
+      running = false;
+    }
   }
 
   function updateBudget(budget: BudgetConfig): void {
