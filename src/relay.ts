@@ -54,17 +54,19 @@ export function prepareRelay(projectDir: string): PrepareRelayResult {
 /**
  * Build segment options for a relay (fresh session with checkpoint prompt).
  * Accepts canUseTool so relayed sessions preserve AskUserQuestion handling.
+ * Optional adaptiveMaxTurns overrides config.maxTurnsPerSegment when provided.
  */
 export function buildRelaySegment(
   checkpoint: Checkpoint,
   config: GaryClawConfig,
   canUseTool?: SegmentOptions["canUseTool"],
+  adaptiveMaxTurns?: number,
 ): SegmentOptions {
   const relayPrompt = generateRelayPrompt(checkpoint);
 
   return {
     prompt: relayPrompt,
-    maxTurns: config.maxTurnsPerSegment,
+    maxTurns: adaptiveMaxTurns ?? config.maxTurnsPerSegment,
     cwd: config.projectDir,
     env: config.env,
     settingSources: config.settingSources,
@@ -104,11 +106,12 @@ export function executeRelay(
   checkpoint: Checkpoint,
   config: GaryClawConfig,
   canUseTool?: SegmentOptions["canUseTool"],
+  adaptiveMaxTurns?: number,
 ): {
   segmentOptions: SegmentOptions;
   prepareResult: PrepareRelayResult;
 } {
   const prepareResult = prepareRelay(config.projectDir);
-  const segmentOptions = buildRelaySegment(checkpoint, config, canUseTool);
+  const segmentOptions = buildRelaySegment(checkpoint, config, canUseTool, adaptiveMaxTurns);
   return { segmentOptions, prepareResult };
 }

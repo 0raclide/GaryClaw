@@ -34,6 +34,7 @@ import {
   setCost,
   shouldRelay,
   buildUsageSnapshot,
+  computeAdaptiveMaxTurns,
 } from "./token-monitor.js";
 import { writeCheckpoint, readCheckpoint, generateRelayPrompt } from "./checkpoint.js";
 import { createAskHandler } from "./ask-handler.js";
@@ -308,6 +309,18 @@ async function runSkillInternal(
         return;
       }
 
+      // Compute adaptive maxTurns based on context growth rate
+      const { maxTurns: adaptiveMaxTurns, reason: adaptiveReason } =
+        computeAdaptiveMaxTurns(monitor, config.relayThresholdRatio, config.maxTurnsPerSegment);
+
+      callbacks.onEvent({
+        type: "adaptive_turns",
+        maxTurns: adaptiveMaxTurns,
+        reason: adaptiveReason,
+        sessionIndex,
+        segmentIndex,
+      });
+
       callbacks.onEvent({
         type: "segment_start",
         sessionIndex,
@@ -316,7 +329,7 @@ async function runSkillInternal(
 
       const segment = startSegment({
         prompt: segmentIndex === 0 ? currentPrompt : "Continue.",
-        maxTurns: config.maxTurnsPerSegment,
+        maxTurns: adaptiveMaxTurns,
         cwd: config.projectDir,
         env: config.env,
         settingSources: config.settingSources,
