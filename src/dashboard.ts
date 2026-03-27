@@ -327,7 +327,7 @@ function defaultGlobalBudget(): GlobalBudget {
  * Format seconds into a human-readable duration string.
  */
 export function formatDuration(seconds: number): string {
-  if (seconds <= 0) return "0s";
+  if (seconds <= 0 || !Number.isFinite(seconds)) return "0s";
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   if (m === 0) return `${s}s`;
