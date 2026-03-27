@@ -232,6 +232,7 @@ export interface DaemonConfig {
     level: "debug" | "info" | "warn" | "error";
     retainDays: number;
   };
+  autoResearch?: AutoResearchConfig;
 }
 
 export type TriggerConfig = GitPollTrigger | CronTrigger;
@@ -261,7 +262,7 @@ export type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelle
 
 export interface Job {
   id: string;
-  triggeredBy: "git_poll" | "cron" | "manual";
+  triggeredBy: "git_poll" | "cron" | "manual" | "auto_research";
   triggerDetail: string;
   skills: string[];
   projectDir: string;
@@ -273,6 +274,7 @@ export interface Job {
   error?: string;
   reportPath?: string;
   designDoc?: string;
+  researchTopic?: string;  // topic string for auto-research jobs
   failureCategory?: FailureCategory;
   retryable?: boolean;
 }
@@ -384,6 +386,15 @@ export interface FailureRecord {
   stackTrace?: string;      // First 5 lines of stack trace
   instanceName?: string;    // Daemon instance that ran this job
   suggestion?: string;      // Human-readable next step
+}
+
+// ── Auto-research trigger ────────────────────────────────────────
+
+export interface AutoResearchConfig {
+  enabled: boolean;
+  lowConfidenceThreshold: number;  // default: 6
+  minDecisionsToTrigger: number;   // default: 3
+  maxTopicsPerJob: number;         // default: 2 (cap to prevent budget drain)
 }
 
 // ── Domain research ─────────────────────────────────────────────
