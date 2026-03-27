@@ -322,6 +322,165 @@ describe("formatReviewContext", () => {
     expect(result).toContain("ENG-001 [high]: Missing error handling");
   });
 
+  it("passes all decisions through when actionableOnly is false", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          decisions: [
+            createMockDecision({ question: "Keep as-is?", chosen: "Yes", confidence: 9 }),
+            createMockDecision({ question: "Skip this?", chosen: "Skip", confidence: 9 }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: false });
+    expect(result).toContain("Keep as-is?");
+    expect(result).toContain("Skip this?");
+    expect(result).toContain("Decisions (2)");
+  });
+
+  it("passes all decisions through when actionableOnly is undefined", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          decisions: [
+            createMockDecision({ question: "Keep as-is?", chosen: "Yes", confidence: 9 }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills);
+    expect(result).toContain("Keep as-is?");
+  });
+
+  it("filters high-confidence non-action decisions when actionableOnly is true", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          decisions: [
+            createMockDecision({ question: "Keep as-is?", chosen: "Yes", confidence: 9 }),
+            createMockDecision({ question: "Use DI?", chosen: "Yes", confidence: 9 }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: true });
+    expect(result).not.toContain("Keep as-is?");
+    expect(result).not.toContain("Use DI?");
+  });
+
+  it("keeps low-confidence decisions when actionableOnly is true", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          decisions: [
+            createMockDecision({ question: "Use Redis?", chosen: "Maybe", confidence: 5 }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: true });
+    expect(result).toContain("Use Redis?");
+  });
+
+  it("keeps action-keyword decisions regardless of confidence when actionableOnly is true", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          decisions: [
+            createMockDecision({ question: "Should we add retry logic?", chosen: "Yes", confidence: 9 }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: true });
+    expect(result).toContain("add retry logic");
+  });
+
+  it("includes confidence exactly 7 when actionableOnly is true", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          decisions: [
+            createMockDecision({ question: "Borderline?", chosen: "Yes", confidence: 7 }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: true });
+    expect(result).toContain("Borderline?");
+  });
+
+  it("excludes confidence exactly 8 without action keywords when actionableOnly is true", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          decisions: [
+            createMockDecision({ question: "Looks good?", chosen: "Yes", confidence: 8 }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: true });
+    expect(result).not.toContain("Looks good?");
+  });
+
+  it("always includes findings when actionableOnly is true", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          findings: [
+            createMockFinding({ description: "Missing error handling" }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: true });
+    expect(result).toContain("Missing error handling");
+  });
+
+  it("always includes issues when actionableOnly is true", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          issues: [
+            createMockIssue({ id: "BUG-001", status: "open", description: "Crash on null" }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: true });
+    expect(result).toContain("BUG-001");
+    expect(result).toContain("Crash on null");
+  });
+
   it("shows issue counts with open/fixed breakdown", () => {
     const skills: PipelineSkillEntry[] = [
       {

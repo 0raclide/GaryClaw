@@ -117,11 +117,33 @@ export function validateImplementationOrder(
 
 // ── Review context formatting ───────────────────────────────────
 
+export interface FormatReviewOptions {
+  /** When true, filter decisions to only actionable ones (low confidence or action keywords). */
+  actionableOnly?: boolean;
+}
+
+const ACTION_KEYWORDS = ["add", "fix", "change", "create", "remove", "switch", "replace"];
+
+/**
+ * Check whether a decision is actionable based on confidence and keywords.
+ * A decision is actionable if:
+ * - confidence <= 7 (low confidence = needs attention), OR
+ * - chosen or question text contains action keywords
+ */
+function isActionableDecision(d: { question: string; chosen: string; confidence: number }): boolean {
+  if (d.confidence <= 7) return true;
+  const text = `${d.question} ${d.chosen}`.toLowerCase();
+  return ACTION_KEYWORDS.some((kw) => text.includes(kw));
+}
+
 /**
  * Format all review decisions, findings, and issues from previous
  * pipeline skills into prompt context.
  */
-export function formatReviewContext(skills: PipelineSkillEntry[]): string {
+export function formatReviewContext(
+  skills: PipelineSkillEntry[],
+  options?: FormatReviewOptions,
+): string {
   const lines: string[] = [];
 
   for (const skill of skills) {
@@ -135,12 +157,17 @@ export function formatReviewContext(skills: PipelineSkillEntry[]): string {
     lines.push("");
 
     if (r.decisions.length > 0) {
-      lines.push(`**Decisions (${r.decisions.length}):**`);
-      for (const d of r.decisions) {
-        lines.push(`- ${d.question} -> ${d.chosen} (confidence: ${d.confidence}/10)`);
-        if (d.rationale) lines.push(`  Rationale: ${d.rationale}`);
+      const decisions = options?.actionableOnly
+        ? r.decisions.filter(isActionableDecision)
+        : r.decisions;
+      if (decisions.length > 0) {
+        lines.push(`**Decisions (${decisions.length}):**`);
+        for (const d of decisions) {
+          lines.push(`- ${d.question} -> ${d.chosen} (confidence: ${d.confidence}/10)`);
+          if (d.rationale) lines.push(`  Rationale: ${d.rationale}`);
+        }
+        lines.push("");
       }
-      lines.push("");
     }
 
     if (r.findings.length > 0) {
