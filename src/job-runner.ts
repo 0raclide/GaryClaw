@@ -6,8 +6,9 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { safeWriteJSON } from "./safe-json.js";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runPipeline } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
@@ -480,5 +481,5 @@ function loadState(checkpointDir: string): DaemonState {
 
 function persistState(state: DaemonState, checkpointDir: string): void {
   mkdirSync(checkpointDir, { recursive: true });
-  writeFileSync(join(checkpointDir, STATE_FILE), JSON.stringify(state, null, 2), "utf-8");
+  safeWriteJSON(join(checkpointDir, STATE_FILE), state);
 }
