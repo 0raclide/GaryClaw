@@ -25,7 +25,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Auto-Research Trigger: COMPLETE** (2026-03-27) — Post-job low-confidence analysis, keyword clustering, auto-enqueue research
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
-- 32 source modules + CLI, 69 test files, 1630 tests
+- 32 source modules + CLI, 70 test files, 1634 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -259,6 +259,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/orchestrator.test.ts` | 47 | auth, success, maxTurns, errors, abort, relay, adaptive turns, heavy tool tracking, --no-adaptive config, codebase summary extraction |
 | `test/orchestrator-helpers.test.ts` | 38 | orchestrator helper functions, prompt building |
 | `test/orchestrator-helpers.regression-1.test.ts` | 6 | orchestrator helpers regression |
+| `test/orchestrator.regression-1.test.ts` | 4 | Multi-tool heavy detection: non-first block, middle position, no false positive |
 | `test/cli.test.ts` | 87 | CLI arg parsing, subcommands, daemon commands, --name/--all, --no-adaptive, adaptive_turns event |
 | `test/cli-main.test.ts` | 25 | CLI main entry point, error handling |
 | `test/cli.regression-1.test.ts` | 2 | CLI regression: edge cases in arg parsing |
