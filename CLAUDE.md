@@ -24,7 +24,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Dogfood Dashboard: COMPLETE** (2026-03-27) — Health score, job/oracle/budget stats, auto-regeneration after every job
 **Auto-Research Trigger: COMPLETE** (2026-03-27) — Post-job low-confidence analysis, keyword clustering, auto-enqueue research
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
-- 32 source modules + CLI, 55 test files, 1452 tests
+- 32 source modules + CLI, 68 test files, 1585 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -207,7 +207,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
 | `test/token-monitor.test.ts` | 24 | recordTurnUsage, shouldRelay, growthRate, edge cases |
-| `test/checkpoint.test.ts` | 34 | write/read/rotation, relay prompt tiering, token budget, codebaseSummary validation + relay |
+| `test/checkpoint.test.ts` | 35 | write/read/rotation, relay prompt tiering, token budget, codebaseSummary validation + relay |
 | `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
 | `test/oracle-extended.test.ts` | 32 | Extended oracle edge cases, principle matching, response parsing |
@@ -244,19 +244,34 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/worktree.test.ts` | 27 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch |
 | `test/dashboard.test.ts` | 40 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
 | `test/auto-research.test.ts` | 33 | extractTopicKeywords, groupDecisionsByTopic, getResearchTopics, defaults |
-| `test/codebase-summary.test.ts` | 44 | extractObservations, extractFailedApproaches, deduplicateObservations, truncateToTokenBudget, buildCodebaseSummary, formatCodebaseSummaryForRelay |
+| `test/codebase-summary.test.ts` | 51 | extractObservations, extractFailedApproaches, deduplicateObservations, truncateToTokenBudget, buildCodebaseSummary, formatCodebaseSummaryForRelay |
 | `test/auto-research.regression-1.test.ts` | 19 | isTopicGroupFresh direct tests, seed-keyword clustering, 3-char acronym preservation |
 | `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
 | `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
 | `test/doctor.test.ts` | 52 | 6 subsystem checks, --fix/--json flags, stale PID detection, lock recovery |
 | `test/failure-taxonomy.test.ts` | 71 | 8 failure categories, table-driven classification, failures.jsonl, notification integration |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
-| `test/orchestrator.test.ts` | 31 | auth, success, maxTurns, errors, abort, relay, codebase summary extraction |
+| `test/orchestrator.test.ts` | 32 | auth, success, maxTurns, errors, abort, relay, codebase summary extraction |
 | `test/orchestrator-helpers.test.ts` | 38 | orchestrator helper functions, prompt building |
 | `test/orchestrator-helpers.regression-1.test.ts` | 6 | orchestrator helpers regression |
 | `test/cli.test.ts` | 82 | CLI arg parsing, subcommands, daemon commands, --name/--all |
 | `test/cli-main.test.ts` | 25 | CLI main entry point, error handling |
 | `test/cli.regression-1.test.ts` | 2 | CLI regression: edge cases in arg parsing |
+| `test/checkpoint.regression-1.test.ts` | 5 | Checkpoint regression: edge cases in relay prompt generation |
+| `test/oracle.regression-1.test.ts` | 9 | Oracle regression: edge cases in decision parsing |
+| `test/oracle-memory.regression-1.test.ts` | 8 | Oracle memory regression: layer resolution edge cases |
+| `test/oracle-memory.regression-2.test.ts` | 4 | Oracle memory regression: sanitization edge cases |
+| `test/oracle-memory.regression-3.test.ts` | 6 | Oracle memory regression: metrics edge cases |
+| `test/codebase-summary.regression-1.test.ts` | 16 | Codebase summary regression: observation extraction edge cases |
+| `test/codebase-summary.regression-2.test.ts` | 4 | Codebase summary regression: dedup edge cases |
+| `test/codebase-summary.regression-3.test.ts` | 6 | Codebase summary regression: token budget edge cases |
+| `test/worktree.regression-1.test.ts` | 16 | Worktree regression: branch and path resolution edge cases |
+| `test/worktree.regression-2.test.ts` | 10 | Worktree regression: merge and cleanup edge cases |
+| `test/dashboard.regression-1.test.ts` | 13 | Dashboard regression: health score edge cases |
+| `test/auto-research.regression-2.test.ts` | 14 | Auto-research regression: freshness and clustering edge cases |
+| `test/pid-utils.regression-1.test.ts` | 13 | PID utils regression: process-name verification edge cases |
+| `test/step-tracking.test.ts` | 45 | Step tracking: progress tracking, step lifecycle, event emission |
+| `test/step-tracking.regression-1.test.ts` | 13 | Step tracking regression: edge cases in step state transitions |
 | `test/qa-regressions.regression-1.test.ts` | 9 | QA regression: issue extraction edge cases |
 | `test/qa-regressions.regression-2.test.ts` | 10 | QA regression: report formatting edge cases |
 
