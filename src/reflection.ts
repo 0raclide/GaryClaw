@@ -366,7 +366,8 @@ export function readDecisionsFromLog(decisionLogPath: string): Decision[] {
         decisions.push(d as Decision);
       }
     } catch {
-      // Skip corrupt lines
+      // Log warning for corrupt lines so silent data loss is visible
+      console.warn(`[reflection] Skipped corrupt JSONL line: ${line.slice(0, 120)}`);
     }
   }
   return decisions;
