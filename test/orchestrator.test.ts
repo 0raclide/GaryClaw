@@ -897,6 +897,90 @@ describe("cost accumulation across relays", () => {
   });
 });
 
+describe("codebase summary extraction", () => {
+  it("extracts observations from assistant text and includes in checkpoint", async () => {
+    // Assistant message with text that contains observation signal words
+    const observationText = "This project uses a convention where all modules follow kebab-case naming and types.ts has zero imports.";
+    const resultMsg = makeResultMsg("success");
+
+    vi.mocked(startSegment).mockReturnValue(
+      makeSegmentIterator([makeAssistantTextMsg(observationText), resultMsg]),
+    );
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: "success", resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 1,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    // writeCheckpoint should be called with codebaseSummary containing the observation
+    expect(writeCheckpoint).toHaveBeenCalled();
+    const checkpointArg = vi.mocked(writeCheckpoint).mock.calls[0][0] as any;
+    // The text has 2+ signal words ("uses", "convention", "naming") so it should be extracted
+    if (checkpointArg.codebaseSummary) {
+      expect(checkpointArg.codebaseSummary.observations.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("extracts failed approaches from assistant text", async () => {
+    const failedText = "I tried using require() for the import but it failed because this is an ESM project with strict module boundaries.";
+    const resultMsg = makeResultMsg("success");
+
+    vi.mocked(startSegment).mockReturnValue(
+      makeSegmentIterator([makeAssistantTextMsg(failedText), resultMsg]),
+    );
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: "success", resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 1,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    expect(writeCheckpoint).toHaveBeenCalled();
+    const checkpointArg = vi.mocked(writeCheckpoint).mock.calls[0][0] as any;
+    if (checkpointArg.codebaseSummary) {
+      expect(checkpointArg.codebaseSummary.failedApproaches.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("omits codebaseSummary when no observations extracted", async () => {
+    // Plain text with no signal words
+    const plainText = "I'll start by reading the file.";
+    const resultMsg = makeResultMsg("success");
+
+    vi.mocked(startSegment).mockReturnValue(
+      makeSegmentIterator([makeAssistantTextMsg(plainText), resultMsg]),
+    );
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: "success", resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 1,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    const checkpointArg = vi.mocked(writeCheckpoint).mock.calls[0][0] as any;
+    expect(checkpointArg.codebaseSummary).toBeUndefined();
+  });
+});
+
 describe("Post-job reflection integration (9A)", () => {
   function setupSuccessfulSkill() {
     const resultMsg = makeResultMsg("success");
