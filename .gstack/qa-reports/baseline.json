@@ -1,11 +1,11 @@
 {
-  "date": "2026-03-27",
+  "date": "2026-03-28",
   "target": "npm test (vitest)",
-  "healthScore": 97,
-  "run": 8,
+  "healthScore": 99,
+  "run": 9,
   "issues": [
-    { "id": "ISSUE-001", "title": "Stderr noise from worktree tests (6x fatal: not a git repository)", "severity": "low", "category": "console" },
-    { "id": "ISSUE-002", "title": "Expected stderr from error-handling tests (by design)", "severity": "low", "category": "console" }
+    { "id": "ISSUE-001", "title": "Dead adaptiveMaxTurns parameter in relay.ts", "severity": "medium", "category": "functional", "status": "fixed", "commit": "e2c16f8" },
+    { "id": "ISSUE-002", "title": "Stale relay signature in adaptive maxTurns design doc", "severity": "low", "category": "content", "status": "fixed", "commit": "1258ceb" }
   ],
   "categoryScores": {
     "console": 97,
@@ -18,15 +18,15 @@
     "accessibility": 100
   },
   "testResults": {
-    "files": 68,
-    "tests": 1585,
-    "passed": 1585,
+    "files": 69,
+    "tests": 1630,
+    "passed": 1630,
     "failed": 0,
     "skipped": 0
   },
   "engReviewGaps": {
-    "total": 3,
-    "covered": 3,
+    "total": 1,
+    "covered": 1,
     "remaining": 0
   }
 }
