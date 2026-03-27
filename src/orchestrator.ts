@@ -173,7 +173,7 @@ async function runSkillInternal(
         type: "skill_complete",
         totalSessions: 1,
         totalTurns: result.searchesUsed,
-        costUsd: result.costUsd,
+        costUsd: result.costUsd ?? 0,
       });
     } catch (err) {
       callbacks.onEvent({
