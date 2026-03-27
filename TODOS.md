@@ -202,9 +202,9 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 
 **Items:**
 - [ ] `isTaste` field in oracle.ts mirrors confidence threshold, not taste semantics — rename or document
-- [ ] Oracle ESCALATION_PHRASES "delete" matches benign strings like "deleted" — use word boundary
+- [x] Oracle ESCALATION_PHRASES "delete" matches benign strings like "deleted" — use word boundary — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-003)
 - [ ] `(msg as any)` type assertions in `createSdkOracleQueryFn` — add runtime shape validation
-- [ ] `INJECTION_PATTERNS` in oracle-memory.ts bypassable with leading whitespace — trim before matching
+- [x] `INJECTION_PATTERNS` in oracle-memory.ts bypassable with leading whitespace — trim before matching — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-001)
 - [ ] Shallow copy in `updateMetricsWithOutcome` shares `confidenceTrend` array reference — deep copy array
 - [ ] `readDecisionsFromLog` silently drops corrupt JSONL lines — add warning log
 - [ ] `parseDomainSections` edge case with adjacent sections without body text — add test
@@ -212,7 +212,7 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 - [ ] Research cost extraction uses `(msg as any).total_cost_usd` — use extractResultData instead
 - [ ] `extractTopicKeywords` doesn't filter numeric-only tokens — add isNaN guard
 - [ ] `isTopicGroupFresh` brittle to topic naming variations — consider fuzzy matching
-- [ ] `branchName` doesn't sanitize `instanceName` for illegal git branch chars — add validation
+- [x] `branchName` doesn't sanitize `instanceName` for illegal git branch chars — add validation — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-002)
 - [ ] `listWorktrees` swallows all git errors silently — log warning on error
 - [ ] Pipeline `startTime!` non-null assertion — use explicit default
 - [ ] Pipeline dynamic import of orchestrator creates circular dependency — extract shared interface
