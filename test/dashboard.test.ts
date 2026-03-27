@@ -170,6 +170,25 @@ describe("aggregateJobStats", () => {
     expect(stats.avgDurationSec).toBe(450); // (600 + 300) / 2
   });
 
+  it("includes failed jobs with timestamps in avg duration", () => {
+    const jobs = [
+      makeJob({
+        id: "j1",
+        status: "complete",
+        startedAt: `${TODAY}T10:00:00Z`,
+        completedAt: `${TODAY}T10:10:00Z`, // 600s
+      }),
+      makeJob({
+        id: "j2",
+        status: "failed",
+        startedAt: `${TODAY}T11:00:00Z`,
+        completedAt: `${TODAY}T11:02:00Z`, // 120s
+      }),
+    ];
+    const stats = aggregateJobStats(jobs, TODAY);
+    expect(stats.avgDurationSec).toBe(360); // (600 + 120) / 2
+  });
+
   it("filters to today-only jobs", () => {
     const jobs = [
       makeJob({ id: "j1", enqueuedAt: `${TODAY}T10:00:00Z` }),
@@ -236,6 +255,14 @@ describe("aggregateBudgetStats", () => {
     expect(Object.keys(stats.byInstance)).toHaveLength(2);
     expect(stats.byInstance["default"].totalUsd).toBe(13.0);
     expect(stats.byInstance["reviewer"].jobCount).toBe(1);
+  });
+
+  it("clamps dailyRemaining to zero when over-budget", () => {
+    const stats = aggregateBudgetStats(
+      makeGlobalBudget({ totalUsd: 30 }), // spent > limit
+      makeBudgetConfig({ dailyCostLimitUsd: 25 }),
+    );
+    expect(stats.dailyRemaining).toBe(0); // clamped, not -5
   });
 
   it("handles missing byInstance", () => {
@@ -332,6 +359,16 @@ describe("computeHealthScore", () => {
     });
     expect(topConcern).toBe("3 job(s) failed today — review failure categories");
   });
+
+  it("returns 100 when dailyLimitUsd is zero (no budget configured)", () => {
+    const { score } = computeHealthScore({
+      jobs: { total: 5, complete: 5, failed: 0, queued: 0, running: 0, successRate: 100, totalCostUsd: 10, avgCostPerJob: 2, avgDurationSec: 300, failureBreakdown: {} },
+      oracle: { totalDecisions: 0, accuracyPercent: 100, confidenceAvg: 0, circuitBreakerTripped: false },
+      budget: { dailyLimitUsd: 0, dailySpentUsd: 0, dailyRemaining: 0, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
+      instances: [],
+    });
+    expect(score).toBe(100); // budgetHeadroom defaults to 100 when limit is 0
+  });
 });
 
 // ── formatDashboard ────────────────────────────────────────────
@@ -375,6 +412,20 @@ describe("formatDashboard", () => {
     data.budget.byInstance = {};
     const md = formatDashboard(data);
     expect(md).not.toContain("### By Instance");
+  });
+
+  it("shows DEGRADED status when health score is 50-79", () => {
+    const data = makeFullDashboardData();
+    data.healthScore = 65;
+    const md = formatDashboard(data);
+    expect(md).toContain("**Status:** DEGRADED");
+  });
+
+  it("shows UNHEALTHY status when health score is below 50", () => {
+    const data = makeFullDashboardData();
+    data.healthScore = 30;
+    const md = formatDashboard(data);
+    expect(md).toContain("**Status:** UNHEALTHY");
   });
 
   it("shows zero jobs correctly", () => {
@@ -468,5 +519,13 @@ describe("formatDuration", () => {
 
   it("handles negative", () => {
     expect(formatDuration(-5)).toBe("0s");
+  });
+
+  it("handles NaN", () => {
+    expect(formatDuration(NaN)).toBe("0s");
+  });
+
+  it("handles Infinity", () => {
+    expect(formatDuration(Infinity)).toBe("0s");
   });
 });
