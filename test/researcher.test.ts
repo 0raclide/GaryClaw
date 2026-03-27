@@ -321,44 +321,44 @@ describe("researcher", () => {
   // ── createResearchCanUseTool ───────────────────────────────────
 
   describe("createResearchCanUseTool", () => {
-    it("allows WebSearch", () => {
-      const result = createResearchCanUseTool("WebSearch");
+    it("allows WebSearch", async () => {
+      const result = await createResearchCanUseTool("WebSearch");
       expect(result.behavior).toBe("allow");
     });
 
-    it("allows WebFetch", () => {
-      const result = createResearchCanUseTool("WebFetch");
+    it("allows WebFetch", async () => {
+      const result = await createResearchCanUseTool("WebFetch");
       expect(result.behavior).toBe("allow");
     });
 
-    it("allows Read", () => {
-      const result = createResearchCanUseTool("Read");
+    it("allows Read", async () => {
+      const result = await createResearchCanUseTool("Read");
       expect(result.behavior).toBe("allow");
     });
 
-    it("denies Edit", () => {
-      const result = createResearchCanUseTool("Edit");
+    it("denies Edit", async () => {
+      const result = await createResearchCanUseTool("Edit");
       expect(result.behavior).toBe("deny");
       expect(result.message).toContain("denied: Edit");
     });
 
-    it("denies Write", () => {
-      const result = createResearchCanUseTool("Write");
+    it("denies Write", async () => {
+      const result = await createResearchCanUseTool("Write");
       expect(result.behavior).toBe("deny");
     });
 
-    it("denies Bash", () => {
-      const result = createResearchCanUseTool("Bash");
+    it("denies Bash", async () => {
+      const result = await createResearchCanUseTool("Bash");
       expect(result.behavior).toBe("deny");
     });
 
-    it("denies Glob", () => {
-      const result = createResearchCanUseTool("Glob");
+    it("denies Glob", async () => {
+      const result = await createResearchCanUseTool("Glob");
       expect(result.behavior).toBe("deny");
     });
 
-    it("denies Grep", () => {
-      const result = createResearchCanUseTool("Grep");
+    it("denies Grep", async () => {
+      const result = await createResearchCanUseTool("Grep");
       expect(result.behavior).toBe("deny");
     });
   });

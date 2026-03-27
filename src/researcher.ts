@@ -449,7 +449,7 @@ Do NOT include any YAML frontmatter or --- delimiters. Just the markdown content
  * Create a canUseTool callback for research sessions.
  * Only allows read-only tools + WebSearch/WebFetch.
  */
-export function createResearchCanUseTool(toolName: string): CanUseToolResult {
+export async function createResearchCanUseTool(toolName: string): Promise<CanUseToolResult> {
   if (ALLOWED_TOOLS.has(toolName)) {
     return { behavior: "allow" };
   }
