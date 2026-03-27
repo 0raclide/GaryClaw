@@ -6,7 +6,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runPipeline } from "./pipeline.js";
@@ -33,6 +33,7 @@ import type {
   BudgetConfig,
   DaemonConfig,
   DaemonState,
+  Decision,
   Job,
   GaryClawConfig,
   OrchestratorCallbacks,
@@ -282,7 +283,8 @@ export function createJobRunner(
     // Auto-research trigger: analyze low-confidence decisions and enqueue research
     if (nextJob.status === "complete" && currentConfig.autoResearch?.enabled) {
       try {
-        const decisions = readDecisionsFromLog(join(jobDir, "decisions.jsonl"));
+        // Read decisions from top-level AND pipeline skill subdirs
+        const decisions = collectAllDecisions(jobDir);
         const memConfig = defaultMemoryConfig(currentConfig.projectDir);
         const memoryFiles = readOracleMemory(memConfig, currentConfig.projectDir);
         const topics = getResearchTopics(
@@ -328,6 +330,38 @@ export function createJobRunner(
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Collect all decisions from a job directory.
+ * Reads top-level decisions.jsonl AND any in pipeline skill subdirs
+ * (e.g., skill-0-qa/decisions.jsonl, skill-1-design-review/decisions.jsonl).
+ */
+export function collectAllDecisions(jobDir: string): Decision[] {
+  const decisions: Decision[] = [];
+
+  // Top-level decisions.jsonl (single-skill jobs)
+  const topLevel = join(jobDir, "decisions.jsonl");
+  if (existsSync(topLevel)) {
+    decisions.push(...readDecisionsFromLog(topLevel));
+  }
+
+  // Pipeline skill subdirs: skill-{i}-{name}/decisions.jsonl
+  try {
+    const entries = readdirSync(jobDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name.startsWith("skill-")) {
+        const subLog = join(jobDir, entry.name, "decisions.jsonl");
+        if (existsSync(subLog)) {
+          decisions.push(...readDecisionsFromLog(subLog));
+        }
+      }
+    }
+  } catch {
+    // If readdir fails, we already have top-level decisions (or empty)
+  }
+
+  return decisions;
+}
 
 function buildGaryClawConfig(
   config: DaemonConfig,
