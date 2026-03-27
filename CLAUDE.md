@@ -22,7 +22,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Phase 6: COMPLETE** (2026-03-26) — Parallel Daemon Instances: registry, global budget, cross-instance dedup, reflection lock
 **Git Worktree Isolation: COMPLETE** (2026-03-26) — Worktree per named instance, branch strategy, fast-forward merge on stop
 **Dogfood Dashboard: COMPLETE** (2026-03-27) — Health score, job/oracle/budget stats, auto-regeneration after every job
-- 30 source modules + CLI
+**Auto-Research Trigger: COMPLETE** (2026-03-27) — Post-job low-confidence analysis, keyword clustering, auto-enqueue research
+- 31 source modules + CLI
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -104,6 +105,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
   → Daemon Registry (instance discovery, global budget, cross-instance dedup)
   → Daemon (persistent background process, PID file, IPC, per-instance dirs)
   |   → Job Runner (FIFO queue, budget enforcement, state persistence, global budget)
+  |   |   → Auto-Research Trigger (post-job low-confidence analysis, keyword clustering, research enqueue)
   |   → Git Poller (HEAD change detection, debounce)
   |   → Notifier (macOS notifications, job summaries, instance labels)
   |   → Reflection Lock (advisory file lock for concurrent oracle-memory writes)
@@ -149,6 +151,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/prioritize.ts` | Prioritize skill: TODOS.md parsing, overnight goal, oracle context, scoring prompt |
 | `src/worktree.ts` | Git worktree isolation: create, remove, merge, list worktrees for parallel instances |
 | `src/dashboard.ts` | Dogfood dashboard: job/oracle/budget aggregation, health score, markdown formatting |
+| `src/auto-research.ts` | Auto-research trigger: keyword extraction, topic grouping, freshness-aware enqueue |
 | `src/doctor.ts` | Self-diagnostic command: 6 subsystem checks, --fix/--json flags, stale PID detection |
 | `src/failure-taxonomy.ts` | 8-category failure classification, failures.jsonl persistence, notification integration |
 | `src/pid-utils.ts` | PID liveness check, process-name verification, stale PID detection |
@@ -237,6 +240,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/prioritize.test.ts` | 42 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
 | `test/worktree.test.ts` | 27 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch |
 | `test/dashboard.test.ts` | 40 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
+| `test/auto-research.test.ts` | 33 | extractTopicKeywords, groupDecisionsByTopic, getResearchTopics, isTopicGroupFresh, defaults |
 | `test/doctor.test.ts` | 52 | 6 subsystem checks, --fix/--json flags, stale PID detection, lock recovery |
 | `test/failure-taxonomy.test.ts` | 71 | 8 failure categories, table-driven classification, failures.jsonl, notification integration |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
@@ -285,6 +289,9 @@ Multiple daemon instances running in parallel on the same project. Each instance
 
 ### Git Worktree Isolation — COMPLETE
 Each named daemon instance operates in its own git worktree with a dedicated branch (`garyclaw/{name}`). Default instance uses the main repo directly (backward-compatible). On daemon stop, fast-forward merge attempted; if diverged, branch left for manual merge. `--cleanup` flag removes worktree + branch. `daemon list` shows worktree paths. See `src/worktree.ts`.
+
+### Auto-Research Trigger — COMPLETE
+Post-job analysis of low-confidence Oracle decisions. Keyword extraction from decision questions, topic grouping by 2+ shared keywords, freshness-aware filtering against domain-expertise.md. When 3+ low-confidence decisions cluster around a topic, auto-enqueue a research job. Gated behind `autoResearch.enabled` config flag (default: false). Research jobs go through normal FIFO queue with budget/dedup. See `src/auto-research.ts`.
 
 ### Phase 4b: Scheduling (DEFERRED)
 Cron triggers, config hot-reload via SIGHUP.
