@@ -104,6 +104,7 @@ export function validateCheckpoint(data: unknown): data is Checkpoint {
     if (typeof d.codebaseSummary !== "object" || d.codebaseSummary === null) return false;
     const cs = d.codebaseSummary as Record<string, unknown>;
     if (!Array.isArray(cs.observations) || !Array.isArray(cs.failedApproaches)) return false;
+    if (typeof cs.lastSessionIndex !== "number") return false;
   }
 
   return true;
