@@ -278,7 +278,7 @@ export function updateMetricsWithOutcome(
   metrics: OracleMetrics,
   outcome: DecisionOutcome,
 ): OracleMetrics {
-  const updated = { ...metrics };
+  const updated = { ...metrics, confidenceTrend: [...metrics.confidenceTrend] };
   updated.totalDecisions++;
 
   switch (outcome.outcome) {
