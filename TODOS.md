@@ -22,7 +22,9 @@ Implemented in 7 commits (340c87f..c2b4827). 6 subsystem checks, --fix/--json/--
 
 Implemented in 5 commits (ad94ab7..49e34a9). Eng review hardened patterns + added 17 per-pattern tests. 8 failure categories, table-driven classification, failures.jsonl output, notification integration. 72 tests covering all codepaths.
 
-## P2: Dogfood Dashboard
+## ~~P2: Dogfood Dashboard~~ — COMPLETE (2026-03-27)
+
+Implemented in 5 commits. Health score (4-signal weighted: jobs 40%, oracle 25%, budget 20%, circuit breaker 15%), job/oracle/budget aggregation, markdown formatting, auto-generation after every job, `garyclaw dashboard` CLI command. 40 tests covering all edge cases including NaN guard, over-budget clamp, DEGRADED/UNHEALTHY status labels, zero-limit budget headroom.
 
 **What:** After each daemon job completes, auto-generate a health dashboard at `.garyclaw/dogfood-report.md`: jobs run, decisions made, issues found/fixed, relay count, oracle accuracy, cost. One glance tells you if GaryClaw is healthy.
 
