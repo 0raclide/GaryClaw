@@ -235,18 +235,17 @@ const segment = startSegment({
 
 ### Call Site 2: Relay Segment Builder
 
-`src/relay.ts`, `buildRelaySegment()`: Accept optional `adaptiveMaxTurns` parameter:
+`src/relay.ts`, `buildRelaySegment()`: Uses `config.maxTurnsPerSegment` directly. No adaptive override parameter needed because relay creates a fresh `TokenMonitorState`, so `computeAdaptiveMaxTurns()` naturally falls back to the configured default for the first segment. By segment 2, fresh growth data is available.
 
 ```typescript
 export function buildRelaySegment(
   checkpoint: Checkpoint,
   config: GaryClawConfig,
   canUseTool?: SegmentOptions["canUseTool"],
-  adaptiveMaxTurns?: number,
 ): SegmentOptions {
   return {
     prompt: generateRelayPrompt(checkpoint),
-    maxTurns: adaptiveMaxTurns ?? config.maxTurnsPerSegment,
+    maxTurns: config.maxTurnsPerSegment,
     // ... rest unchanged
   };
 }
@@ -254,7 +253,7 @@ export function buildRelaySegment(
 
 ### Relay Wiring
 
-The orchestrator's relay path (inside `runSkillInternal()`, after the relay flag is set) passes the adaptive value through `executeRelay()`. Since relay starts a fresh session with a fresh `TokenMonitorState`, the first relay segment will naturally get the configured default from the function's null-growth-rate fallback. The `heavyToolFlag` from the pre-relay segment carries through:
+The orchestrator's relay path calls `executeRelay()` with 3 args (checkpoint, config, canUseTool). No adaptive override is passed:
 
 ```typescript
 // In orchestrator, relay path (after relayFlag detected):
@@ -262,7 +261,6 @@ const { segmentOptions, prepareResult } = executeRelay(
   checkpoint,
   config,
   askHandler.canUseTool,
-  // No adaptive override for relay — fresh session will self-fallback
 );
 ```
 
