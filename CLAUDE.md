@@ -176,6 +176,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Git HEAD tracking in pipelines** — detects commits between skills and injects context into handoff prompt
 - **Git worktree isolation** — named daemon instances get their own worktree + branch (`garyclaw/{name}`), default instance uses main repo directly
 - **Fast-forward only merge** — on daemon stop, attempt `--ff-only` merge to base branch; if diverged, leave branch for manual merge
+- **Auto-research trigger** — post-job keyword extraction from low-confidence decisions, topic grouping by 2+ shared keywords, freshness-aware dedup, gated behind `autoResearch.enabled` (default: false)
 
 ---
 
