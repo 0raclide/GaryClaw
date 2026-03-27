@@ -12,6 +12,7 @@ import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runPipeline } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
 import { notifyJobComplete, notifyJobError, writeSummary } from "./notifier.js";
+import { generateDashboard } from "./dashboard.js";
 import {
   readGlobalBudget,
   updateGlobalBudget,
@@ -248,6 +249,14 @@ export function createJobRunner(
     // Prune old completed/failed jobs to prevent unbounded growth
     pruneOldJobs(state);
     persistState(state, checkpointDir);
+
+    // Regenerate dogfood dashboard (best-effort — never affects job completion)
+    try {
+      generateDashboard(checkpointDir, parentCheckpointDir, currentConfig);
+    } catch (err) {
+      d.log("warn", `Dashboard generation failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
     running = false;
   }
 
