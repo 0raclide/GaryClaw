@@ -109,18 +109,24 @@ export function groupDecisionsByTopic(
     keywords: extractTopicKeywords(d.question),
   }));
 
-  // Union-find-style grouping: merge decisions that share 2+ keywords
-  const groups: { keywords: Set<string>; decisions: Decision[] }[] = [];
+  // Union-find-style grouping: merge decisions that share 2+ keywords.
+  // seedKeywords stays fixed to the first decision's keywords — prevents
+  // snowball effect where accumulated keywords attract unrelated decisions.
+  const groups: {
+    seedKeywords: Set<string>;   // only the founding decision's keywords (match against these)
+    keywords: Set<string>;       // all keywords from all decisions (used for topic label)
+    decisions: Decision[];
+  }[] = [];
 
   for (const { decision, keywords } of decisionKeywords) {
     if (keywords.length === 0) continue;
 
     const keywordSet = new Set(keywords);
 
-    // Find existing group with 2+ shared keywords
+    // Find existing group with 2+ shared SEED keywords (not accumulated)
     let merged = false;
     for (const group of groups) {
-      const shared = keywords.filter((k) => group.keywords.has(k));
+      const shared = keywords.filter((k) => group.seedKeywords.has(k));
       if (shared.length >= 2) {
         group.decisions.push(decision);
         for (const k of keywords) group.keywords.add(k);
@@ -131,7 +137,8 @@ export function groupDecisionsByTopic(
 
     if (!merged) {
       groups.push({
-        keywords: keywordSet,
+        seedKeywords: keywordSet,
+        keywords: new Set(keywordSet),
         decisions: [decision],
       });
     }
