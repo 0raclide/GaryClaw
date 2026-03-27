@@ -387,6 +387,41 @@ export interface DomainSection {
   content: string;
 }
 
+// ── Dashboard ───────────────────────────────────────────────────
+
+export interface DashboardData {
+  generatedAt: string;
+  healthScore: number;           // 0-100
+  topConcern: string | null;     // Most actionable insight, null if healthy
+  jobs: {
+    total: number;
+    complete: number;
+    failed: number;
+    queued: number;
+    running: number;
+    successRate: number;         // 0-100
+    totalCostUsd: number;
+    avgCostPerJob: number;
+    avgDurationSec: number;
+    failureBreakdown: Record<string, number>;  // FailureCategory → count
+  };
+  oracle: {
+    totalDecisions: number;
+    accuracyPercent: number;
+    confidenceAvg: number;       // avg of last 20
+    circuitBreakerTripped: boolean;
+  };
+  budget: {
+    dailyLimitUsd: number;
+    dailySpentUsd: number;
+    dailyRemaining: number;
+    jobCount: number;
+    maxJobsPerDay: number;
+    byInstance: Record<string, { totalUsd: number; jobCount: number }>;
+  };
+  instances: string[];           // Active instance names
+}
+
 // ── SDK message types (loosely typed for pre-1.0 safety) ────────
 
 export interface SdkUsage {
