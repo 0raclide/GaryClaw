@@ -49,6 +49,7 @@ import {
 import { sendNotification } from "./notifier.js";
 import { runReflection } from "./reflection.js";
 
+import { runResearch, type ResearchConfig } from "./researcher.js";
 import { IssueTracker, extractAllToolUse, parseGitLog } from "./issue-extractor.js";
 import {
   findDesignDoc,
@@ -146,6 +147,38 @@ async function runSkillInternal(
   callbacks: OrchestratorCallbacks,
   initialPromptOverride?: string,
 ): Promise<void> {
+  // Research skill dispatch: route directly to runResearch() when researchTopic is set.
+  // This avoids starting a full SDK session just to do research.
+  if (config.skillName === "research" && config.researchTopic) {
+    callbacks.onEvent({ type: "segment_start", sessionIndex: 0, segmentIndex: 0 });
+
+    const researchConfig: ResearchConfig = {
+      topic: config.researchTopic,
+      projectDir: config.projectDir,
+      maxSearches: 10,
+      timeoutMs: 300_000,
+      force: false,
+      oracleMemoryConfig: defaultMemoryConfig(config.mainRepoDir ?? config.projectDir),
+    };
+
+    try {
+      const result = await runResearch(researchConfig, startSegment);
+      callbacks.onEvent({
+        type: "skill_complete",
+        totalSessions: 1,
+        totalTurns: result.searchesUsed,
+        costUsd: 0, // research cost tracked separately by SDK
+      });
+    } catch (err) {
+      callbacks.onEvent({
+        type: "error",
+        message: `Research failed: ${err instanceof Error ? err.message : String(err)}`,
+        recoverable: false,
+      });
+    }
+    return;
+  }
+
   const runId = `garyclaw-${Date.now()}-${randomBytes(3).toString("hex")}`;
   const startTime = new Date().toISOString();
   const decisionLogPath = join(config.checkpointDir, "decisions.jsonl");
