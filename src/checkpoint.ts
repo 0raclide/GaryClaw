@@ -7,6 +7,7 @@ import { writeFileSync, readFileSync, renameSync, mkdirSync, existsSync } from "
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Checkpoint, ImplementProgress, Issue, Decision } from "./types.js";
+import { formatCodebaseSummaryForRelay } from "./codebase-summary.js";
 
 const CHECKPOINT_FILE = "checkpoint.json";
 const CHECKPOINT_PREV = "checkpoint.prev.json";
@@ -83,7 +84,7 @@ function tryReadCheckpoint(path: string): Checkpoint | null {
 export function validateCheckpoint(data: unknown): data is Checkpoint {
   if (typeof data !== "object" || data === null) return false;
   const d = data as Record<string, unknown>;
-  return (
+  const baseValid =
     d.version === 1 &&
     typeof d.timestamp === "string" &&
     typeof d.runId === "string" &&
@@ -95,8 +96,17 @@ export function validateCheckpoint(data: unknown): data is Checkpoint {
     typeof d.gitHead === "string" &&
     typeof d.tokenUsage === "object" &&
     d.tokenUsage !== null &&
-    Array.isArray(d.screenshotPaths)
-  );
+    Array.isArray(d.screenshotPaths);
+  if (!baseValid) return false;
+
+  // codebaseSummary is optional — backward compatible
+  if (d.codebaseSummary !== undefined) {
+    if (typeof d.codebaseSummary !== "object" || d.codebaseSummary === null) return false;
+    const cs = d.codebaseSummary as Record<string, unknown>;
+    if (!Array.isArray(cs.observations) || !Array.isArray(cs.failedApproaches)) return false;
+  }
+
+  return true;
 }
 
 /**
@@ -226,6 +236,11 @@ Total cost so far: $${checkpoint.tokenUsage.estimatedCostUsd.toFixed(3)}
       if (f.actionTaken) text += ` → ${f.actionTaken}`;
       text += "\n";
     }
+  }
+
+  // Codebase summary section (carried across relay boundaries)
+  if (checkpoint.codebaseSummary) {
+    text += formatCodebaseSummaryForRelay(checkpoint.codebaseSummary);
   }
 
   // Implementation progress section (implement skill only)
