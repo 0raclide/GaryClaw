@@ -54,19 +54,22 @@ export function prepareRelay(projectDir: string): PrepareRelayResult {
 /**
  * Build segment options for a relay (fresh session with checkpoint prompt).
  * Accepts canUseTool so relayed sessions preserve AskUserQuestion handling.
- * Optional adaptiveMaxTurns overrides config.maxTurnsPerSegment when provided.
+ *
+ * Relay always uses config.maxTurnsPerSegment for the first segment because
+ * the fresh TokenMonitorState has no growth data — computeAdaptiveMaxTurns()
+ * naturally falls back to the configured default. By segment 2, fresh growth
+ * data is available and adaptive sizing kicks in.
  */
 export function buildRelaySegment(
   checkpoint: Checkpoint,
   config: GaryClawConfig,
   canUseTool?: SegmentOptions["canUseTool"],
-  adaptiveMaxTurns?: number,
 ): SegmentOptions {
   const relayPrompt = generateRelayPrompt(checkpoint);
 
   return {
     prompt: relayPrompt,
-    maxTurns: adaptiveMaxTurns ?? config.maxTurnsPerSegment,
+    maxTurns: config.maxTurnsPerSegment,
     cwd: config.projectDir,
     env: config.env,
     settingSources: config.settingSources,
@@ -106,12 +109,11 @@ export function executeRelay(
   checkpoint: Checkpoint,
   config: GaryClawConfig,
   canUseTool?: SegmentOptions["canUseTool"],
-  adaptiveMaxTurns?: number,
 ): {
   segmentOptions: SegmentOptions;
   prepareResult: PrepareRelayResult;
 } {
   const prepareResult = prepareRelay(config.projectDir);
-  const segmentOptions = buildRelaySegment(checkpoint, config, canUseTool, adaptiveMaxTurns);
+  const segmentOptions = buildRelaySegment(checkpoint, config, canUseTool);
   return { segmentOptions, prepareResult };
 }
