@@ -328,8 +328,11 @@ function defaultGlobalBudget(): GlobalBudget {
  */
 export function formatDuration(seconds: number): string {
   if (seconds <= 0 || !Number.isFinite(seconds)) return "0s";
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
+  // Use Math.round on total seconds first, then decompose — avoids
+  // the case where Math.round(seconds % 60) === 60 (e.g., 59.6s → "60s").
+  const totalSec = Math.round(seconds);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
   if (m === 0) return `${s}s`;
   return `${m}m ${s}s`;
 }
