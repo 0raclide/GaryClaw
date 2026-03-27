@@ -44,6 +44,14 @@ export interface Decision {
   principle: string;
 }
 
+// ── Codebase summary (carried across relay boundaries) ──────────
+
+export interface CodebaseSummary {
+  observations: string[];      // Deduplicated observation strings
+  failedApproaches: string[];  // Specifically "I tried X but Y" patterns
+  lastSessionIndex: number;    // Highest session index that contributed observations
+}
+
 // ── Checkpoint (persisted to disk) ──────────────────────────────
 
 export interface ImplementProgress {
@@ -67,6 +75,7 @@ export interface Checkpoint {
   tokenUsage: TokenUsageSnapshot;
   screenshotPaths: string[];
   implementProgress?: ImplementProgress;
+  codebaseSummary?: CodebaseSummary;
 }
 
 // ── Token tracking ──────────────────────────────────────────────
