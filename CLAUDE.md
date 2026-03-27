@@ -23,7 +23,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Git Worktree Isolation: COMPLETE** (2026-03-26) — Worktree per named instance, branch strategy, fast-forward merge on stop
 **Dogfood Dashboard: COMPLETE** (2026-03-27) — Health score, job/oracle/budget stats, auto-regeneration after every job
 **Auto-Research Trigger: COMPLETE** (2026-03-27) — Post-job low-confidence analysis, keyword clustering, auto-enqueue research
-- 31 source modules + CLI
+- 31 source modules + CLI, 54 test files, 1396 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -227,7 +227,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-extended.test.ts` | 17 | Extended job runner: budget edge cases, concurrent enqueue |
 | `test/job-runner.regression-2.test.ts` | 3 | Job runner regression: dedup with completed jobs |
 | `test/triggers.test.ts` | 53 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns |
-| `test/daemon.test.ts` | 44 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request |
+| `test/daemon.test.ts` | 51 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request, autoResearch validation |
 | `test/daemon-extended.test.ts` | 46 | Extended daemon: shutdown, poller lifecycle, IPC edge cases |
 | `test/daemon-lifecycle.test.ts` | 14 | Daemon start/stop lifecycle, signal handling |
 | `test/daemon-registry.test.ts` | 42 | Instance discovery, global budget, cross-instance dedup, migration |
@@ -241,7 +241,10 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/prioritize.test.ts` | 42 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
 | `test/worktree.test.ts` | 27 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch |
 | `test/dashboard.test.ts` | 40 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
-| `test/auto-research.test.ts` | 33 | extractTopicKeywords, groupDecisionsByTopic, getResearchTopics, isTopicGroupFresh, defaults |
+| `test/auto-research.test.ts` | 33 | extractTopicKeywords, groupDecisionsByTopic, getResearchTopics, defaults |
+| `test/auto-research.regression-1.test.ts` | 19 | isTopicGroupFresh direct tests, seed-keyword clustering, 3-char acronym preservation |
+| `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
+| `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
 | `test/doctor.test.ts` | 52 | 6 subsystem checks, --fix/--json flags, stale PID detection, lock recovery |
 | `test/failure-taxonomy.test.ts` | 71 | 8 failure categories, table-driven classification, failures.jsonl, notification integration |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
