@@ -172,18 +172,24 @@ Implemented in 6 commits (fbe24f8..b7a74e5). ImplementProgress interface, detect
 **Depends on:** Implement skill (complete)
 **Added by:** /plan-eng-review on 2026-03-26
 
-## P3: Auto-Research Trigger (Daemon Integration)
+## ~~P3: Auto-Research Trigger (Daemon Integration)~~ — COMPLETE, 3 bugs fixed by /qa (2026-03-27)
 
 **What:** When the Oracle makes 3+ low-confidence decisions (confidence < 6) in a single job within the same topic area, the daemon auto-enqueues a research session for that topic before the next job runs.
 
 **Why:** Closes the feedback loop: Oracle encounters unfamiliar territory → auto-researches → next job has domain expertise. Currently, domain expertise only gets populated via manual `garyclaw research <topic>`. The auto-trigger makes the system self-improving.
 
-**Pros:** Fully autonomous learning. No human intervention needed to improve Oracle knowledge over time. Topics researched are directly relevant (driven by actual low-confidence decisions, not guesses).
-
-**Cons:** Requires topic extraction heuristic (inferring what topic caused low confidence from the question text). Cold start — needs Phase 5c (manual research) working first. Needs daemon config flag (`autoResearch.enabled`) to gate the behavior.
-
-**Context:** Deferred from Phase 5c plan (2026-03-26). The plan includes the config schema (`autoResearch: { enabled, lowConfidenceThreshold, minDecisionsToTrigger }`) but explicitly defers implementation to after manual research is validated.
+**Bugs found and fixed by /qa on 2026-03-27:**
+- ISSUE-001: `extractTopicKeywords` filtered 3-char words, killing API/SSL/JWT/SQL/CSS/DOM/RPC. Fixed: threshold >2, added stop words.
+- ISSUE-002: Greedy clustering snowball — accumulated keywords attracted unrelated decisions. Fixed: seed-keyword matching.
+- ISSUE-003: Pipeline decisions read from wrong path — auto-research only read top-level, missed skill subdirs. Fixed: `collectAllDecisions()`.
+- 40 regression tests added across 3 new test files.
 
 **Effort:** S (human: ~3 days / CC: ~30 min)
 **Depends on:** Phase 5c (manual research working), daemon job runner
 **Added by:** /plan-eng-review on 2026-03-26
+
+## ~~P4: Research Job Cost Tracking~~ — COMPLETE (2026-03-27)
+
+Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_cost_usd` from SDK result message in `runResearch()`, pass through orchestrator research dispatch. Also added missing `segment_end` event.
+
+**Added by:** /qa on 2026-03-27
