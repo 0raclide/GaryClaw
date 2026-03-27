@@ -2,19 +2,19 @@
   "date": "2026-03-27",
   "target": "npm test (vitest)",
   "healthScore": 97,
-  "run": 7,
+  "run": 8,
   "issues": [
-    { "id": "ISSUE-005", "title": "Stderr noise from worktree tests (5x fatal: not a git repository)", "severity": "low", "category": "console" },
-    { "id": "ISSUE-006", "title": "Expected stderr from error-handling tests (by design)", "severity": "low", "category": "console" }
+    { "id": "ISSUE-001", "title": "Stderr noise from worktree tests (6x fatal: not a git repository)", "severity": "low", "category": "console" },
+    { "id": "ISSUE-002", "title": "Expected stderr from error-handling tests (by design)", "severity": "low", "category": "console" }
   ],
   "categoryScores": {
-    "console": 100,
+    "console": 97,
     "links": 100,
     "visual": 100,
     "functional": 100,
     "ux": 100,
     "performance": 100,
-    "content": 91,
+    "content": 100,
     "accessibility": 100
   },
   "testResults": {
@@ -23,5 +23,10 @@
     "passed": 1585,
     "failed": 0,
     "skipped": 0
+  },
+  "engReviewGaps": {
+    "total": 3,
+    "covered": 3,
+    "remaining": 0
   }
 }
