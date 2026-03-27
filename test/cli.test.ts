@@ -585,4 +585,28 @@ describe("formatEvent", () => {
     expect(result).toContain("3 skill(s)");
     expect(result).toContain("$2.500");
   });
+
+  it("formats adaptive_turns event with fallback reason", () => {
+    const result = formatEvent({
+      type: "adaptive_turns",
+      maxTurns: 15,
+      reason: "no growth data yet, using configured default",
+      sessionIndex: 0,
+      segmentIndex: 0,
+    });
+    expect(result).toContain("Adaptive turns: 15");
+    expect(result).toContain("no growth data");
+  });
+
+  it("formats adaptive_turns event with growth data", () => {
+    const result = formatEvent({
+      type: "adaptive_turns",
+      maxTurns: 7,
+      reason: "growth rate 98412 tok/turn, budget 689000 tokens, predicted 7 turns, clamped to 7",
+      sessionIndex: 1,
+      segmentIndex: 2,
+    });
+    expect(result).toContain("Adaptive turns: 7");
+    expect(result).toContain("growth rate");
+  });
 });

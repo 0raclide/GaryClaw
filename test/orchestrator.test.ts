@@ -581,6 +581,111 @@ describe("relay flow", () => {
   });
 });
 
+describe("adaptive turns", () => {
+  it("emits adaptive_turns event before each segment", async () => {
+    const resultMsg = makeResultMsg("success");
+    vi.mocked(startSegment).mockReturnValue(makeSegmentIterator([resultMsg]));
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: "success", resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 1,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    const adaptiveEvents = callbacks.events.filter((e) => e.type === "adaptive_turns");
+    expect(adaptiveEvents).toHaveLength(1);
+    const event = adaptiveEvents[0] as any;
+    expect(event.sessionIndex).toBe(0);
+    expect(event.segmentIndex).toBe(0);
+    // First segment has no growth data — should use configured default
+    expect(event.maxTurns).toBe(15);
+    expect(event.reason).toContain("no growth data");
+  });
+
+  it("adaptive_turns event fires before its corresponding segment_start event", async () => {
+    const resultMsg = makeResultMsg("success");
+    vi.mocked(startSegment).mockReturnValue(makeSegmentIterator([resultMsg]));
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: "success", resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 1,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    // Find the adaptive_turns event and the segment_start that follows it
+    // (The first segment_start at index 0 is from verifyAuth, before the session loop)
+    const adaptiveIdx = callbacks.events.findIndex((e) => e.type === "adaptive_turns");
+    expect(adaptiveIdx).toBeGreaterThanOrEqual(0);
+    // The segment_start immediately after adaptive_turns should be the one for the same segment
+    const nextSegStart = callbacks.events.findIndex(
+      (e, i) => i > adaptiveIdx && e.type === "segment_start",
+    );
+    expect(nextSegStart).toBe(adaptiveIdx + 1);
+  });
+
+  it("passes adaptive maxTurns to startSegment", async () => {
+    const resultMsg = makeResultMsg("success");
+    vi.mocked(startSegment).mockReturnValue(makeSegmentIterator([resultMsg]));
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "s1", subtype: "success", resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 1,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    // With no growth data, adaptive defaults to configured max
+    await runSkill(createTestConfig({ maxTurnsPerSegment: 20 }), callbacks);
+
+    const call = vi.mocked(startSegment).mock.calls[0][0];
+    expect(call.maxTurns).toBe(20);
+  });
+
+  it("emits adaptive_turns for each segment in multi-segment run", async () => {
+    const resultMsg1 = makeResultMsg("max_turns");
+    const resultMsg2 = makeResultMsg("success");
+
+    let callCount = 0;
+    vi.mocked(startSegment).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return makeSegmentIterator([resultMsg1]);
+      return makeSegmentIterator([resultMsg2]);
+    });
+    vi.mocked(extractResultData).mockImplementation((msg: any) => {
+      if (msg.type === "result") {
+        return {
+          sessionId: "session-123", subtype: msg.subtype, resultText: "ok",
+          usage: null, modelUsage: null, totalCostUsd: 0, numTurns: 5,
+        };
+      }
+      return null;
+    });
+
+    const callbacks = createMockCallbacks();
+    await runSkill(createTestConfig(), callbacks);
+
+    const adaptiveEvents = callbacks.events.filter((e) => e.type === "adaptive_turns");
+    expect(adaptiveEvents).toHaveLength(2);
+    expect((adaptiveEvents[0] as any).segmentIndex).toBe(0);
+    expect((adaptiveEvents[1] as any).segmentIndex).toBe(1);
+  });
+});
+
 describe("helper functions (via exports)", () => {
   it("extractAssistantText returns null for non-assistant messages", async () => {
     const resultMsg = makeResultMsg("success");
