@@ -18,6 +18,11 @@ import { isTopicStale, parseDomainSections } from "./researcher.js";
 
 /** Stop words filtered from topic keyword extraction */
 const STOP_WORDS = new Set([
+  // 3-char common English words (added when threshold lowered to >2)
+  "the", "and", "for", "are", "was", "not", "but", "can", "has", "had",
+  "its", "our", "any", "all", "how", "who", "why", "too", "own", "nor",
+  "yet", "yes", "also", "just", "let", "may", "per", "via",
+  // 4+ char stop words
   "should", "would", "could", "which", "what", "that", "this", "have",
   "with", "from", "they", "been", "were", "will", "does", "about",
   "into", "more", "some", "than", "other", "approach", "option",
@@ -53,7 +58,7 @@ export interface TopicGroup {
  * Algorithm:
  * 1. Lowercase the entire question string
  * 2. Split on whitespace and punctuation
- * 3. Filter out words <= 3 chars
+ * 3. Filter out words <= 2 chars
  * 4. Filter out STOP_WORDS
  * 5. Deduplicate
  * 6. Return first 5 remaining words (preserves original word order)
@@ -64,7 +69,7 @@ export function extractTopicKeywords(question: string): string[] {
   const words = question
     .toLowerCase()
     .split(/[\s,;:?!.()\[\]{}"']+/)
-    .filter((w) => w.length > 3)
+    .filter((w) => w.length > 2)
     .filter((w) => !STOP_WORDS.has(w));
 
   // Deduplicate preserving order

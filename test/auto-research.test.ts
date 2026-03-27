@@ -96,13 +96,16 @@ describe("extractTopicKeywords", () => {
     expect(oauthCount).toBe(1);
   });
 
-  it("filters words with 3 or fewer characters", () => {
+  it("filters words with 2 or fewer characters", () => {
     const keywords = extractTopicKeywords("Is the API key set for SSL?");
-    expect(keywords).not.toContain("the");
-    expect(keywords).not.toContain("key");
-    expect(keywords).not.toContain("set");
-    expect(keywords).not.toContain("for");
-    expect(keywords).not.toContain("ssl");
+    expect(keywords).not.toContain("is");  // 2-char, filtered by length
+    expect(keywords).not.toContain("the"); // 3-char stop word
+    expect(keywords).not.toContain("for"); // 3-char stop word
+    // 3-char technical terms survive (not stop words):
+    expect(keywords).toContain("api");
+    expect(keywords).toContain("key");
+    expect(keywords).toContain("set");
+    expect(keywords).toContain("ssl");
   });
 });
 
