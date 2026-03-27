@@ -463,6 +463,8 @@ async function runSkillInternal(
           sessionIndex,
           checkpoints,
           issueTracker,
+          pendingObservations,
+          pendingFailed,
         );
         writeCheckpoint(checkpoint, config.checkpointDir);
         checkpoints.push(checkpoint);
@@ -546,6 +548,8 @@ async function runSkillInternal(
           sessionIndex,
           checkpoints,
           issueTracker,
+          pendingObservations,
+          pendingFailed,
         );
         writeCheckpoint(checkpoint, config.checkpointDir);
         checkpoints.push(checkpoint);
@@ -617,6 +621,8 @@ async function runSkillInternal(
           sessionIndex,
           checkpoints,
           issueTracker,
+          pendingObservations,
+          pendingFailed,
         );
         writeCheckpoint(checkpoint, config.checkpointDir);
         checkpoints.push(checkpoint);
