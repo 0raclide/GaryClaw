@@ -120,8 +120,8 @@ describe("Research skill dispatch", () => {
     expect(verifyAuth).not.toHaveBeenCalled(); // Auth skip for research
   });
 
-  it("emits segment_start and skill_complete events on success", async () => {
-    vi.mocked(runResearch).mockResolvedValue({ searchesUsed: 7, topicWritten: true });
+  it("emits segment_start, segment_end, and skill_complete events on success", async () => {
+    vi.mocked(runResearch).mockResolvedValue({ searchesUsed: 7, topicWritten: true, costUsd: 0.15 });
 
     const callbacks = createMockCallbacks();
     await runSkill(
@@ -133,11 +133,14 @@ describe("Research skill dispatch", () => {
       expect.objectContaining({ type: "segment_start", sessionIndex: 0, segmentIndex: 0 }),
     );
     expect(callbacks.events).toContainEqual(
+      expect.objectContaining({ type: "segment_end", sessionIndex: 0, segmentIndex: 0, numTurns: 7 }),
+    );
+    expect(callbacks.events).toContainEqual(
       expect.objectContaining({
         type: "skill_complete",
         totalSessions: 1,
         totalTurns: 7,
-        costUsd: 0,
+        costUsd: 0.15,
       }),
     );
   });
