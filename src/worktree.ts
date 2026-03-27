@@ -201,10 +201,14 @@ export function removeWorktree(
     } catch {
       // Force cleanup
       rmSync(wtDir, { recursive: true, force: true });
-      execFileSync("git", ["worktree", "prune"], {
-        cwd: repoDir,
-        stdio: "pipe",
-      });
+      try {
+        execFileSync("git", ["worktree", "prune"], {
+          cwd: repoDir,
+          stdio: "pipe",
+        });
+      } catch {
+        // Prune is best-effort cleanup — don't fail the remove
+      }
     }
   }
 
@@ -243,12 +247,17 @@ export function mergeWorktreeBranch(
   }
 
   // Count commits ahead
-  const commitCountStr = execFileSync(
-    "git",
-    ["rev-list", "--count", `${baseBranch}..${branch}`],
-    { cwd: repoDir, stdio: "pipe", encoding: "utf-8" },
-  ).trim();
-  const commitCount = parseInt(commitCountStr, 10);
+  let commitCount: number;
+  try {
+    const commitCountStr = execFileSync(
+      "git",
+      ["rev-list", "--count", `${baseBranch}..${branch}`],
+      { cwd: repoDir, stdio: "pipe", encoding: "utf-8" },
+    ).trim();
+    commitCount = parseInt(commitCountStr, 10);
+  } catch {
+    return { merged: false, reason: `Cannot compare ${branch} with ${baseBranch} — base branch may not exist` };
+  }
 
   if (commitCount === 0) {
     return { merged: true, commitCount: 0, reason: "Already up to date" };
