@@ -57,10 +57,16 @@ import {
   extractImplementationOrder,
   detectCompletedSteps,
 } from "./implement.js";
+import {
+  extractObservations,
+  extractFailedApproaches,
+  buildCodebaseSummary,
+} from "./codebase-summary.js";
 
 import type {
   GaryClawConfig,
   ImplementProgress,
+  CodebaseSummary,
   OrchestratorCallbacks,
   Checkpoint,
   RelayPoint,
@@ -282,6 +288,10 @@ async function runSkillInternal(
 
     currentSessionCost = 0; // Reset per session
 
+    // Codebase summary: accumulate observations across segments within a session
+    const pendingObservations: string[] = [];
+    const pendingFailed: string[] = [];
+
     let relayFlag = false;
     let relayReason = "";
     let relayContextSize = 0;
@@ -325,6 +335,12 @@ async function runSkillInternal(
           const text = extractAssistantText(msg);
           if (text) {
             callbacks.onEvent({ type: "assistant_text", text });
+
+            // Codebase summary: mine observations from assistant narration
+            const obs = extractObservations(text);
+            const failed = extractFailedApproaches(text);
+            pendingObservations.push(...obs);
+            pendingFailed.push(...failed);
           }
 
           // Live progress: tool use
@@ -425,6 +441,7 @@ async function runSkillInternal(
           const checkpoint = buildCheckpoint(
             runId, config, monitor, askHandler.getDecisions(),
             sessionIndex, checkpoints, issueTracker,
+            pendingObservations, pendingFailed,
           );
           writeCheckpoint(checkpoint, config.checkpointDir);
           callbacks.onEvent({
@@ -694,6 +711,8 @@ function buildCheckpoint(
   sessionIndex: number,
   previousCheckpoints: Checkpoint[],
   issueTracker: IssueTracker,
+  pendingObservations: string[] = [],
+  pendingFailed: string[] = [],
 ): Checkpoint {
   const usageSnapshot = buildUsageSnapshot(monitor, sessionIndex + 1);
 
@@ -755,6 +774,14 @@ function buildCheckpoint(
     }
   }
 
+  // Codebase summary: merge previous summary with new observations
+  const codebaseSummary = buildCodebaseSummary(
+    lastCheckpoint?.codebaseSummary,
+    pendingObservations,
+    pendingFailed,
+    sessionIndex,
+  );
+
   return {
     version: 1,
     timestamp: new Date().toISOString(),
@@ -768,5 +795,8 @@ function buildCheckpoint(
     tokenUsage: usageSnapshot,
     screenshotPaths: [],
     ...(implementProgress ? { implementProgress } : {}),
+    ...(codebaseSummary.observations.length > 0 || codebaseSummary.failedApproaches.length > 0
+      ? { codebaseSummary }
+      : {}),
   };
 }

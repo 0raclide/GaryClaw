@@ -193,3 +193,28 @@ Implemented in 6 commits (fbe24f8..b7a74e5). ImplementProgress interface, detect
 Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_cost_usd` from SDK result message in `runResearch()`, pass through orchestrator research dispatch. Also added missing `segment_end` event.
 
 **Added by:** /qa on 2026-03-27
+
+## P5: Low-Severity QA Findings (deferred)
+
+**What:** 15 low-severity issues found by /qa deep audit (run 5, 2026-03-27). None are bugs that affect correctness today, but are code quality / robustness improvements.
+
+**Items:**
+- [ ] `isTaste` field in oracle.ts mirrors confidence threshold, not taste semantics — rename or document
+- [ ] Oracle ESCALATION_PHRASES "delete" matches benign strings like "deleted" — use word boundary
+- [ ] `(msg as any)` type assertions in `createSdkOracleQueryFn` — add runtime shape validation
+- [ ] `INJECTION_PATTERNS` in oracle-memory.ts bypassable with leading whitespace — trim before matching
+- [ ] Shallow copy in `updateMetricsWithOutcome` shares `confidenceTrend` array reference — deep copy array
+- [ ] `readDecisionsFromLog` silently drops corrupt JSONL lines — add warning log
+- [ ] `parseDomainSections` edge case with adjacent sections without body text — add test
+- [ ] `createResearchCanUseTool` sync return used where async expected — align signatures
+- [ ] Research cost extraction uses `(msg as any).total_cost_usd` — use extractResultData instead
+- [ ] `extractTopicKeywords` doesn't filter numeric-only tokens — add isNaN guard
+- [ ] `isTopicGroupFresh` brittle to topic naming variations — consider fuzzy matching
+- [ ] `branchName` doesn't sanitize `instanceName` for illegal git branch chars — add validation
+- [ ] `listWorktrees` swallows all git errors silently — log warning on error
+- [ ] Pipeline `startTime!` non-null assertion — use explicit default
+- [ ] Pipeline dynamic import of orchestrator creates circular dependency — extract shared interface
+
+**Effort:** XS each (human: ~30 min each / CC: ~5 min each)
+**Depends on:** Nothing
+**Added by:** /qa on 2026-03-27
