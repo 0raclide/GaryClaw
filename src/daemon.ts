@@ -357,7 +357,7 @@ export async function startDaemon(checkpointDir: string, instanceName?: string):
     log("error", `Invalid or missing config at ${join(instDir, CONFIG_FILE)} or ${join(checkpointDir, CONFIG_FILE)}`);
     process.exit(1);
   }
-  const config = configOrNull; // Narrow: process.exit above guarantees non-null
+  let config = configOrNull; // Narrow: process.exit above guarantees non-null. Mutable for SIGHUP reload.
 
   // Update logger with config level
   const configLog = createDaemonLogger(instDir, config.logging.level);
@@ -430,6 +430,9 @@ export async function startDaemon(checkpointDir: string, instanceName?: string):
       configLog("warn", `SIGHUP reload failed: ${configError}, keeping old config`);
       return;
     }
+
+    // Update config reference so shutdown handler, IPC handler, etc. see new values
+    config = newConfig;
 
     // Update budget for future enqueue checks
     runner.updateBudget(newConfig.budget);
