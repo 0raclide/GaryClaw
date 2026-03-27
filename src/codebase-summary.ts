@@ -264,7 +264,8 @@ export function formatCodebaseSummaryForRelay(summary: CodebaseSummary): string 
     return "";
   }
 
-  let text = `\n## Codebase Context (carried from sessions 0-${summary.lastSessionIndex})\n`;
+  const sessionIdx = typeof summary.lastSessionIndex === "number" ? summary.lastSessionIndex : 0;
+  let text = `\n## Codebase Context (carried from sessions 0-${sessionIdx})\n`;
 
   if (summary.failedApproaches.length > 0) {
     text += "\n**Approaches that failed (don't retry):**\n";
