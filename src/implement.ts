@@ -257,8 +257,8 @@ export async function buildImplementPrompt(
     lines.push("");
   }
 
-  // Review context
-  const reviewContext = formatReviewContext(previousSkills);
+  // Review context — filter to actionable decisions only
+  const reviewContext = formatReviewContext(previousSkills, { actionableOnly: true });
   if (reviewContext) {
     lines.push("## Review Findings");
     lines.push("");

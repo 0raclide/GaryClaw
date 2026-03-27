@@ -542,7 +542,7 @@ Run tests.`,
     expect(prompt).toContain("## Rules");
   });
 
-  it("includes review context from previous skills", async () => {
+  it("includes actionable review context from previous skills", async () => {
     writeFileSync(join(DESIGNS_DIR, "feature.md"), "# Design\n\nSimple design.", "utf-8");
 
     const config = createMockConfig();
@@ -552,7 +552,7 @@ Run tests.`,
         status: "complete",
         report: createMockRunReport("plan-eng-review", {
           decisions: [
-            createMockDecision({ question: "Use DI?", chosen: "Yes" }),
+            createMockDecision({ question: "Add retry logic?", chosen: "Yes" }),
           ],
         }),
       },
@@ -562,7 +562,7 @@ Run tests.`,
 
     expect(prompt).toContain("## Review Findings");
     expect(prompt).toContain("### /plan-eng-review");
-    expect(prompt).toContain("Use DI?");
+    expect(prompt).toContain("Add retry logic?");
   });
 
   it("handles missing design doc with fallback message", async () => {
@@ -636,7 +636,7 @@ Run tests.`,
         skillName: "plan-ceo-review",
         status: "complete",
         report: createMockRunReport("plan-ceo-review", {
-          decisions: [createMockDecision({ question: "Think bigger?", chosen: "Yes" })],
+          decisions: [createMockDecision({ question: "Add caching layer?", chosen: "Yes" })],
           findings: [createMockFinding({ description: "Add monitoring" })],
         }),
       },
@@ -644,7 +644,7 @@ Run tests.`,
         skillName: "plan-eng-review",
         status: "complete",
         report: createMockRunReport("plan-eng-review", {
-          decisions: [createMockDecision({ question: "Use Redis?", chosen: "No" })],
+          decisions: [createMockDecision({ question: "Remove Redis?", chosen: "Yes" })],
           issues: [createMockIssue({ id: "ENG-001", status: "open" })],
         }),
       },
@@ -659,8 +659,8 @@ Run tests.`,
     expect(prompt).toContain("## Review Findings");
     expect(prompt).toContain("### /plan-ceo-review");
     expect(prompt).toContain("### /plan-eng-review");
-    expect(prompt).toContain("Think bigger?");
-    expect(prompt).toContain("Use Redis?");
+    expect(prompt).toContain("Add caching layer?");
+    expect(prompt).toContain("Remove Redis?");
     expect(prompt).toContain("Add monitoring");
     expect(prompt).toContain("ENG-001");
     expect(prompt).toContain("## Rules");
