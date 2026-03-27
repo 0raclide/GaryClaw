@@ -194,6 +194,8 @@ async function runSkillInternal(
   try {
     await verifyAuth(config.env);
   } catch (err) {
+    // Emit segment_end to pair with segment_start before returning
+    callbacks.onEvent({ type: "segment_end", sessionIndex: 0, segmentIndex: 0, numTurns: 0 });
     callbacks.onEvent({
       type: "error",
       message: `Auth failed: ${err instanceof Error ? err.message : String(err)}. Ensure you're logged in with \`claude login\`.`,
