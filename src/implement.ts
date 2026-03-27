@@ -11,9 +11,10 @@
  */
 
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
-import type { GaryClawConfig, PipelineSkillEntry } from "./types.js";
+import type { GaryClawConfig, ImplementProgress, PipelineSkillEntry } from "./types.js";
 
 // ── Design doc discovery ────────────────────────────────────────
 
@@ -271,4 +272,183 @@ export async function buildImplementPrompt(
   lines.push("");
 
   return lines.join("\n");
+}
+
+// ── Step detection for relay tracking ────────────────────────────
+
+/**
+ * Extract key tokens from a step description for fuzzy matching.
+ * Filters out common stop words and short tokens, keeping file names,
+ * module names, and meaningful verbs.
+ */
+export function extractStepTokens(step: string): string[] {
+  // Remove leading step number and punctuation: "1. Create types.ts" → "Create types.ts"
+  const cleaned = step.replace(/^\d+\.\s*\*?\*?\s*/, "").replace(/\*\*/g, "");
+
+  // Extract file-name-like tokens (e.g., types.ts, dashboard.ts) — high signal
+  const fileTokens = cleaned.match(/[\w-]+\.\w+/g) ?? [];
+
+  // Extract regular words, keeping only meaningful ones (length >= 3)
+  const STOP_WORDS = new Set([
+    "the", "and", "for", "with", "into", "from", "that", "this", "will",
+    "new", "add", "all", "use", "get", "set", "has", "not", "but", "are",
+    "was", "been", "have", "each", "when", "step", "create", "optional",
+  ]);
+
+  const words = cleaned
+    .replace(/[^\w\s-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !STOP_WORDS.has(w.toLowerCase()))
+    .map((w) => w.toLowerCase());
+
+  // File tokens first (higher signal), then word tokens, deduplicated
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const t of [...fileTokens.map((f) => f.toLowerCase()), ...words]) {
+    if (!seen.has(t)) {
+      seen.add(t);
+      result.push(t);
+    }
+  }
+  return result;
+}
+
+/**
+ * Match a commit message to a step index using two-tier matching.
+ *
+ * Tier 1: Exact step number match (e.g., "step 1: ...", "1. ...")
+ * Tier 2: Fuzzy token overlap (2+ key tokens from the step description)
+ *
+ * Returns the 1-indexed step number, or null if no match.
+ */
+export function matchCommitToStep(
+  commitMessage: string,
+  steps: string[],
+): number | null {
+  const msg = commitMessage.toLowerCase();
+
+  // Tier 1: Exact step number match
+  // Matches: "step 1: ...", "step 1. ...", "1. ...", "1: ..."
+  const stepNumMatch = msg.match(/^(?:step\s+)?(\d+)[.:]/i);
+  if (stepNumMatch) {
+    const num = parseInt(stepNumMatch[1], 10);
+    if (num >= 1 && num <= steps.length) {
+      return num;
+    }
+  }
+
+  // Tier 2: Fuzzy token matching — score each step, pick highest with 2+ matches
+  let bestStep: number | null = null;
+  let bestScore = 0;
+
+  for (let i = 0; i < steps.length; i++) {
+    const tokens = extractStepTokens(steps[i]);
+    if (tokens.length === 0) continue;
+
+    let score = 0;
+    for (const token of tokens) {
+      if (msg.includes(token)) {
+        score++;
+      }
+    }
+
+    if (score >= 2 && score > bestScore) {
+      bestScore = score;
+      bestStep = i + 1; // 1-indexed
+    }
+  }
+
+  return bestStep;
+}
+
+/**
+ * Detect completed implementation steps by scanning git log for commits
+ * that match step descriptions.
+ *
+ * @param steps - The implementation order steps (raw strings from design doc)
+ * @param projectDir - Git repo directory
+ * @param designDocPath - Path to the design doc
+ * @param sinceCommit - Only scan commits after this SHA (optional)
+ * @returns ImplementProgress with completed/remaining step info
+ */
+export function detectCompletedSteps(
+  steps: string[],
+  projectDir: string,
+  designDocPath: string,
+  sinceCommit?: string,
+): ImplementProgress {
+  const totalSteps = steps.length;
+  const completedSteps: number[] = [];
+  const stepCommits: Record<number, string> = {};
+
+  if (totalSteps === 0) {
+    return {
+      completedSteps: [],
+      currentStep: 1,
+      totalSteps: 0,
+      stepCommits: {},
+      designDocPath,
+    };
+  }
+
+  // Get git log
+  let logOutput: string;
+  try {
+    const args = sinceCommit
+      ? ["log", "--oneline", `${sinceCommit}..HEAD`]
+      : ["log", "--oneline", "--max-count=50"];
+
+    logOutput = execFileSync("git", args, {
+      cwd: projectDir,
+      encoding: "utf-8",
+      timeout: 10_000,
+    });
+  } catch {
+    // Git log failed — return empty progress (conservative)
+    return {
+      completedSteps: [],
+      currentStep: 1,
+      totalSteps,
+      stepCommits: {},
+      designDocPath,
+    };
+  }
+
+  // Parse each commit line: "abc1234 commit message"
+  const lines = logOutput.trim().split("\n").filter(Boolean);
+  // Process oldest-first so later commits for the same step overwrite earlier ones
+  for (const line of lines.reverse()) {
+    const spaceIdx = line.indexOf(" ");
+    if (spaceIdx < 0) continue;
+    const sha = line.slice(0, spaceIdx);
+    const message = line.slice(spaceIdx + 1);
+
+    const stepNum = matchCommitToStep(message, steps);
+    if (stepNum !== null && !completedSteps.includes(stepNum)) {
+      completedSteps.push(stepNum);
+      stepCommits[stepNum] = sha;
+    }
+  }
+
+  // Sort completed steps
+  completedSteps.sort((a, b) => a - b);
+
+  // currentStep = min of incomplete steps, or totalSteps + 1 if all done
+  const incompleteSteps = [];
+  for (let i = 1; i <= totalSteps; i++) {
+    if (!completedSteps.includes(i)) {
+      incompleteSteps.push(i);
+    }
+  }
+  const currentStep = incompleteSteps.length > 0
+    ? incompleteSteps[0]
+    : totalSteps + 1;
+
+  return {
+    completedSteps,
+    currentStep,
+    totalSteps,
+    stepCommits,
+    designDocPath,
+  };
 }
