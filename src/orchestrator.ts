@@ -50,6 +50,12 @@ import { sendNotification } from "./notifier.js";
 import { runReflection } from "./reflection.js";
 
 import { IssueTracker, extractAllToolUse, parseGitLog } from "./issue-extractor.js";
+import {
+  findDesignDoc,
+  loadDesignDoc,
+  extractImplementationOrder,
+  detectCompletedSteps,
+} from "./implement.js";
 
 import type {
   GaryClawConfig,
@@ -688,6 +694,25 @@ function buildCheckpoint(
   const prevDecisionTimestamps = new Set(prevDecisions.map((d) => d.timestamp));
   const newDecisions = decisions.filter((d) => !prevDecisionTimestamps.has(d.timestamp));
 
+  // Step tracking for implement skill — detect which steps are done
+  let implementProgress: import("./types.js").ImplementProgress | undefined;
+  if (config.skillName === "implement") {
+    try {
+      const doc = config.designDoc
+        ? loadDesignDoc(config.designDoc, config.projectDir)
+        : findDesignDoc(config.projectDir);
+      if (doc) {
+        const steps = extractImplementationOrder(doc.content);
+        if (steps.length > 0) {
+          const sinceCommit = prevHead && prevHead !== "unknown" ? prevHead : undefined;
+          implementProgress = detectCompletedSteps(steps, config.projectDir, doc.path, sinceCommit);
+        }
+      }
+    } catch {
+      // Step detection failure is non-fatal — relay will work without it
+    }
+  }
+
   return {
     version: 1,
     timestamp: new Date().toISOString(),
@@ -700,5 +725,6 @@ function buildCheckpoint(
     gitHead,
     tokenUsage: usageSnapshot,
     screenshotPaths: [],
+    ...(implementProgress ? { implementProgress } : {}),
   };
 }
