@@ -189,11 +189,9 @@ export function computeAdaptiveMaxTurns(
     minTurns?: number;              // Floor (default: 3)
     growthWindowSize?: number;      // Turns for growth rate calc (default: 5)
     lastHeavyToolSeen?: boolean;    // Was a heavy tool used in the previous segment?
-    /** @deprecated Use headroomFactor instead */
-    safetyFactor?: number;
   },
 ): { maxTurns: number; reason: string } {
-  const headroomFactor = options?.headroomFactor ?? options?.safetyFactor ?? 0.85;
+  const headroomFactor = options?.headroomFactor ?? 0.85;
   const minTurns = options?.minTurns ?? 3;
   const growthWindowSize = options?.growthWindowSize ?? 5;
   const heavyToolSeen = options?.lastHeavyToolSeen ?? false;

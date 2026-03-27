@@ -240,22 +240,6 @@ describe("computeAdaptiveMaxTurns", () => {
     expect(result.maxTurns).toBe(6);
   });
 
-  it("supports deprecated safetyFactor as alias for headroomFactor", () => {
-    state.contextWindow = 1_000_000;
-    recordTurnUsage(state, createMockSdkUsage({
-      input_tokens: 0,
-      cache_read_input_tokens: 100_000,
-      cache_creation_input_tokens: 0,
-    }));
-    recordTurnUsage(state, createMockSdkUsage({
-      input_tokens: 0,
-      cache_read_input_tokens: 200_000,
-      cache_creation_input_tokens: 0,
-    }));
-    const result = computeAdaptiveMaxTurns(state, 0.85, 15, { safetyFactor: 1.0 });
-    expect(result.maxTurns).toBe(6);
-  });
-
   it("respects custom minTurns", () => {
     state.contextWindow = 1_000_000;
     recordTurnUsage(state, createMockSdkUsage({
