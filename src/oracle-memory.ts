@@ -401,7 +401,10 @@ function validateMetrics(data: unknown): data is OracleMetrics {
   return (
     typeof d.totalDecisions === "number" &&
     typeof d.accurateDecisions === "number" &&
+    typeof d.neutralDecisions === "number" &&
+    typeof d.failedDecisions === "number" &&
     typeof d.accuracyPercent === "number" &&
+    typeof d.circuitBreakerTripped === "boolean" &&
     Array.isArray(d.confidenceTrend)
   );
 }
