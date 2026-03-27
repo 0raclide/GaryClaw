@@ -45,14 +45,14 @@ const MEMORY_MD = "MEMORY.md";
  * before injecting into Oracle prompt.
  */
 const INJECTION_PATTERNS = [
-  /^<\/?system[^>]*>/gim,
-  /^<\/?instructions[^>]*>/gim,
-  /^IGNORE ALL PREVIOUS INSTRUCTIONS/gim,
-  /^YOU ARE NOW/gim,
-  /^FORGET EVERYTHING/gim,
-  /^NEW INSTRUCTIONS:/gim,
-  /^OVERRIDE:/gim,
-  /^SYSTEM:/gim,
+  /^\s*<\/?system[^>]*>/gim,
+  /^\s*<\/?instructions[^>]*>/gim,
+  /^\s*IGNORE ALL PREVIOUS INSTRUCTIONS/gim,
+  /^\s*YOU ARE NOW/gim,
+  /^\s*FORGET EVERYTHING/gim,
+  /^\s*NEW INSTRUCTIONS:/gim,
+  /^\s*OVERRIDE:/gim,
+  /^\s*SYSTEM:/gim,
 ];
 
 /**
