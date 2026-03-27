@@ -24,7 +24,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Dogfood Dashboard: COMPLETE** (2026-03-27) — Health score, job/oracle/budget stats, auto-regeneration after every job
 **Auto-Research Trigger: COMPLETE** (2026-03-27) — Post-job low-confidence analysis, keyword clustering, auto-enqueue research
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
-- 32 source modules + CLI, 68 test files, 1585 tests
+**Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate, browse-heavy gets 3-8 turns, edit-heavy gets full max
+- 32 source modules + CLI, 69 test files, 1617 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -127,7 +128,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | Module | What |
 |--------|------|
 | `src/types.ts` | All shared interfaces — zero imports |
-| `src/token-monitor.ts` | `recordTurnUsage`, `shouldRelay`, `computeGrowthRate` |
+| `src/token-monitor.ts` | `recordTurnUsage`, `shouldRelay`, `computeGrowthRate`, `computeAdaptiveMaxTurns` |
 | `src/checkpoint.ts` | Atomic write (2-rotation), tiered relay prompt generation |
 | `src/ask-handler.ts` | `canUseTool` callback intercepting AskUserQuestion |
 | `src/sdk-wrapper.ts` | SDK isolation layer: `startSegment`, `extractTurnUsage`, `buildSdkEnv` |
@@ -179,6 +180,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Git worktree isolation** — named daemon instances get their own worktree + branch (`garyclaw/{name}`), default instance uses main repo directly
 - **Fast-forward only merge** — on daemon stop, attempt `--ff-only` merge to base branch; if diverged, leave branch for manual merge
 - **Auto-research trigger** — post-job keyword extraction from low-confidence decisions, topic grouping by 2+ shared keywords, freshness-aware dedup, gated behind `autoResearch.enabled` (default: false)
+- **Adaptive maxTurns** — per-segment turn prediction from `computeGrowthRate()`, browse-heavy gets 3-8 turns, edit-heavy gets full max. User's `--max-turns` is ceiling. Fresh monitor per relay session naturally falls back to configured default.
 
 ---
 
@@ -188,7 +190,8 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 1. verifyAuth()
 2. for sessionIndex in 0..maxRelaySessions:
 3.   for segmentIndex in 0..∞:
-4.     segment = startSegment(prompt, maxTurns=15, ...)
+3a.    adaptiveMaxTurns = computeAdaptiveMaxTurns(monitor, threshold, configuredMax)
+4.     segment = startSegment(prompt, maxTurns=adaptiveMaxTurns, ...)
 5.     for msg in segment:
 6.       if assistant → recordTurnUsage → check shouldRelay → set flag
 7.       if result → setContextWindow, recordCost
@@ -207,6 +210,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
 | `test/token-monitor.test.ts` | 24 | recordTurnUsage, shouldRelay, growthRate, edge cases |
+| `test/adaptive-turns.test.ts` | 17 | computeAdaptiveMaxTurns: fallback, growth prediction, heavy tools, clamping, relay |
 | `test/checkpoint.test.ts` | 35 | write/read/rotation, relay prompt tiering, token budget, codebaseSummary validation + relay |
 | `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
@@ -251,10 +255,10 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/doctor.test.ts` | 52 | 6 subsystem checks, --fix/--json flags, stale PID detection, lock recovery |
 | `test/failure-taxonomy.test.ts` | 71 | 8 failure categories, table-driven classification, failures.jsonl, notification integration |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
-| `test/orchestrator.test.ts` | 32 | auth, success, maxTurns, errors, abort, relay, codebase summary extraction |
+| `test/orchestrator.test.ts` | 36 | auth, success, maxTurns, errors, abort, relay, adaptive turns, codebase summary extraction |
 | `test/orchestrator-helpers.test.ts` | 38 | orchestrator helper functions, prompt building |
 | `test/orchestrator-helpers.regression-1.test.ts` | 6 | orchestrator helpers regression |
-| `test/cli.test.ts` | 82 | CLI arg parsing, subcommands, daemon commands, --name/--all |
+| `test/cli.test.ts` | 84 | CLI arg parsing, subcommands, daemon commands, --name/--all, adaptive_turns event |
 | `test/cli-main.test.ts` | 25 | CLI main entry point, error handling |
 | `test/cli.regression-1.test.ts` | 2 | CLI regression: edge cases in arg parsing |
 | `test/checkpoint.regression-1.test.ts` | 5 | Checkpoint regression: edge cases in relay prompt generation |

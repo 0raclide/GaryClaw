@@ -15,6 +15,23 @@ import type {
   RelayDecision,
 } from "./types.js";
 
+/**
+ * Tools that produce large context growth per turn (30-150K tokens).
+ * When one of these fires in a segment, the next segment's maxTurns
+ * should account for the higher growth rate.
+ */
+export const HEAVY_TOOLS: ReadonlySet<string> = new Set([
+  "WebFetch",
+  "WebSearch",
+  "Screenshot",
+]);
+
+/**
+ * Multiplier applied to growth rate when a heavy tool was seen
+ * in the current segment. Conservative: assume 2.5x the measured rate.
+ */
+export const HEAVY_TOOL_GROWTH_MULTIPLIER = 2.5;
+
 export function createTokenMonitorState(): TokenMonitorState {
   return {
     contextWindow: null,
@@ -168,14 +185,18 @@ export function computeAdaptiveMaxTurns(
   relayThresholdRatio: number,
   configuredMaxTurns: number,
   options?: {
-    safetyFactor?: number;    // Target this fraction of the threshold (default: 0.85)
-    minTurns?: number;        // Floor (default: 3)
-    growthWindowSize?: number; // Turns for growth rate calc (default: 5)
+    headroomFactor?: number;        // Target this fraction of relay threshold (default: 0.85)
+    minTurns?: number;              // Floor (default: 3)
+    growthWindowSize?: number;      // Turns for growth rate calc (default: 5)
+    lastHeavyToolSeen?: boolean;    // Was a heavy tool used in the previous segment?
+    /** @deprecated Use headroomFactor instead */
+    safetyFactor?: number;
   },
 ): { maxTurns: number; reason: string } {
-  const safetyFactor = options?.safetyFactor ?? 0.85;
+  const headroomFactor = options?.headroomFactor ?? options?.safetyFactor ?? 0.85;
   const minTurns = options?.minTurns ?? 3;
   const growthWindowSize = options?.growthWindowSize ?? 5;
+  const heavyToolSeen = options?.lastHeavyToolSeen ?? false;
 
   // No data yet — use configured default
   const growthRate = computeGrowthRate(state, growthWindowSize);
@@ -190,8 +211,10 @@ export function computeAdaptiveMaxTurns(
     ? state.turnHistory[state.turnHistory.length - 1].computedContextSize
     : 0;
 
-  // Target: land at safetyFactor * relayThreshold * contextWindow
-  const targetSize = state.contextWindow * relayThresholdRatio * safetyFactor;
+  // Target: land at headroomFactor * relayThreshold * contextWindow
+  // With defaults (0.85 * 0.85 = 0.7225), we target ~72% of the context window,
+  // leaving ~13% headroom before the relay threshold fires.
+  const targetSize = state.contextWindow * relayThresholdRatio * headroomFactor;
   const remainingBudget = targetSize - currentSize;
 
   if (remainingBudget <= 0) {
@@ -201,14 +224,21 @@ export function computeAdaptiveMaxTurns(
     };
   }
 
-  const predicted = Math.floor(remainingBudget / growthRate);
+  // Apply heavy tool multiplier: if a heavy tool was seen, assume
+  // the effective growth rate is higher than the trailing average.
+  const effectiveRate = heavyToolSeen
+    ? growthRate * HEAVY_TOOL_GROWTH_MULTIPLIER
+    : growthRate;
+
+  const predicted = Math.floor(remainingBudget / effectiveRate);
   const clamped = Math.max(minTurns, Math.min(predicted, configuredMaxTurns));
 
   return {
     maxTurns: clamped,
-    reason: `growth rate ${growthRate.toFixed(0)} tok/turn, ` +
-            `budget ${remainingBudget.toFixed(0)} tokens, ` +
-            `predicted ${predicted} turns, clamped to ${clamped}`,
+    reason: `growth ${Math.round(growthRate)} tok/turn` +
+            (heavyToolSeen ? ` (heavy tool: x${HEAVY_TOOL_GROWTH_MULTIPLIER})` : "") +
+            `, budget ${Math.round(remainingBudget)} tok` +
+            `, predicted ${predicted}, clamped to ${clamped}`,
   };
 }
 

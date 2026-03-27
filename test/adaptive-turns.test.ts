@@ -3,6 +3,8 @@ import {
   createTokenMonitorState,
   recordTurnUsage,
   computeAdaptiveMaxTurns,
+  HEAVY_TOOLS,
+  HEAVY_TOOL_GROWTH_MULTIPLIER,
 } from "../src/token-monitor.js";
 import { createMockSdkUsage } from "./helpers.js";
 
@@ -113,7 +115,7 @@ describe("computeAdaptiveMaxTurns", () => {
     // Clamped to min=3
     const result = computeAdaptiveMaxTurns(state, 0.85, 15);
     expect(result.maxTurns).toBe(3);
-    expect(result.reason).toContain("growth rate");
+    expect(result.reason).toContain("growth");
     expect(result.reason).toContain("clamped to 3");
   });
 
@@ -218,7 +220,7 @@ describe("computeAdaptiveMaxTurns", () => {
 
   // ── Custom options ────────────────────────────────────────────
 
-  it("respects custom safetyFactor", () => {
+  it("respects custom headroomFactor", () => {
     state.contextWindow = 1_000_000;
     recordTurnUsage(state, createMockSdkUsage({
       input_tokens: 0,
@@ -231,9 +233,25 @@ describe("computeAdaptiveMaxTurns", () => {
       cache_creation_input_tokens: 0,
     }));
     // Growth rate = 100K/turn, currentSize = 200K
-    // safetyFactor=1.0: target = 1M * 0.85 * 1.0 = 850,000
+    // headroomFactor=1.0: target = 1M * 0.85 * 1.0 = 850,000
     // Budget = 850,000 - 200,000 = 650,000
     // Predicted = floor(650,000 / 100,000) = 6
+    const result = computeAdaptiveMaxTurns(state, 0.85, 15, { headroomFactor: 1.0 });
+    expect(result.maxTurns).toBe(6);
+  });
+
+  it("supports deprecated safetyFactor as alias for headroomFactor", () => {
+    state.contextWindow = 1_000_000;
+    recordTurnUsage(state, createMockSdkUsage({
+      input_tokens: 0,
+      cache_read_input_tokens: 100_000,
+      cache_creation_input_tokens: 0,
+    }));
+    recordTurnUsage(state, createMockSdkUsage({
+      input_tokens: 0,
+      cache_read_input_tokens: 200_000,
+      cache_creation_input_tokens: 0,
+    }));
     const result = computeAdaptiveMaxTurns(state, 0.85, 15, { safetyFactor: 1.0 });
     expect(result.maxTurns).toBe(6);
   });
@@ -308,9 +326,9 @@ describe("computeAdaptiveMaxTurns", () => {
       cache_creation_input_tokens: 0,
     }));
     const result = computeAdaptiveMaxTurns(state, 0.85, 15);
-    expect(result.reason).toMatch(/growth rate \d+ tok\/turn/);
-    expect(result.reason).toMatch(/budget \d+ tokens/);
-    expect(result.reason).toMatch(/predicted \d+ turns/);
+    expect(result.reason).toMatch(/growth \d+ tok\/turn/);
+    expect(result.reason).toMatch(/budget \d+ tok/);
+    expect(result.reason).toMatch(/predicted \d+/);
     expect(result.reason).toMatch(/clamped to \d+/);
   });
 
@@ -322,5 +340,143 @@ describe("computeAdaptiveMaxTurns", () => {
     const result = computeAdaptiveMaxTurns(freshState, 0.85, 15);
     expect(result.maxTurns).toBe(15);
     expect(result.reason).toContain("no growth data");
+  });
+
+  // ── Heavy tool lookahead ──────────────────────────────────────
+
+  describe("heavy tool lookahead", () => {
+    it("applies multiplier when lastHeavyToolSeen is true", () => {
+      state.contextWindow = 1_000_000;
+      // Moderate growth rate: ~50K tokens/turn
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 100_000,
+        cache_creation_input_tokens: 0,
+      }));
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 150_000,
+        cache_creation_input_tokens: 0,
+      }));
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 200_000,
+        cache_creation_input_tokens: 0,
+      }));
+      // Without heavy tool: growth=50K, budget=522,500, predicted=10
+      const withoutHeavy = computeAdaptiveMaxTurns(state, 0.85, 15);
+      expect(withoutHeavy.maxTurns).toBe(10);
+
+      // With heavy tool: effective=50K*2.5=125K, predicted=floor(522,500/125,000)=4
+      const withHeavy = computeAdaptiveMaxTurns(state, 0.85, 15, { lastHeavyToolSeen: true });
+      expect(withHeavy.maxTurns).toBe(4);
+      expect(withHeavy.reason).toContain("heavy tool");
+      expect(withHeavy.reason).toContain(`x${HEAVY_TOOL_GROWTH_MULTIPLIER}`);
+    });
+
+    it("does not apply multiplier when lastHeavyToolSeen is false", () => {
+      state.contextWindow = 1_000_000;
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 100_000,
+        cache_creation_input_tokens: 0,
+      }));
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 150_000,
+        cache_creation_input_tokens: 0,
+      }));
+      const result = computeAdaptiveMaxTurns(state, 0.85, 15, { lastHeavyToolSeen: false });
+      expect(result.reason).not.toContain("heavy tool");
+    });
+
+    it("does not apply multiplier when lastHeavyToolSeen is omitted", () => {
+      state.contextWindow = 1_000_000;
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 100_000,
+        cache_creation_input_tokens: 0,
+      }));
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 150_000,
+        cache_creation_input_tokens: 0,
+      }));
+      const result = computeAdaptiveMaxTurns(state, 0.85, 15);
+      expect(result.reason).not.toContain("heavy tool");
+    });
+
+    it("heavy tool clamps to min floor when growth is very high", () => {
+      state.contextWindow = 1_000_000;
+      // High growth: ~100K/turn, already at 500K
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 300_000,
+        cache_creation_input_tokens: 0,
+      }));
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 400_000,
+        cache_creation_input_tokens: 0,
+      }));
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 500_000,
+        cache_creation_input_tokens: 0,
+      }));
+      // Without heavy: growth=100K, budget=222,500, predicted=2 → clamped to 3
+      // With heavy: effective=250K, predicted=0 → clamped to 3
+      const result = computeAdaptiveMaxTurns(state, 0.85, 15, { lastHeavyToolSeen: true });
+      expect(result.maxTurns).toBe(3);
+    });
+
+    it("heavy tool still returns default when no growth data", () => {
+      // No turns yet — lastHeavyToolSeen shouldn't matter
+      const result = computeAdaptiveMaxTurns(state, 0.85, 15, { lastHeavyToolSeen: true });
+      expect(result.maxTurns).toBe(15);
+      expect(result.reason).toContain("no growth data");
+    });
+
+    it("heavy tool still returns min when already past target", () => {
+      state.contextWindow = 1_000_000;
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 600_000,
+        cache_creation_input_tokens: 0,
+      }));
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 750_000,
+        cache_creation_input_tokens: 0,
+      }));
+      const result = computeAdaptiveMaxTurns(state, 0.85, 15, { lastHeavyToolSeen: true });
+      expect(result.maxTurns).toBe(3);
+      expect(result.reason).toContain("already at/past target");
+    });
+  });
+
+  // ── HEAVY_TOOLS constant ──────────────────────────────────────
+
+  describe("HEAVY_TOOLS", () => {
+    it("contains WebFetch, WebSearch, Screenshot", () => {
+      expect(HEAVY_TOOLS.has("WebFetch")).toBe(true);
+      expect(HEAVY_TOOLS.has("WebSearch")).toBe(true);
+      expect(HEAVY_TOOLS.has("Screenshot")).toBe(true);
+    });
+
+    it("does not contain edit/read tools", () => {
+      expect(HEAVY_TOOLS.has("Edit")).toBe(false);
+      expect(HEAVY_TOOLS.has("Read")).toBe(false);
+      expect(HEAVY_TOOLS.has("Write")).toBe(false);
+      expect(HEAVY_TOOLS.has("Bash")).toBe(false);
+    });
+  });
+
+  // ── HEAVY_TOOL_GROWTH_MULTIPLIER constant ─────────────────────
+
+  describe("HEAVY_TOOL_GROWTH_MULTIPLIER", () => {
+    it("is 2.5", () => {
+      expect(HEAVY_TOOL_GROWTH_MULTIPLIER).toBe(2.5);
+    });
   });
 });
