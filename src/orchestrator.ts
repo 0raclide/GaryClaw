@@ -59,6 +59,7 @@ import {
 
 import type {
   GaryClawConfig,
+  ImplementProgress,
   OrchestratorCallbacks,
   Checkpoint,
   RelayPoint,
@@ -695,7 +696,7 @@ function buildCheckpoint(
   const newDecisions = decisions.filter((d) => !prevDecisionTimestamps.has(d.timestamp));
 
   // Step tracking for implement skill — detect which steps are done
-  let implementProgress: import("./types.js").ImplementProgress | undefined;
+  let implementProgress: ImplementProgress | undefined;
   if (config.skillName === "implement") {
     try {
       const doc = config.designDoc
