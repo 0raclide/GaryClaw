@@ -92,7 +92,7 @@ Implemented in 9 commits (5a964dc..4d7baac). CodebaseSummary interface, signal-w
 **Depends on:** Phase 1a (relay working), Phase 2 (if bundled with oracle context)
 **Added by:** /plan-eng-review on 2026-03-25
 
-## P3: Adaptive maxTurns Strategy
+## P3: Adaptive maxTurns Strategy — COMPLETE (2026-03-28)
 
 **What:** Dynamic segment sizing — start at 15 turns per segment, increase if the skill is making progress (commits happening, issues being fixed), decrease if context growth rate is high.
 
@@ -104,9 +104,27 @@ Implemented in 9 commits (5a964dc..4d7baac). CodebaseSummary interface, signal-w
 
 **Context:** Identified during eng review performance section (2026-03-25). Phase 1a uses fixed maxTurns: 15 as a reasonable default. Outside voice noted "you fly blind" if maxTurns is wrong. The token monitor already tracks growth rate — adaptive turns is a natural extension.
 
+**Implementation:** `computeAdaptiveMaxTurns()` in token-monitor.ts. Per-segment turn prediction from growth rate + heavy tool lookahead. HEAVY_TOOLS (WebFetch/WebSearch/Screenshot) trigger 2.5x growth rate multiplier. `--no-adaptive` flag disables. 26 unit tests + 7 integration tests (orchestrator + CLI). Commits: 5b251aa..558986f.
+
 **Effort:** XS (human: ~1 day / CC: ~15 min)
 **Depends on:** Phase 1a (token monitor working)
 **Added by:** /plan-eng-review on 2026-03-25
+
+## P3: Dashboard Adaptive Turns Stats
+
+**What:** Surface avg/min/max adaptive turns per job in the dogfood dashboard. Show how many segments used adaptive prediction vs. fallback default, and the distribution of heavy tool multiplier activations.
+
+**Why:** Without visibility into how adaptive turns behaves in production, you can't tell if the 2.5x multiplier is right or if the min/max clamps are too aggressive. The dashboard already exists and aggregates job stats. This closes the observability loop.
+
+**Pros:** Data for future tuning. Surfaces whether adaptive turns is actually helping or just adding complexity.
+
+**Cons:** Low urgency — the system works without it.
+
+**Context:** Design doc Open Question #2. Dashboard module already has aggregation infrastructure. Adaptive turns emits `adaptive_turns` events that can be collected.
+
+**Effort:** XS (human: ~1 hr / CC: ~10 min)
+**Depends on:** Dashboard (complete), adaptive turns (complete)
+**Added by:** /plan-eng-review on 2026-03-28
 
 ## P3: Memory-Informed Adaptive Scheduling
 
