@@ -36,14 +36,22 @@ const SIGNAL_WORDS = [
 const NEGATIVE_PATTERNS = [
   /\bi don't see\b/i,
   /\bi'll try\b/i,
+  /\bi will try\b/i,
   /\blet me try\b/i,
+  /\blet me look\b/i,
+  /\blet me examine\b/i,
   /\bi always check\b/i,
   /\bi tried running\b/i,
   /\blet me check\b/i,
+  /\bi plan to\b/i,
+  /\bi need to\b/i,
+  /\bi should\b/i,
+  /\bi want to\b/i,
 ];
 
-/** Code anchor: file path or function call. */
+/** Code anchor: file path or function call. Excludes version strings like v1.2.3. */
 const CODE_ANCHOR_RE = /[a-zA-Z][\w.-]+\.\w+|[a-zA-Z]\w+\(\)/;
+const VERSION_RE = /^v?\d+\.\d+/;
 
 /** Token budgets for summary sections. */
 const FAILED_APPROACHES_TOKEN_BUDGET = 500;
@@ -92,9 +100,14 @@ function matchesNegativePattern(sentence: string): boolean {
 
 /**
  * Check if a sentence contains a code anchor (file path or function call).
+ * Filters out version strings (e.g., v1.2.3) which match the dotted pattern
+ * but are not code references.
  */
-function hasCodeAnchor(sentence: string): boolean {
-  return CODE_ANCHOR_RE.test(sentence);
+export function hasCodeAnchor(sentence: string): boolean {
+  const match = sentence.match(CODE_ANCHOR_RE);
+  if (!match) return false;
+  // Exclude version numbers like "v1.2.3" or "2.0.1"
+  return !VERSION_RE.test(match[0]);
 }
 
 /**
