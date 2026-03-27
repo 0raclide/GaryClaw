@@ -200,26 +200,51 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/token-monitor.test.ts` | 24 | recordTurnUsage, shouldRelay, growthRate, edge cases |
 | `test/checkpoint.test.ts` | 25 | write/read/rotation, relay prompt tiering, token budget |
 | `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
-| `test/oracle.test.ts` | 33 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
+| `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
+| `test/oracle-extended.test.ts` | 32 | Extended oracle edge cases, principle matching, response parsing |
 | `test/sdk-wrapper.test.ts` | 12 | env stripping, usage extraction, result parsing |
+| `test/sdk-wrapper-verifyauth.regression-1.test.ts` | 9 | verifyAuth error handling regression |
 | `test/report.test.ts` | 13 | merge/dedup, markdown formatting |
-| `test/relay.test.ts` | 7 | git stash/pop, relay segment construction |
+| `test/relay.test.ts` | 9 | git stash/pop, relay segment construction |
+| `test/relay-extended.test.ts` | 5 | relay edge cases, stash failure handling |
 | `test/pipeline.test.ts` | 27 | state persistence, context handoff, pipeline report, validation |
+| `test/pipeline-extended.test.ts` | 10 | pipeline edge cases, resume, error propagation |
+| `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
+| `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
+| `test/implement.test.ts` | 48 | findDesignDoc, loadDesignDoc, extractImplementationOrder, validateImplementationOrder, formatReviewContext, buildImplementPrompt |
+| `test/implement-loaddesigndoc.regression-1.test.ts` | 7 | loadDesignDoc regression: absolute/relative paths, missing files |
 | `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |
 | `test/daemon-ipc.test.ts` | 10 | Request/response over socket, malformed input, timeout |
-| `test/notifier.test.ts` | 24 | Notification formatting, summary generation, graceful failure, instance labels |
-| `test/job-runner.test.ts` | 36 | FIFO queue, dedup, budget, state persistence, job lifecycle, global budget, cross-instance dedup |
-| `test/triggers.test.ts` | 15 | Git poll HEAD detection, debounce, interval, branch filtering |
-| `test/daemon.test.ts` | 18 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request |
+| `test/notifier.test.ts` | 28 | Notification formatting, summary generation, graceful failure, instance labels |
+| `test/job-runner.test.ts` | 41 | FIFO queue, dedup, budget, state persistence, job lifecycle, global budget, cross-instance dedup |
+| `test/job-runner-extended.test.ts` | 17 | Extended job runner: budget edge cases, concurrent enqueue |
+| `test/job-runner.regression-2.test.ts` | 3 | Job runner regression: dedup with completed jobs |
+| `test/triggers.test.ts` | 53 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns |
+| `test/daemon.test.ts` | 44 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request |
+| `test/daemon-extended.test.ts` | 46 | Extended daemon: shutdown, poller lifecycle, IPC edge cases |
+| `test/daemon-lifecycle.test.ts` | 14 | Daemon start/stop lifecycle, signal handling |
 | `test/daemon-registry.test.ts` | 42 | Instance discovery, global budget, cross-instance dedup, migration |
 | `test/reflection-lock.test.ts` | 12 | Acquire/release, reentrant, stale recovery, timeout |
 | `test/safe-json.test.ts` | 21 | Atomic write/read, corruption recovery, .bak rename, validation |
+| `test/safe-json-extended.test.ts` | 13 | Extended safe-json: concurrent writes, large files, encoding |
 | `test/oracle-memory.test.ts` | 47 | Two-layer resolution, sanitization, metrics, circuit breaker, outcomes |
-| `test/reflection.test.ts` | 48 | Levenshtein, reopened detection, outcome mapping, reflection runner, sandboxing |
+| `test/reflection.test.ts` | 42 | Levenshtein, reopened detection, outcome mapping, reflection runner, sandboxing |
+| `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 33 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
-| `test/prioritize.test.ts` | 30 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
-| `test/worktree.test.ts` | 26 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch |
-| `test/dashboard.test.ts` | 33 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
+| `test/prioritize.test.ts` | 42 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
+| `test/worktree.test.ts` | 27 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch |
+| `test/dashboard.test.ts` | 40 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
+| `test/doctor.test.ts` | 52 | 6 subsystem checks, --fix/--json flags, stale PID detection, lock recovery |
+| `test/failure-taxonomy.test.ts` | 71 | 8 failure categories, table-driven classification, failures.jsonl, notification integration |
+| `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
+| `test/orchestrator.test.ts` | 28 | auth, success, maxTurns, errors, abort, relay |
+| `test/orchestrator-helpers.test.ts` | 38 | orchestrator helper functions, prompt building |
+| `test/orchestrator-helpers.regression-1.test.ts` | 6 | orchestrator helpers regression |
+| `test/cli.test.ts` | 82 | CLI arg parsing, subcommands, daemon commands, --name/--all |
+| `test/cli-main.test.ts` | 25 | CLI main entry point, error handling |
+| `test/cli.regression-1.test.ts` | 2 | CLI regression: edge cases in arg parsing |
+| `test/qa-regressions.regression-1.test.ts` | 9 | QA regression: issue extraction edge cases |
+| `test/qa-regressions.regression-2.test.ts` | 10 | QA regression: report formatting edge cases |
 
 ---
 

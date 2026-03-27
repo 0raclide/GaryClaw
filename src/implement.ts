@@ -86,7 +86,7 @@ export function loadDesignDoc(docPath: string, projectDir: string): DesignDoc | 
  */
 export function extractImplementationOrder(designDoc: string): string[] {
   const match = designDoc.match(
-    /## Implementation [Oo]rder\n([\s\S]*?)(?=\n## |$)/,
+    /## Implementation [Oo]rder[ \t]*\r?\n([\s\S]*?)(?=\n## |$)/,
   );
   if (!match) return [];
 
@@ -149,25 +149,25 @@ export function formatReviewContext(
   for (const skill of skills) {
     if (!skill.report) continue;
     const r = skill.report;
+
+    // Filter decisions upfront so the hasContent check accounts for actionableOnly
+    const decisions = options?.actionableOnly
+      ? r.decisions.filter(isActionableDecision)
+      : r.decisions;
     const hasContent =
-      r.decisions.length > 0 || r.findings.length > 0 || r.issues.length > 0;
+      decisions.length > 0 || r.findings.length > 0 || r.issues.length > 0;
     if (!hasContent) continue;
 
     lines.push(`### /${skill.skillName}`);
     lines.push("");
 
-    if (r.decisions.length > 0) {
-      const decisions = options?.actionableOnly
-        ? r.decisions.filter(isActionableDecision)
-        : r.decisions;
-      if (decisions.length > 0) {
-        lines.push(`**Decisions (${decisions.length}):**`);
-        for (const d of decisions) {
-          lines.push(`- ${d.question} -> ${d.chosen} (confidence: ${d.confidence}/10)`);
-          if (d.rationale) lines.push(`  Rationale: ${d.rationale}`);
-        }
-        lines.push("");
+    if (decisions.length > 0) {
+      lines.push(`**Decisions (${decisions.length}):**`);
+      for (const d of decisions) {
+        lines.push(`- ${d.question} -> ${d.chosen} (confidence: ${d.confidence}/10)`);
+        if (d.rationale) lines.push(`  Rationale: ${d.rationale}`);
       }
+      lines.push("");
     }
 
     if (r.findings.length > 0) {

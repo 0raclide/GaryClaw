@@ -202,6 +202,23 @@ Then verify everything works.
     expect(steps).toHaveLength(1);
     expect(steps[0]).toBe("1. Only step");
   });
+
+  it("handles heading with trailing spaces", () => {
+    const doc = "## Implementation Order   \n1. Step with trailing spaces on heading";
+
+    const steps = extractImplementationOrder(doc);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toBe("1. Step with trailing spaces on heading");
+  });
+
+  it("handles CRLF line endings", () => {
+    const doc = "## Implementation Order\r\n1. First step\r\n2. Second step\r\n\r\n## Next";
+
+    const steps = extractImplementationOrder(doc);
+    expect(steps).toHaveLength(2);
+    expect(steps[0]).toBe("1. First step");
+    expect(steps[1]).toBe("2. Second step");
+  });
 });
 
 describe("validateImplementationOrder", () => {
@@ -410,6 +427,43 @@ describe("formatReviewContext", () => {
 
     const result = formatReviewContext(skills, { actionableOnly: true });
     expect(result).toContain("add retry logic");
+  });
+
+  it("keeps decisions with action keyword in chosen field only when actionableOnly is true", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "review",
+        status: "complete",
+        report: createMockRunReport("review", {
+          decisions: [
+            createMockDecision({ question: "What approach?", chosen: "Add caching layer", confidence: 9 }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: true });
+    expect(result).toContain("What approach?");
+    expect(result).toContain("Add caching layer");
+  });
+
+  it("omits skill heading when all decisions filtered and no findings or issues", () => {
+    const skills: PipelineSkillEntry[] = [
+      {
+        skillName: "plan-eng-review",
+        status: "complete",
+        report: createMockRunReport("plan-eng-review", {
+          decisions: [
+            createMockDecision({ question: "Keep as-is?", chosen: "Yes", confidence: 9 }),
+            createMockDecision({ question: "Looks good?", chosen: "Approved", confidence: 10 }),
+          ],
+        }),
+      },
+    ];
+
+    const result = formatReviewContext(skills, { actionableOnly: true });
+    expect(result).not.toContain("### /plan-eng-review");
+    expect(result).toBe("");
   });
 
   it("includes confidence exactly 7 when actionableOnly is true", () => {
