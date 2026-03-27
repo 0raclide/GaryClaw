@@ -107,6 +107,24 @@ export function validateDaemonConfig(data: unknown): string | null {
     }
   }
 
+  // Validate autoResearch if provided (optional field)
+  if (d.autoResearch !== undefined) {
+    if (typeof d.autoResearch !== "object" || d.autoResearch === null) {
+      return "autoResearch must be an object";
+    }
+    const ar = d.autoResearch as Record<string, unknown>;
+    if (typeof ar.enabled !== "boolean") return "autoResearch.enabled must be a boolean";
+    if (typeof ar.lowConfidenceThreshold !== "number" || ar.lowConfidenceThreshold < 1 || ar.lowConfidenceThreshold > 10) {
+      return "autoResearch.lowConfidenceThreshold must be a number between 1 and 10";
+    }
+    if (typeof ar.minDecisionsToTrigger !== "number" || ar.minDecisionsToTrigger < 1) {
+      return "autoResearch.minDecisionsToTrigger must be a positive number";
+    }
+    if (typeof ar.maxTopicsPerJob !== "number" || ar.maxTopicsPerJob < 1) {
+      return "autoResearch.maxTopicsPerJob must be a positive number";
+    }
+  }
+
   return null;
 }
 

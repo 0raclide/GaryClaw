@@ -370,6 +370,75 @@ describe("validateDaemonConfig — cron triggers", () => {
   });
 });
 
+describe("validateDaemonConfig — autoResearch", () => {
+  it("accepts config without autoResearch (optional)", () => {
+    const config = createValidConfig();
+    delete (config as any).autoResearch;
+    expect(validateDaemonConfig(config)).toBeNull();
+  });
+
+  it("accepts valid autoResearch config", () => {
+    const config = createValidConfig();
+    (config as any).autoResearch = {
+      enabled: true,
+      lowConfidenceThreshold: 6,
+      minDecisionsToTrigger: 3,
+      maxTopicsPerJob: 2,
+    };
+    expect(validateDaemonConfig(config)).toBeNull();
+  });
+
+  it("rejects autoResearch with non-boolean enabled", () => {
+    const config = createValidConfig();
+    (config as any).autoResearch = {
+      enabled: "yes",
+      lowConfidenceThreshold: 6,
+      minDecisionsToTrigger: 3,
+      maxTopicsPerJob: 2,
+    };
+    expect(validateDaemonConfig(config)).toContain("enabled");
+  });
+
+  it("rejects autoResearch with out-of-range threshold", () => {
+    const config = createValidConfig();
+    (config as any).autoResearch = {
+      enabled: true,
+      lowConfidenceThreshold: 15,
+      minDecisionsToTrigger: 3,
+      maxTopicsPerJob: 2,
+    };
+    expect(validateDaemonConfig(config)).toContain("lowConfidenceThreshold");
+  });
+
+  it("rejects autoResearch with negative minDecisionsToTrigger", () => {
+    const config = createValidConfig();
+    (config as any).autoResearch = {
+      enabled: true,
+      lowConfidenceThreshold: 6,
+      minDecisionsToTrigger: -1,
+      maxTopicsPerJob: 2,
+    };
+    expect(validateDaemonConfig(config)).toContain("minDecisionsToTrigger");
+  });
+
+  it("rejects autoResearch with zero maxTopicsPerJob", () => {
+    const config = createValidConfig();
+    (config as any).autoResearch = {
+      enabled: true,
+      lowConfidenceThreshold: 6,
+      minDecisionsToTrigger: 3,
+      maxTopicsPerJob: 0,
+    };
+    expect(validateDaemonConfig(config)).toContain("maxTopicsPerJob");
+  });
+
+  it("rejects non-object autoResearch", () => {
+    const config = createValidConfig();
+    (config as any).autoResearch = "banana";
+    expect(validateDaemonConfig(config)).toContain("autoResearch must be an object");
+  });
+});
+
 describe("loadDaemonConfig — fallback", () => {
   const PRIMARY_DIR = join(TEST_DIR, "primary");
   const FALLBACK_DIR = join(TEST_DIR, "fallback");
