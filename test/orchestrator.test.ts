@@ -25,11 +25,15 @@ vi.mock("../src/relay.js", () => ({
   finalizeRelay: vi.fn().mockReturnValue({}),
 }));
 
-vi.mock("../src/checkpoint.js", () => ({
-  writeCheckpoint: vi.fn(),
-  readCheckpoint: vi.fn().mockReturnValue(null),
-  generateRelayPrompt: vi.fn().mockReturnValue("relay prompt"),
-}));
+vi.mock("../src/checkpoint.js", async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    writeCheckpoint: vi.fn(),
+    readCheckpoint: vi.fn().mockReturnValue(null),
+    generateRelayPrompt: vi.fn().mockReturnValue("relay prompt"),
+  };
+});
 
 vi.mock("../src/oracle.js", () => ({
   askOracle: vi.fn(),
