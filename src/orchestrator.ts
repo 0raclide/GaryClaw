@@ -377,16 +377,17 @@ async function runSkillInternal(
               toolName: toolUse.toolName,
               inputSummary: toolUse.inputSummary,
             });
-
-            // Track heavy tools for adaptive maxTurns in the next segment
-            if (HEAVY_TOOLS.has(toolUse.toolName)) {
-              previousHeavyToolSeen = true;
-            }
           }
 
-          // Issue extraction: feed all tool_use blocks to tracker
+          // Issue extraction + heavy tool tracking: check ALL tool_use blocks,
+          // not just the first. A message like [Read, WebFetch] must detect
+          // WebFetch as heavy even though Read comes first.
           const allToolUses = extractAllToolUse(msg);
           for (const tu of allToolUses) {
+            // Track heavy tools for adaptive maxTurns in the next segment
+            if (HEAVY_TOOLS.has(tu.toolName)) {
+              previousHeavyToolSeen = true;
+            }
             issueTracker.trackToolUse(tu.toolName, tu.input);
             if (tu.toolName === "Bash" && typeof tu.input.command === "string") {
               const extracted = issueTracker.trackCommit(tu.input.command);
