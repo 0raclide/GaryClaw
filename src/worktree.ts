@@ -404,8 +404,9 @@ export function listWorktrees(repoDir: string): WorktreeInfo[] {
         result.push({ path, branch, head });
       }
     }
-  } catch {
-    // git worktree list failed — return empty
+  } catch (err) {
+    // Log warning so silent failures are diagnosable
+    console.warn(`[worktree] Failed to list worktrees: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return result;
