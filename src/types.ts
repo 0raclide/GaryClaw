@@ -153,7 +153,8 @@ export type OrchestratorEvent =
   | { type: "issue_extracted"; issue: Issue }
   | { type: "pipeline_skill_start"; skillName: string; skillIndex: number; totalSkills: number }
   | { type: "pipeline_skill_complete"; skillName: string; skillIndex: number; totalSkills: number; costUsd: number }
-  | { type: "pipeline_complete"; totalSkills: number; totalCostUsd: number };
+  | { type: "pipeline_complete"; totalSkills: number; totalCostUsd: number }
+  | { type: "adaptive_turns"; maxTurns: number; reason: string; sessionIndex: number; segmentIndex: number };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;
