@@ -37,6 +37,7 @@ export interface ResearchResult {
   partial: boolean;
   freshUntil: string;         // ISO timestamp
   skipped: boolean;           // true if topic was fresh and --force not used
+  costUsd: number;            // SDK session cost (from result message)
 }
 
 // ── Constants ───────────────────────────────────────────────────
@@ -94,6 +95,7 @@ export async function runResearch(
       partial: existingSection?.partial ?? false,
       freshUntil,
       skipped: true,
+      costUsd: 0,
     };
   }
 
@@ -106,6 +108,7 @@ export async function runResearch(
   // Run SDK session with timeout + AbortController for clean cancellation
   let resultText = "";
   let searchesUsed = 0;
+  let costUsd = 0;
   let timedOut = false;
 
   const abortController = new AbortController();
@@ -142,8 +145,15 @@ export async function runResearch(
           }
         }
       }
-      if (msg.type === "result" && (msg as any).subtype === "success") {
-        resultText = (msg as any).result ?? "";
+      if (msg.type === "result") {
+        if ((msg as any).subtype === "success") {
+          resultText = (msg as any).result ?? "";
+        }
+        // Extract cost from result message (same field as extractResultData)
+        const totalCost = (msg as any).total_cost_usd;
+        if (typeof totalCost === "number") {
+          costUsd = totalCost;
+        }
       }
     }
   } catch (err) {
@@ -160,6 +170,7 @@ export async function runResearch(
         partial: true,
         freshUntil: new Date().toISOString(),
         skipped: false,
+        costUsd,
       };
     }
   } finally {
@@ -196,6 +207,7 @@ export async function runResearch(
     partial: isPartial,
     freshUntil,
     skipped: false,
+    costUsd,
   };
 }
 

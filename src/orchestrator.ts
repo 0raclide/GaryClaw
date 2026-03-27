@@ -164,10 +164,16 @@ async function runSkillInternal(
     try {
       const result = await runResearch(researchConfig, startSegment);
       callbacks.onEvent({
+        type: "segment_end",
+        sessionIndex: 0,
+        segmentIndex: 0,
+        numTurns: result.searchesUsed,
+      });
+      callbacks.onEvent({
         type: "skill_complete",
         totalSessions: 1,
         totalTurns: result.searchesUsed,
-        costUsd: 0, // research cost tracked separately by SDK
+        costUsd: result.costUsd,
       });
     } catch (err) {
       callbacks.onEvent({
