@@ -123,8 +123,13 @@ export async function runResearch(
       cwd: config.projectDir,
       env: {},
       settingSources: ["user", "project"],
-      canUseTool: async (toolName: string, _input: Record<string, unknown>) =>
-        createResearchCanUseTool(toolName),
+      canUseTool: async (toolName: string, _input: Record<string, unknown>) => {
+        // Deny all tool calls after timeout to break the SDK out of its loop
+        if (abortController.signal.aborted) {
+          return { behavior: "deny" as const, message: "Research timeout exceeded" };
+        }
+        return createResearchCanUseTool(toolName);
+      },
     });
 
     for await (const msg of segment) {
