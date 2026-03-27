@@ -770,6 +770,17 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (parsed.command === "dashboard") {
+    const checkpointDir = parsed.checkpointDir ?? join(parsed.projectDir, ".garyclaw");
+    const reportPath = join(checkpointDir, "dogfood-report.md");
+    if (existsSync(reportPath)) {
+      console.log(readFileSync(reportPath, "utf-8"));
+    } else {
+      console.log("No dashboard yet — run a daemon job first.");
+    }
+    return;
+  }
+
   if (parsed.command === "doctor") {
     const { runDoctor, formatDoctorReport } = await import("./doctor.js");
 
