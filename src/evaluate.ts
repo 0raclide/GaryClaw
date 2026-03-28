@@ -382,10 +382,12 @@ export function analyzePipelineHealth(projectDir: string): PipelineEvaluation {
   if (state.startTime) {
     const start = new Date(state.startTime).getTime();
     const lastSkill = state.skills.filter((s) => s.endTime).pop();
-    if (lastSkill?.endTime) {
-      const end = new Date(lastSkill.endTime).getTime();
-      result.totalDurationSec = Math.max(0, (end - start) / 1000);
-    }
+    // Use last skill's endTime if available, otherwise fall back to now
+    // (pipeline may still be running or skills crashed without recording end)
+    const end = lastSkill?.endTime
+      ? new Date(lastSkill.endTime).getTime()
+      : Date.now();
+    result.totalDurationSec = Math.max(0, (end - start) / 1000);
   }
 
   // Count relays from checkpoint files and compute growth rates
