@@ -295,7 +295,12 @@ async function executePipelineFrom(
     // Build prompt: implement gets a special prompt, others get context handoff
     const prevEntry = i > 0 ? state.skills[i - 1] : null;
     try {
-      if (skillName === "prioritize") {
+      if (skillName === "bootstrap") {
+        const { buildBootstrapPrompt } = await import("./bootstrap.js");
+        const prevSkills = state.skills.slice(0, i);
+        const bootstrapPrompt = await buildBootstrapPrompt(config, prevSkills, config.projectDir);
+        await runSkillWithPrompt(skillConfig, callbacks, bootstrapPrompt);
+      } else if (skillName === "prioritize") {
         const { buildPrioritizePrompt } = await import("./prioritize.js");
         const prevSkills = state.skills.slice(0, i);
         const priorityPrompt = await buildPrioritizePrompt(config, prevSkills, config.projectDir);
