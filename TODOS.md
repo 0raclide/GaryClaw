@@ -58,21 +58,9 @@ Verified manually: `GIT_COMMITTER_EMAIL=garyclaw-daemon@local` propagates throug
 **Depends on:** Nothing
 **Added by:** /plan-eng-review on 2026-03-26
 
-## P4: Daemon Hardening (Phase 4b) — SUBSUMED BY DOCTOR
+## ~~P4: Daemon Hardening (Phase 4b)~~ — COMPLETE (subsumed by doctor)
 
-**What:** Remaining hardening for the daemon: ~~log rotation (size-based, 10MB threshold)~~, ~~job state pruning~~, stale PID cleanup on startup.
-
-**Why:** Phase 4a daemon MVP is complete and working — runs jobs, enforces budgets, sends notifications. Stale PID files from crashes still aren't cleaned up.
-
-**Pros:** Production-readiness for long-running daemon instances.
-
-**Cons:** Low urgency — the daemon works fine for short sessions. Only matters for always-on deployment.
-
-**Context:** Phase 4a completed 2026-03-25. Hardening fixes completed 2026-03-26. Log rotation (ISSUE-005) and job pruning (ISSUE-006) fixed by /qa on main, 2026-03-26. maxJobsPerDay enforcement gap (ISSUE-016) fixed by /qa Run 3. Shell injection in triggers.ts (ISSUE-002) and resumeSkill checkpoint discard (ISSUE-003) fixed by /qa Run 4 on main, 2026-03-26. Remaining: stale PID cleanup → **subsumed by `garyclaw doctor` in battle-test dogfood plan** (detects AND fixes stale PIDs as check #1).
-
-**Effort:** XS (human: ~1 day / CC: ~15 min)
-**Depends on:** Phase 4a (complete)
-**Added by:** /plan-eng-review on 2026-03-26
+All items resolved: ~~log rotation~~ (ISSUE-005, /qa 2026-03-26), ~~job state pruning~~ (ISSUE-006, /qa 2026-03-26), ~~stale PID cleanup~~ (subsumed by `garyclaw doctor` check #1 — detects AND fixes stale PIDs with `--fix`). See `src/doctor.ts`, `src/pid-utils.ts`.
 
 ## ~~P3: Codebase Summary Persistence Across Relays~~ — COMPLETE (2026-03-27)
 
@@ -92,6 +80,10 @@ Implemented in 9 commits (5a964dc..4d7baac). CodebaseSummary interface, signal-w
 **Depends on:** Phase 1a (relay working), Phase 2 (if bundled with oracle context)
 **Added by:** /plan-eng-review on 2026-03-25
 
+## ~~P3: Implement Skill Hardening~~ — COMPLETE (2026-03-27)
+
+All three items from `docs/designs/implement-skill-hardening.md` implemented: `validateImplementationOrder()` with warnings for missing sections (`implement.ts:105`), `actionableOnly` filter for review context (`implement.ts:123-138`), static import conversion (`pipeline.ts:20`). Pre-existing test coverage: `test/implement.test.ts` (48 tests incl. 5 for validateImplementationOrder, 8 for actionableOnly filter), `test/implement-loaddesigndoc.regression-1.test.ts` (7 tests), `test/pipeline-implement.test.ts` (4 tests).
+
 ## P3: Adaptive maxTurns Strategy — COMPLETE (2026-03-28)
 
 **What:** Dynamic segment sizing — start at 15 turns per segment, increase if the skill is making progress (commits happening, issues being fixed), decrease if context growth rate is high.
@@ -110,21 +102,9 @@ Implemented in 9 commits (5a964dc..4d7baac). CodebaseSummary interface, signal-w
 **Depends on:** Phase 1a (token monitor working)
 **Added by:** /plan-eng-review on 2026-03-25
 
-## P3: Dashboard Adaptive Turns Stats
+## ~~P3: Dashboard Adaptive Turns Stats~~ — COMPLETE (2026-03-28)
 
-**What:** Surface avg/min/max adaptive turns per job in the dogfood dashboard. Show how many segments used adaptive prediction vs. fallback default, and the distribution of heavy tool multiplier activations.
-
-**Why:** Without visibility into how adaptive turns behaves in production, you can't tell if the 2.5x multiplier is right or if the min/max clamps are too aggressive. The dashboard already exists and aggregates job stats. This closes the observability loop.
-
-**Pros:** Data for future tuning. Surfaces whether adaptive turns is actually helping or just adding complexity.
-
-**Cons:** Low urgency — the system works without it.
-
-**Context:** Design doc Open Question #2. Dashboard module already has aggregation infrastructure. Adaptive turns emits `adaptive_turns` events that can be collected.
-
-**Effort:** XS (human: ~1 hr / CC: ~10 min)
-**Depends on:** Dashboard (complete), adaptive turns (complete)
-**Added by:** /plan-eng-review on 2026-03-28
+Implemented in commit 923c08a. Aggregates avg/min/max adaptive turns per job, segment count with adaptive prediction vs. fallback default, heavy tool multiplier activation distribution. 27 tests in `test/dashboard.test.ts` and `test/dashboard.regression-1.test.ts`.
 
 ## P3: Memory-Informed Adaptive Scheduling
 
