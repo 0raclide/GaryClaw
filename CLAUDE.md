@@ -26,7 +26,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
 **Dogfood Bootstrap: COMPLETE** (2026-03-28) — Cold-start bootstrap skill, codebase analysis, CLAUDE.md/TODOS.md generation for external repos
-- 34 source modules + CLI, 81 test files, 1832 tests
+- 34 source modules + CLI, 82 test files, 1863 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -147,7 +147,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/report.ts` | Merge issues/findings/decisions, markdown report |
 | `src/oracle.ts` | Decision Oracle — 7 Principles, confidence scoring, escalation, memory injection |
 | `src/issue-extractor.ts` | Hybrid issue extraction from SDK stream + git log |
-| `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state, git HEAD tracking |
+| `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state, git HEAD tracking, text accumulation for post-skill analysis |
 | `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
 | `src/daemon.ts` | Daemon process: PID, IPC server, pollers, signal handling, instance-aware |
 | `src/daemon-ipc.ts` | Unix socket IPC: `createIPCServer`, `sendIPCRequest` |
@@ -168,7 +168,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/auto-research.ts` | Auto-research trigger: keyword extraction, topic grouping, freshness-aware enqueue |
 | `src/codebase-summary.ts` | Codebase summary persistence: observation extraction, dedup, token budget, relay formatting |
 | `src/doctor.ts` | Self-diagnostic command: 6 subsystem checks, --fix/--json flags, stale PID detection |
-| `src/evaluate.ts` | Dogfood campaign evaluator: bootstrap quality, oracle performance, pipeline health, improvement extraction |
+| `src/evaluate.ts` | Dogfood campaign evaluator: bootstrap quality, oracle performance, pipeline health, improvement extraction, post-evaluate deterministic analysis |
 | `src/failure-taxonomy.ts` | 8-category failure classification, failures.jsonl persistence, notification integration |
 | `src/pid-utils.ts` | PID liveness check, process-name verification, stale PID detection |
 | `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon/dashboard`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
@@ -242,7 +242,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/evaluate.test.ts` | 72 | scoreTokenEfficiency, extractDependencies, computeFrameworkCoverage, detectSections, analyzeBootstrapQuality, analyzeOraclePerformance, analyzePipelineHealth, extractObviousImprovements, parseClaudeImprovements, deduplicateImprovements, formatEvaluationReport, formatDuration, formatImprovementCandidates, writeEvaluationReport, buildEvaluatePrompt |
 | `test/evaluate.regression-1.test.ts` | 6 | buildEvaluatePrompt error boundary interface completeness |
 | `test/evaluate.regression-2.test.ts` | 3 | buildEvaluatePrompt improvement-candidates.md prompt instruction |
-| `test/pipeline-evaluate.test.ts` | 5 | evaluate skill dispatch, previous skills context, standalone, events, full pipeline |
+| `test/pipeline-evaluate.test.ts` | 6 | evaluate skill dispatch, previous skills context, standalone, events, full pipeline, callback wrapping |
+| `test/pipeline-evaluate-wiring.test.ts` | 15 | createTextAccumulatingCallbacks, runPostEvaluateAnalysis, default evaluation helpers |
 | `test/implement.test.ts` | 48 | findDesignDoc, loadDesignDoc, extractImplementationOrder, validateImplementationOrder, formatReviewContext, buildImplementPrompt |
 | `test/implement-loaddesigndoc.regression-1.test.ts` | 7 | loadDesignDoc regression: absolute/relative paths, missing files |
 | `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |

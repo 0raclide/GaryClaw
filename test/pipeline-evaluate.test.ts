@@ -102,6 +102,22 @@ describe("pipeline evaluate dispatch", () => {
     expect(prompt).toContain("<improvements>");
   });
 
+  it("passes wrapped callbacks to evaluate skill (text accumulation)", async () => {
+    writeFileSync(join(TEST_DIR, "CLAUDE.md"), "# Test Project\n## Architecture\nStuff");
+
+    const config = createTestConfig();
+    const callbacks = createMockCallbacks();
+
+    await runPipeline(["evaluate"], config, callbacks);
+
+    // The callbacks passed to runSkillWithInitialPrompt should be wrapped
+    // (different object from original callbacks, but still forwards events)
+    const passedCallbacks = vi.mocked(runSkillWithInitialPrompt).mock.calls[0][1];
+    expect(passedCallbacks).not.toBe(callbacks);
+    expect(passedCallbacks.onAskUser).toBeDefined();
+    expect(passedCallbacks.onEvent).toBeDefined();
+  });
+
   it("evaluate receives previous skills context in pipeline", async () => {
     writeFileSync(join(TEST_DIR, "CLAUDE.md"), "# Project");
 

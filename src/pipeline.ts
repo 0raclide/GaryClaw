@@ -22,6 +22,7 @@ import { buildImplementPrompt } from "./implement.js";
 import type {
   GaryClawConfig,
   OrchestratorCallbacks,
+  OrchestratorEvent,
   PipelineState,
   PipelineReport,
   RunReport,
@@ -166,6 +167,34 @@ function buildOfficeHoursPrompt(projectDir: string): string {
   lines.push("This is running autonomously in a daemon pipeline. Answer all AskUserQuestion prompts yourself using your best judgment. Do not wait for human input.");
 
   return lines.join("\n");
+}
+
+// ── Text accumulation for post-skill analysis ───────────────────
+
+/**
+ * Wrap callbacks to accumulate assistant text for post-skill analysis.
+ * Returns the wrapped callbacks and a getter for accumulated text.
+ */
+export function createTextAccumulatingCallbacks(
+  callbacks: OrchestratorCallbacks,
+): { wrapped: OrchestratorCallbacks; getAccumulatedText: () => string } {
+  const textChunks: string[] = [];
+
+  const wrapped: OrchestratorCallbacks = {
+    ...callbacks,
+    onEvent(event: OrchestratorEvent) {
+      if (event.type === "assistant_text") {
+        textChunks.push(event.text);
+      }
+      // Always forward to original callbacks
+      callbacks.onEvent(event);
+    },
+  };
+
+  return {
+    wrapped,
+    getAccumulatedText: () => textChunks.join(""),
+  };
 }
 
 // ── Pipeline runner ─────────────────────────────────────────────
@@ -317,10 +346,16 @@ async function executePipelineFrom(
         const implPrompt = await buildImplementPrompt(config, prevSkills, config.projectDir, implCheckpoint);
         await runSkillWithPrompt(skillConfig, callbacks, implPrompt);
       } else if (skillName === "evaluate") {
-        const { buildEvaluatePrompt } = await import("./evaluate.js");
+        const { buildEvaluatePrompt, runPostEvaluateAnalysis } = await import("./evaluate.js");
         const prevSkills = state.skills.slice(0, i);
         const evalPrompt = buildEvaluatePrompt(config, prevSkills, config.projectDir);
-        await runSkillWithPrompt(skillConfig, callbacks, evalPrompt);
+
+        // Wrap callbacks to capture Claude's <improvements> output
+        const { wrapped, getAccumulatedText } = createTextAccumulatingCallbacks(callbacks);
+        await runSkillWithPrompt(skillConfig, wrapped, evalPrompt);
+
+        // Run deterministic post-evaluate analysis
+        runPostEvaluateAnalysis(config.projectDir, getAccumulatedText());
       } else if (prevEntry?.report) {
         // Override the initial prompt via a custom prompt in the skill config
         // runSkill uses `Run the /${skillName} skill...` as default prompt,

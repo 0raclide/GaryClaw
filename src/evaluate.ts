@@ -746,6 +746,101 @@ function ccEffortEstimate(effort: ImprovementEffort): string {
   }
 }
 
+// ── Default evaluation fallbacks ──────────────────────────────────
+
+/** Default BootstrapEvaluation for error-boundary fallback. */
+export function defaultBootstrapEvaluation(): BootstrapEvaluation {
+  return {
+    claudeMdExists: false,
+    claudeMdSizeTokens: 0,
+    claudeMdHasSections: [],
+    claudeMdMissingSections: [...EXPECTED_SECTIONS],
+    todosMdExists: false,
+    todosMdItemCount: 0,
+    todosMdItemsAboveThreshold: 0,
+    qualityScore: 0,
+    qualityNotes: [],
+  };
+}
+
+/** Default OracleEvaluation for error-boundary fallback. */
+export function defaultOracleEvaluation(): OracleEvaluation {
+  return {
+    totalDecisions: 0,
+    lowConfidenceCount: 0,
+    escalatedCount: 0,
+    averageConfidence: 0,
+    topicClusters: [],
+    researchTriggered: false,
+  };
+}
+
+/** Default PipelineEvaluation for error-boundary fallback. */
+export function defaultPipelineEvaluation(): PipelineEvaluation {
+  return {
+    skillsRun: [],
+    skillsCompleted: [],
+    skillsFailed: [],
+    totalRelays: 0,
+    totalCostUsd: 0,
+    totalDurationSec: 0,
+    contextGrowthRate: 0,
+    adaptiveTurnsUsed: false,
+  };
+}
+
+/** Error-boundary helper: call fn, return fallback on throw. */
+function safeAnalyze<T>(fn: () => T, fallback: T): T {
+  try { return fn(); } catch { return fallback; }
+}
+
+// ── Post-evaluate deterministic analysis ─────────────────────────
+
+/**
+ * Post-evaluate deterministic analysis. Called by pipeline.ts after the
+ * evaluate segment completes. Runs all TS analysis, parses Claude's
+ * <improvements>, merges, deduplicates, and writes the final evaluation
+ * report + improvement-candidates.md.
+ *
+ * Note on multi-relay text: if the evaluate skill relays, the accumulated
+ * claudeOutput contains text from ALL segments. parseClaudeImprovements
+ * uses regex .match() which returns the FIRST <improvements> block only.
+ * This is correct: Claude should only emit <improvements> at the end of its
+ * analysis. If multiple blocks exist, the first is authoritative.
+ */
+export function runPostEvaluateAnalysis(
+  projectDir: string,
+  claudeOutput: string,
+): EvaluationReport {
+  // 1. Run deterministic analysis
+  const bootstrap = safeAnalyze(() => analyzeBootstrapQuality(projectDir), defaultBootstrapEvaluation());
+  const oracle = safeAnalyze(() => analyzeOraclePerformance(projectDir), defaultOracleEvaluation());
+  const pipeline = safeAnalyze(() => analyzePipelineHealth(projectDir), defaultPipelineEvaluation());
+
+  // 2. Extract obvious improvements from metrics
+  const partialReport: EvaluationReport = {
+    targetRepo: projectDir,
+    timestamp: new Date().toISOString(),
+    bootstrap,
+    oracle,
+    pipeline,
+    improvements: [],
+  };
+  const obvious = safeAnalyze(() => extractObviousImprovements(partialReport), []);
+
+  // 3. Parse Claude's <improvements> output
+  const claudeImprovements = parseClaudeImprovements(claudeOutput);
+
+  // 4. Merge + deduplicate
+  const merged = deduplicateImprovements(obvious, claudeImprovements);
+
+  // 5. Build final report and write to disk
+  const report: EvaluationReport = { ...partialReport, improvements: merged };
+  writeEvaluationReport(projectDir, report);
+
+  return report;
+}
+
 // ── Report writing ───────────────────────────────────────────────
 
 /**
@@ -785,36 +880,23 @@ export function buildEvaluatePrompt(
   let pipeline: ReturnType<typeof analyzePipelineHealth>;
   let obvious: ReturnType<typeof extractObviousImprovements>;
 
-  try {
-    bootstrap = analyzeBootstrapQuality(projectDir);
-  } catch {
-    bootstrap = { claudeMdExists: false, claudeMdSizeTokens: 0, claudeMdHasSections: [], claudeMdMissingSections: [...EXPECTED_SECTIONS], todosMdExists: false, todosMdItemCount: 0, todosMdItemsAboveThreshold: 0, qualityScore: 0, qualityNotes: ["analyzeBootstrapQuality threw an error"] };
-  }
+  bootstrap = safeAnalyze(() => analyzeBootstrapQuality(projectDir), {
+    ...defaultBootstrapEvaluation(),
+    qualityNotes: ["analyzeBootstrapQuality threw an error"],
+  });
 
-  try {
-    oracle = analyzeOraclePerformance(projectDir);
-  } catch {
-    oracle = { totalDecisions: 0, lowConfidenceCount: 0, escalatedCount: 0, averageConfidence: 0, topicClusters: [], researchTriggered: false };
-  }
+  oracle = safeAnalyze(() => analyzeOraclePerformance(projectDir), defaultOracleEvaluation());
 
-  try {
-    pipeline = analyzePipelineHealth(projectDir);
-  } catch {
-    pipeline = { skillsRun: [], skillsCompleted: [], skillsFailed: [], totalRelays: 0, totalCostUsd: 0, totalDurationSec: 0, contextGrowthRate: 0, adaptiveTurnsUsed: false };
-  }
+  pipeline = safeAnalyze(() => analyzePipelineHealth(projectDir), defaultPipelineEvaluation());
 
-  try {
-    obvious = extractObviousImprovements({
-      targetRepo: projectDir,
-      timestamp: new Date().toISOString(),
-      bootstrap,
-      oracle,
-      pipeline,
-      improvements: [],
-    });
-  } catch {
-    obvious = [];
-  }
+  obvious = safeAnalyze(() => extractObviousImprovements({
+    targetRepo: projectDir,
+    timestamp: new Date().toISOString(),
+    bootstrap,
+    oracle,
+    pipeline,
+    improvements: [],
+  }), []);
 
   const lines: string[] = [];
 
