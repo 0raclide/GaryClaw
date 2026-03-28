@@ -70,7 +70,8 @@ export function extractTopicKeywords(question: string): string[] {
     .toLowerCase()
     .split(/[\s,;:?!.()\[\]{}"']+/)
     .filter((w) => w.length > 2)
-    .filter((w) => !STOP_WORDS.has(w));
+    .filter((w) => !STOP_WORDS.has(w))
+    .filter((w) => !/^\d+$/.test(w));
 
   // Deduplicate preserving order
   const seen = new Set<string>();
