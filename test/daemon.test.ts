@@ -97,6 +97,30 @@ describe("validateDaemonConfig", () => {
     expect(validateDaemonConfig(config)).toContain("git_poll");
     expect(validateDaemonConfig(config)).toContain("cron");
   });
+
+  it("accepts git_poll trigger with valid selfCommitEmail", () => {
+    const config = createValidConfig();
+    (config.triggers[0] as any).selfCommitEmail = "bot@ci.local";
+    expect(validateDaemonConfig(config)).toBeNull();
+  });
+
+  it("accepts git_poll trigger without selfCommitEmail (optional)", () => {
+    const config = createValidConfig();
+    // selfCommitEmail not set — should pass
+    expect(validateDaemonConfig(config)).toBeNull();
+  });
+
+  it("rejects git_poll trigger with non-string selfCommitEmail", () => {
+    const config = createValidConfig();
+    (config.triggers[0] as any).selfCommitEmail = 42;
+    expect(validateDaemonConfig(config)).toContain("selfCommitEmail");
+  });
+
+  it("rejects git_poll trigger with empty string selfCommitEmail", () => {
+    const config = createValidConfig();
+    (config.triggers[0] as any).selfCommitEmail = "";
+    expect(validateDaemonConfig(config)).toContain("selfCommitEmail");
+  });
 });
 
 describe("loadDaemonConfig", () => {

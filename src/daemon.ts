@@ -91,6 +91,12 @@ export function validateDaemonConfig(data: unknown): string | null {
       if (!Array.isArray(t.skills) || t.skills.length === 0) {
         return `triggers[${i}].skills must be a non-empty array`;
       }
+      // selfCommitEmail is optional, but if present must be a non-empty string
+      if (t.selfCommitEmail !== undefined) {
+        if (typeof t.selfCommitEmail !== "string" || t.selfCommitEmail.length === 0) {
+          return `triggers[${i}].selfCommitEmail must be a non-empty string`;
+        }
+      }
     } else if (t.type === "cron") {
       if (typeof t.expression !== "string" || t.expression.length === 0) {
         return `triggers[${i}].expression is required for cron triggers`;
