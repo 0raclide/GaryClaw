@@ -17,6 +17,10 @@ import type {
 export { query };
 export type { SDKMessage };
 
+/** Email marker for daemon-generated commits. Used by buildSdkEnv() to tag commits
+ *  and by the git poller to filter self-triggered events. */
+export const GARYCLAW_DAEMON_EMAIL = "garyclaw-daemon@local";
+
 /**
  * Start a bounded query segment. Returns the async generator.
  */
@@ -84,6 +88,9 @@ export function buildSdkEnv(
       env[key] = value;
     }
   }
+  // Tag daemon commits so the git poller can filter self-triggers
+  env.GIT_COMMITTER_EMAIL = GARYCLAW_DAEMON_EMAIL;
+  env.GIT_COMMITTER_NAME = "GaryClaw Daemon";
   return env;
 }
 

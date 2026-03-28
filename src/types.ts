@@ -259,6 +259,7 @@ export interface GitPollTrigger {
   skills: string[];
   branch?: string;
   debounceSeconds?: number;
+  selfCommitEmail?: string;  // Override daemon email for filtering (default: GARYCLAW_DAEMON_EMAIL)
 }
 
 export interface CronTrigger {

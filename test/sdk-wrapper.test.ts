@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSdkEnv, extractTurnUsage, extractResultData } from "../src/sdk-wrapper.js";
+import { buildSdkEnv, extractTurnUsage, extractResultData, GARYCLAW_DAEMON_EMAIL } from "../src/sdk-wrapper.js";
 
 describe("sdk-wrapper", () => {
   describe("buildSdkEnv", () => {
@@ -34,15 +34,36 @@ describe("sdk-wrapper", () => {
       expect("UNDEFINED_VAR" in env).toBe(false);
     });
 
-    it("works with empty env", () => {
+    it("works with empty env (still sets committer fields)", () => {
       const env = buildSdkEnv({});
-      expect(env).toEqual({});
+      expect(env).toEqual({
+        GIT_COMMITTER_EMAIL: GARYCLAW_DAEMON_EMAIL,
+        GIT_COMMITTER_NAME: "GaryClaw Daemon",
+      });
     });
 
     it("works when ANTHROPIC_API_KEY is already absent", () => {
       const env = buildSdkEnv({ PATH: "/usr/bin" });
       expect(env.PATH).toBe("/usr/bin");
       expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    });
+
+    it("sets GIT_COMMITTER_EMAIL to GARYCLAW_DAEMON_EMAIL", () => {
+      const env = buildSdkEnv({ PATH: "/usr/bin" });
+      expect(env.GIT_COMMITTER_EMAIL).toBe(GARYCLAW_DAEMON_EMAIL);
+      expect(env.GIT_COMMITTER_EMAIL).toBe("garyclaw-daemon@local");
+    });
+
+    it("sets GIT_COMMITTER_NAME to GaryClaw Daemon", () => {
+      const env = buildSdkEnv({ PATH: "/usr/bin" });
+      expect(env.GIT_COMMITTER_NAME).toBe("GaryClaw Daemon");
+    });
+
+    it("overrides user-provided GIT_COMMITTER_EMAIL", () => {
+      const env = buildSdkEnv({
+        GIT_COMMITTER_EMAIL: "user@example.com",
+      });
+      expect(env.GIT_COMMITTER_EMAIL).toBe(GARYCLAW_DAEMON_EMAIL);
     });
   });
 
