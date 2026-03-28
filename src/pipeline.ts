@@ -316,6 +316,11 @@ async function executePipelineFrom(
         const implCheckpoint = readCheckpoint(skillCheckpointDir);
         const implPrompt = await buildImplementPrompt(config, prevSkills, config.projectDir, implCheckpoint);
         await runSkillWithPrompt(skillConfig, callbacks, implPrompt);
+      } else if (skillName === "evaluate") {
+        const { buildEvaluatePrompt } = await import("./evaluate.js");
+        const prevSkills = state.skills.slice(0, i);
+        const evalPrompt = buildEvaluatePrompt(config, prevSkills, config.projectDir);
+        await runSkillWithPrompt(skillConfig, callbacks, evalPrompt);
       } else if (prevEntry?.report) {
         // Override the initial prompt via a custom prompt in the skill config
         // runSkill uses `Run the /${skillName} skill...` as default prompt,
