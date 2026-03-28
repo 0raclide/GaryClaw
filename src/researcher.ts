@@ -20,6 +20,7 @@ import { readOracleMemory, writeDomainExpertise } from "./oracle-memory.js";
 import { estimateTokens } from "./checkpoint.js";
 import { extractResultData } from "./sdk-wrapper.js";
 import type { SDKMessage } from "./sdk-wrapper.js";
+import { extractAllToolUse } from "./issue-extractor.js";
 
 // ── Config ──────────────────────────────────────────────────────
 
@@ -142,13 +143,11 @@ export async function runResearch(
       }
 
       if (msg.type === "assistant") {
-        // Count search tool uses
-        const content = (msg as any).message?.content;
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === "tool_use" && (block.name === "WebSearch" || block.name === "WebFetch")) {
-              searchesUsed++;
-            }
+        // Count search tool uses via shared helper (consistent with orchestrator)
+        const toolUses = extractAllToolUse(msg);
+        for (const tu of toolUses) {
+          if (tu.toolName === "WebSearch" || tu.toolName === "WebFetch") {
+            searchesUsed++;
           }
         }
       }
