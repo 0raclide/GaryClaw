@@ -1,13 +1,12 @@
 /**
- * Regression: ISSUE-001 — buildEvaluatePrompt missing improvement-candidates.md instruction
- * Found by /qa on 2026-03-28
- * Report: .gstack/qa-reports/qa-report-garyclaw-2026-03-28.md
+ * Regression: buildEvaluatePrompt file-write instruction
+ * Originally found by /qa on 2026-03-28
  *
- * The evaluate prompt instructed Claude to write evaluation-report.json and
- * evaluation-report.md, but never mentioned improvement-candidates.md. The
- * CLI post-pipeline hook (appendEvaluateCandidates) reads that file to append
- * improvements to GaryClaw's TODOS.md. Without the instruction, the self-improvement
- * loop was broken — Claude would never write the file the hook depends on.
+ * History: The prompt originally told Claude to write evaluation files.
+ * After wiring the deterministic post-evaluate path (runPostEvaluateAnalysis),
+ * those file-write instructions became dead weight — Claude spends tokens
+ * writing files that get immediately overwritten. The prompt now explicitly
+ * tells Claude NOT to write files, and delegates file I/O to the pipeline.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -32,7 +31,7 @@ function makeConfig(projectDir: string): GaryClawConfig {
   };
 }
 
-describe("buildEvaluatePrompt improvement-candidates.md instruction", () => {
+describe("buildEvaluatePrompt file-write delegation", () => {
   beforeEach(() => {
     mkdirSync(join(TMP, ".garyclaw"), { recursive: true });
   });
@@ -41,22 +40,20 @@ describe("buildEvaluatePrompt improvement-candidates.md instruction", () => {
     rmSync(TMP, { recursive: true, force: true });
   });
 
-  it("includes improvement-candidates.md in the write instructions", () => {
+  it("tells Claude NOT to write files (deterministic path handles it)", () => {
     const prompt = buildEvaluatePrompt(makeConfig(TMP), [], TMP);
-    expect(prompt).toContain("improvement-candidates.md");
+    expect(prompt).toContain("Do NOT write any files");
   });
 
-  it("mentions improvement-candidates.md alongside the other report files", () => {
+  it("still requires <improvements> XML output format", () => {
     const prompt = buildEvaluatePrompt(makeConfig(TMP), [], TMP);
-    // All three output files should be mentioned
-    expect(prompt).toContain("evaluation-report.json");
-    expect(prompt).toContain("evaluation-report.md");
-    expect(prompt).toContain("improvement-candidates.md");
+    expect(prompt).toContain("<improvements>");
+    expect(prompt).toContain("</improvements>");
   });
 
-  it("explains the purpose of improvement-candidates.md for the post-pipeline hook", () => {
+  it("does not instruct Claude to write report files directly", () => {
     const prompt = buildEvaluatePrompt(makeConfig(TMP), [], TMP);
-    // The instruction should explain what the file is for
-    expect(prompt).toContain("TODOS.md");
+    // Should NOT contain the old file-write instructions
+    expect(prompt).not.toContain("After outputting improvements, write the full evaluation report to:");
   });
 });

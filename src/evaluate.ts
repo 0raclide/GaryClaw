@@ -1000,10 +1000,7 @@ export function buildEvaluatePrompt(
   lines.push("Valid efforts: XS, S, M");
   lines.push("Valid categories: bootstrap, oracle, pipeline, skill, relay");
   lines.push("");
-  lines.push("After outputting improvements, write the full evaluation report to:");
-  lines.push(`- ${join(projectDir, ".garyclaw", "evaluation-report.json")}`);
-  lines.push(`- ${join(projectDir, ".garyclaw", "evaluation-report.md")}`);
-  lines.push(`- ${join(projectDir, ".garyclaw", "improvement-candidates.md")} (one ## section per improvement, used by the post-pipeline hook to append to GaryClaw's TODOS.md)`);
+  lines.push("Do NOT write any files. The pipeline handles report generation deterministically from your <improvements> output.");
 
   return lines.join("\n");
 }
