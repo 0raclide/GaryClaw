@@ -776,18 +776,43 @@ export function buildEvaluatePrompt(
   previousSkills: PipelineSkillEntry[],
   projectDir: string,
 ): string {
-  // Run all analysis functions
-  const bootstrap = analyzeBootstrapQuality(projectDir);
-  const oracle = analyzeOraclePerformance(projectDir);
-  const pipeline = analyzePipelineHealth(projectDir);
-  const obvious = extractObviousImprovements({
-    targetRepo: projectDir,
-    timestamp: new Date().toISOString(),
-    bootstrap,
-    oracle,
-    pipeline,
-    improvements: [],
-  });
+  // Run all analysis functions with error boundary — corrupt .garyclaw/ data
+  // should degrade gracefully, not crash the entire evaluate skill.
+  let bootstrap: ReturnType<typeof analyzeBootstrapQuality>;
+  let oracle: ReturnType<typeof analyzeOraclePerformance>;
+  let pipeline: ReturnType<typeof analyzePipelineHealth>;
+  let obvious: ReturnType<typeof extractObviousImprovements>;
+
+  try {
+    bootstrap = analyzeBootstrapQuality(projectDir);
+  } catch {
+    bootstrap = { claudeMdExists: false, claudeMdSizeTokens: 0, claudeMdHasSections: [], claudeMdMissingSections: [...EXPECTED_SECTIONS], todosMdExists: false, todosMdItemCount: 0, qualityScore: 0, qualityNotes: ["analyzeBootstrapQuality threw an error"] };
+  }
+
+  try {
+    oracle = analyzeOraclePerformance(projectDir);
+  } catch {
+    oracle = { totalDecisions: 0, lowConfidenceCount: 0, escalatedCount: 0, averageConfidence: 0, topicClusters: [] };
+  }
+
+  try {
+    pipeline = analyzePipelineHealth(projectDir);
+  } catch {
+    pipeline = { skillsRun: [], skillsCompleted: [], skillsFailed: [], totalRelays: 0, totalCostUsd: 0, totalDurationSec: 0, contextGrowthRate: 0 };
+  }
+
+  try {
+    obvious = extractObviousImprovements({
+      targetRepo: projectDir,
+      timestamp: new Date().toISOString(),
+      bootstrap,
+      oracle,
+      pipeline,
+      improvements: [],
+    });
+  } catch {
+    obvious = [];
+  }
 
   const lines: string[] = [];
 
