@@ -12,6 +12,7 @@
  */
 
 import type { Decision, OracleMemoryFiles } from "./types.js";
+import { extractResultData } from "./sdk-wrapper.js";
 
 // ── The 7 Decision Principles ───────────────────────────────────
 
@@ -306,9 +307,9 @@ export function createSdkOracleQueryFn(
 
     for await (const msg of gen) {
       if (msg.type === "result") {
-        const m = msg as Record<string, unknown>;
-        if (m.subtype === "success" && typeof m.result === "string") {
-          result = m.result;
+        const resultData = extractResultData(msg);
+        if (resultData && resultData.subtype === "success") {
+          result = resultData.resultText;
         }
       }
     }
