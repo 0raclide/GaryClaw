@@ -623,8 +623,10 @@ async function runSkillInternal(
               projectDir: config.projectDir,
             });
           } catch (err) {
-            // Reflection failure is non-fatal — don't block completion
-            console.warn(`[GaryClaw] Reflection failed: ${err instanceof Error ? err.message : String(err)}`);
+            // Reflection failure is non-fatal — don't block completion.
+            // Emit as event so daemon log captures it (console.warn is invisible in daemon mode).
+            const errMsg = err instanceof Error ? err.message : String(err);
+            callbacks.onEvent({ type: "assistant_text", text: `[GaryClaw] Reflection failed: ${errMsg}` });
           }
         }
 
