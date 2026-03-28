@@ -49,7 +49,7 @@ function makeMetrics(): OracleMetrics {
 }
 
 function makeBudgetConfig(): BudgetConfig {
-  return { dailyLimitUsd: 25, perJobLimitUsd: 10, maxJobsPerDay: 20 };
+  return { dailyCostLimitUsd: 25, perJobCostLimitUsd: 10, maxJobsPerDay: 20 };
 }
 
 function makeDaemonConfig(date: string): DaemonConfig {
