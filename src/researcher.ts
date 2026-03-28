@@ -19,6 +19,7 @@ import { ORACLE_MEMORY_BUDGETS } from "./types.js";
 import { readOracleMemory, writeDomainExpertise } from "./oracle-memory.js";
 import { estimateTokens } from "./checkpoint.js";
 import { extractResultData } from "./sdk-wrapper.js";
+import type { SDKMessage } from "./sdk-wrapper.js";
 
 // ── Config ──────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ export async function runResearch(
     env: Record<string, string>;
     settingSources: string[];
     canUseTool: (toolName: string, input: Record<string, unknown>) => Promise<CanUseToolResult>;
-  }) => AsyncIterable<{ type: string; [key: string]: unknown }>,
+  }) => AsyncIterable<SDKMessage>,
 ): Promise<ResearchResult> {
   // Read existing domain expertise
   const memoryFiles = readOracleMemory(config.oracleMemoryConfig, config.projectDir);
