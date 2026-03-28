@@ -10,7 +10,7 @@
  * build a prompt string, dispatched from pipeline.ts via runSkillWithPrompt().
  */
 
-import { readdirSync, readFileSync, statSync, existsSync, realpathSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, existsSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { join, relative, extname, basename } from "node:path";
 
 import { estimateTokens } from "./checkpoint.js";
@@ -297,10 +297,19 @@ export function safeReadFile(filePath: string, maxBytes?: number): string | null
     const stat = statSync(filePath);
     if (!stat.isFile()) return null;
 
-    // Read with optional size limit
+    // Read with optional size limit — only read the bytes we need to avoid OOM on huge files
     if (maxBytes && stat.size > maxBytes) {
-      const fd = readFileSync(filePath, { encoding: "utf-8", flag: "r" });
-      return fd.slice(0, maxBytes);
+      const fd = openSync(filePath, "r");
+      try {
+        const buf = Buffer.alloc(maxBytes);
+        const bytesRead = readSync(fd, buf, 0, maxBytes, 0);
+        const content = buf.toString("utf-8", 0, bytesRead);
+        // Binary check on bounded read
+        if (content.slice(0, 512).includes("\0")) return null;
+        return content;
+      } finally {
+        closeSync(fd);
+      }
     }
     const content = readFileSync(filePath, "utf-8");
 
@@ -372,26 +381,17 @@ export function findTestDir(projectDir: string, files: string[]): string | null 
  * Truncates to fit within the token budget.
  */
 export function buildFileTreeString(files: string[], budget: number): string {
-  const lines = files.map((f) => f);
-  let result = lines.join("\n");
+  const fullText = files.join("\n");
 
-  const tokens = estimateTokens(result);
-  if (tokens <= budget) return result;
+  const tokens = estimateTokens(fullText);
+  if (tokens <= budget) return fullText;
 
-  // Truncate: keep as many lines as fit
-  const approxCharsPerToken = 3.5;
-  const maxChars = Math.floor(budget * approxCharsPerToken);
-  result = result.slice(0, maxChars);
-
-  // Trim to last complete line
-  const lastNewline = result.lastIndexOf("\n");
-  if (lastNewline > 0) {
-    result = result.slice(0, lastNewline);
-  }
-
-  const shownCount = result.split("\n").length;
-  result += `\n... (${files.length - shownCount} more files, ${files.length} total)`;
-  return result;
+  // Reuse the generic truncation, then replace the suffix with a file-count message
+  const truncated = truncateToTokenBudget(fullText, budget);
+  // Remove the generic "... (truncated)" suffix and add file-count suffix
+  const base = truncated.replace(/\n\.\.\. \(truncated\)$/, "");
+  const shownCount = base.split("\n").length;
+  return base + `\n... (${files.length - shownCount} more files, ${files.length} total)`;
 }
 
 /**
