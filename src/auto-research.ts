@@ -203,8 +203,11 @@ export function isTopicGroupFresh(
     const sectionWords = section.topic.toLowerCase().split(/\s+/);
     const overlap = keywords.filter((k) => sectionWords.includes(k));
     if (overlap.length >= 2) {
-      // Found a matching section — check if it's fresh
-      return !isTopicStale(existingDomainExpertise, section.topic);
+      // Found a matching section — if it's fresh, the topic group is fresh.
+      // Keep checking other sections in case this one is stale but another is fresh.
+      if (!isTopicStale(existingDomainExpertise, section.topic)) {
+        return true;
+      }
     }
   }
 
