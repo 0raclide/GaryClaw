@@ -84,7 +84,7 @@ Implemented in 9 commits (5a964dc..4d7baac). CodebaseSummary interface, signal-w
 
 All three items from `docs/designs/implement-skill-hardening.md` implemented: `validateImplementationOrder()` with warnings for missing sections (`implement.ts:105`), `actionableOnly` filter for review context (`implement.ts:123-138`), static import conversion (`pipeline.ts:20`). Pre-existing test coverage: `test/implement.test.ts` (48 tests incl. 5 for validateImplementationOrder, 8 for actionableOnly filter), `test/implement-loaddesigndoc.regression-1.test.ts` (7 tests), `test/pipeline-implement.test.ts` (4 tests).
 
-## P3: Adaptive maxTurns Strategy — COMPLETE (2026-03-28)
+## ~~P3: Adaptive maxTurns Strategy~~ — COMPLETE (2026-03-28)
 
 **What:** Dynamic segment sizing — start at 15 turns per segment, increase if the skill is making progress (commits happening, issues being fixed), decrease if context growth rate is high.
 
