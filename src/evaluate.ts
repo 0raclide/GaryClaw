@@ -786,19 +786,19 @@ export function buildEvaluatePrompt(
   try {
     bootstrap = analyzeBootstrapQuality(projectDir);
   } catch {
-    bootstrap = { claudeMdExists: false, claudeMdSizeTokens: 0, claudeMdHasSections: [], claudeMdMissingSections: [...EXPECTED_SECTIONS], todosMdExists: false, todosMdItemCount: 0, qualityScore: 0, qualityNotes: ["analyzeBootstrapQuality threw an error"] };
+    bootstrap = { claudeMdExists: false, claudeMdSizeTokens: 0, claudeMdHasSections: [], claudeMdMissingSections: [...EXPECTED_SECTIONS], todosMdExists: false, todosMdItemCount: 0, todosMdItemsAboveThreshold: 0, qualityScore: 0, qualityNotes: ["analyzeBootstrapQuality threw an error"] };
   }
 
   try {
     oracle = analyzeOraclePerformance(projectDir);
   } catch {
-    oracle = { totalDecisions: 0, lowConfidenceCount: 0, escalatedCount: 0, averageConfidence: 0, topicClusters: [] };
+    oracle = { totalDecisions: 0, lowConfidenceCount: 0, escalatedCount: 0, averageConfidence: 0, topicClusters: [], researchTriggered: false };
   }
 
   try {
     pipeline = analyzePipelineHealth(projectDir);
   } catch {
-    pipeline = { skillsRun: [], skillsCompleted: [], skillsFailed: [], totalRelays: 0, totalCostUsd: 0, totalDurationSec: 0, contextGrowthRate: 0 };
+    pipeline = { skillsRun: [], skillsCompleted: [], skillsFailed: [], totalRelays: 0, totalCostUsd: 0, totalDurationSec: 0, contextGrowthRate: 0, adaptiveTurnsUsed: false };
   }
 
   try {
