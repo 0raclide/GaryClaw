@@ -437,7 +437,7 @@ function buildCallbacks(job: Job, config: DaemonConfig, deps: JobRunnerDeps): Or
         stats.maxTurns = Math.max(stats.maxTurns, event.maxTurns);
 
         // Parse reason string to classify segment type
-        if (event.reason.includes("no growth data")) {
+        if (event.reason.includes("no growth data") || event.reason.includes("adaptive disabled")) {
           stats.fallbackCount++;
         } else if (event.reason.includes("already at/past target")) {
           stats.clampedCount++;
