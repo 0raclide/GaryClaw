@@ -134,6 +134,8 @@ export interface GaryClawConfig {
   researchTopic?: string;
   /** Main repo dir for oracle memory when projectDir points to a worktree. */
   mainRepoDir?: string;
+  /** TODO items claimed by other daemon instances (injected into prioritize prompt). */
+  claimedTodoItems?: Array<{ title: string; instanceName: string }>;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────
@@ -292,6 +294,7 @@ export interface Job {
   failureCategory?: FailureCategory;
   retryable?: boolean;
   adaptiveTurnsStats?: AdaptiveTurnsJobStats;  // undefined for pre-existing jobs or --no-adaptive
+  claimedTodoTitle?: string;  // TODO item title claimed by this job's prioritize skill
 }
 
 export interface DaemonState {

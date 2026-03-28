@@ -18,7 +18,10 @@ import {
   readGlobalBudget,
   updateGlobalBudget,
   isSkillSetActive,
+  getClaimedTodoTitles,
 } from "./daemon-registry.js";
+import { mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
+import { safeReadText } from "./safe-json.js";
 import {
   PerJobCostExceededError,
 } from "./types.js";
@@ -220,7 +223,21 @@ export function createJobRunner(
     // Snapshot config at job start — reload-safe: running jobs keep original config
     const jobConfig = currentConfig;
     const callbacks = buildCallbacks(nextJob, jobConfig, d);
-    const clawConfig = buildGaryClawConfig(jobConfig, nextJob, jobDir, d);
+
+    // Compute claimed items for priority claiming (if this job runs prioritize)
+    let claimedItems: Array<{ title: string; instanceName: string }> | undefined;
+    if (parentCheckpointDir && nextJob.skills.includes("prioritize")) {
+      try {
+        claimedItems = getClaimedTodoTitles(parentCheckpointDir, resolvedInstanceName);
+        if (claimedItems.length > 0) {
+          d.log("info", `Priority claiming: ${claimedItems.length} item(s) already claimed by other instances`);
+        }
+      } catch (err) {
+        d.log("warn", `Priority claiming failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    const clawConfig = buildGaryClawConfig(jobConfig, nextJob, jobDir, d, claimedItems);
 
     try {
       if (nextJob.skills.length === 1) {
@@ -248,9 +265,44 @@ export function createJobRunner(
         }
       }
 
+      // Claim the TODO item that prioritize picked (before marking complete,
+      // so other instances see the claim while this job is "running")
+      if (nextJob.skills.includes("prioritize")) {
+        try {
+          const priorityDir = jobConfig.worktreePath ?? jobConfig.projectDir;
+          const priorityPath = join(priorityDir, ".garyclaw", "priority.md");
+          const priorityContent = safeReadText(priorityPath);
+          if (priorityContent) {
+            const title = parsePriorityPickTitle(priorityContent);
+            if (title && title !== "Backlog Exhausted") {
+              nextJob.claimedTodoTitle = title;
+              persistState(state, checkpointDir);
+              d.log("info", `Priority claimed: "${title}"`);
+            }
+          }
+        } catch (err) {
+          d.log("warn", `Priority claim parsing failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
       d.writeSummary(nextJob, jobDir);
       d.notifyJobComplete(nextJob, jobConfig);
       d.log("info", `Completed ${nextJob.id}: $${nextJob.costUsd.toFixed(3)}`);
+
+      // Auto-merge: named instances merge their branch to main after successful jobs
+      if (jobConfig.worktreePath && resolvedInstanceName !== "default") {
+        try {
+          const baseBranch = resolveBaseBranch(jobConfig.projectDir);
+          const result = mergeWorktreeBranch(jobConfig.projectDir, resolvedInstanceName, baseBranch);
+          if (result.merged) {
+            d.log("info", `Auto-merge: merged ${result.commitCount ?? 0} commit(s) from garyclaw/${resolvedInstanceName} to ${baseBranch}`);
+          } else {
+            d.log("warn", `Auto-merge failed: ${result.reason}`);
+          }
+        } catch (err) {
+          d.log("warn", `Auto-merge error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
     } catch (err) {
       nextJob.status = "failed";
       nextJob.completedAt = new Date().toISOString();
@@ -374,6 +426,7 @@ function buildGaryClawConfig(
   job: Job,
   jobDir: string,
   deps: JobRunnerDeps,
+  claimedTodoItems?: Array<{ title: string; instanceName: string }>,
 ): GaryClawConfig {
   // Named instances use worktree path; default uses main repo
   const projectDir = config.worktreePath ?? config.projectDir;
@@ -392,7 +445,16 @@ function buildGaryClawConfig(
     researchTopic: job.researchTopic,
     // Oracle memory always reads from the main repo, not the worktree
     mainRepoDir: config.worktreePath ? config.projectDir : undefined,
+    claimedTodoItems,
   };
+}
+
+/**
+ * Parse the "Top Pick:" title from priority.md content.
+ */
+export function parsePriorityPickTitle(content: string): string | null {
+  const match = content.match(/^## Top Pick:\s*(.+)/m);
+  return match ? match[1].trim() : null;
 }
 
 function buildCallbacks(job: Job, config: DaemonConfig, deps: JobRunnerDeps): OrchestratorCallbacks {

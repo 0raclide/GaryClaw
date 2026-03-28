@@ -211,6 +211,58 @@ export function isSkillSetActive(
   return false;
 }
 
+// ── Priority claiming ────────────────────────────────────────────
+
+export interface ClaimedTodoItem {
+  title: string;
+  instanceName: string;
+}
+
+/**
+ * Scan all daemon instances for TODO items claimed by running/queued jobs.
+ * Returns titles of items currently being worked on by other instances.
+ *
+ * Used by prioritize to avoid picking the same item as a parallel instance.
+ */
+export function getClaimedTodoTitles(
+  checkpointDir: string,
+  excludeInstance?: string,
+): ClaimedTodoItem[] {
+  const daemonsPath = join(checkpointDir, DAEMONS_DIR);
+  if (!existsSync(daemonsPath)) return [];
+
+  let entries: string[];
+  try {
+    entries = readdirSync(daemonsPath, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+
+  const claimed: ClaimedTodoItem[] = [];
+
+  for (const name of entries) {
+    if (excludeInstance && name === excludeInstance) continue;
+
+    const statePath = join(daemonsPath, name, STATE_FILE);
+    const state = safeReadJSON<DaemonState>(statePath, validateDaemonState);
+    if (!state) continue;
+
+    for (const job of state.jobs) {
+      if (job.status !== "queued" && job.status !== "running") continue;
+      if (!job.claimedTodoTitle) continue;
+
+      claimed.push({
+        title: job.claimedTodoTitle,
+        instanceName: name,
+      });
+    }
+  }
+
+  return claimed;
+}
+
 // ── Migration helper ─────────────────────────────────────────────
 
 /**

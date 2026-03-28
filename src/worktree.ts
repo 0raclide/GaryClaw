@@ -10,7 +10,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export interface WorktreeInfo {
@@ -332,41 +332,59 @@ export function mergeWorktreeBranch(
     };
   }
 
-  // Attempt fast-forward merge, then restore original branch
+  // Rebase instance branch onto baseBranch, then fast-forward merge.
+  // Acquire merge lock to prevent concurrent rebase/merge across instances.
+  if (!acquireMergeLock(repoDir)) {
+    restoreBranch(repoDir, originalBranch, baseBranch);
+    return { merged: false, commitCount, reason: "Could not acquire merge lock (another instance merging)" };
+  }
+
   try {
-    execFileSync("git", ["merge", "--ff-only", branch], {
-      cwd: repoDir,
-      stdio: "pipe",
-    });
-    // Restore original branch if we switched away from it
-    if (originalBranch && originalBranch !== baseBranch) {
-      try {
-        execFileSync("git", ["checkout", originalBranch], {
-          cwd: repoDir,
-          stdio: "pipe",
-        });
-      } catch {
-        // Non-fatal: merge succeeded, just couldn't restore branch
-      }
+    // Rebase: puts instance commits on top of current baseBranch
+    try {
+      execFileSync("git", ["rebase", baseBranch, branch], {
+        cwd: repoDir,
+        stdio: "pipe",
+      });
+    } catch {
+      // Rebase conflict — abort and bail
+      try { execFileSync("git", ["rebase", "--abort"], { cwd: repoDir, stdio: "pipe" }); } catch { /* noop */ }
+      restoreBranch(repoDir, originalBranch, baseBranch);
+      return {
+        merged: false,
+        commitCount,
+        reason: `Rebase of ${branch} onto ${baseBranch} had conflicts — needs manual resolution`,
+      };
     }
+
+    // After successful rebase, ff-only merge is guaranteed to work
+    try {
+      execFileSync("git", ["merge", "--ff-only", branch], {
+        cwd: repoDir,
+        stdio: "pipe",
+      });
+    } catch {
+      restoreBranch(repoDir, originalBranch, baseBranch);
+      return {
+        merged: false,
+        commitCount,
+        reason: `Fast-forward merge failed after rebase — unexpected state`,
+      };
+    }
+
+    restoreBranch(repoDir, originalBranch, baseBranch);
     return { merged: true, commitCount };
-  } catch {
-    // Restore original branch on merge failure too
-    if (originalBranch && originalBranch !== baseBranch) {
-      try {
-        execFileSync("git", ["checkout", originalBranch], {
-          cwd: repoDir,
-          stdio: "pipe",
-        });
-      } catch {
-        // Non-fatal
-      }
-    }
-    return {
-      merged: false,
-      commitCount,
-      reason: `Branch ${branch} has ${commitCount} commit(s) that cannot be fast-forwarded — needs manual merge or rebase`,
-    };
+  } finally {
+    releaseMergeLock(repoDir);
+  }
+}
+
+/** Restore original branch after merge attempt. Non-fatal on failure. */
+function restoreBranch(repoDir: string, originalBranch: string | null, baseBranch: string): void {
+  if (originalBranch && originalBranch !== baseBranch) {
+    try {
+      execFileSync("git", ["checkout", originalBranch], { cwd: repoDir, stdio: "pipe" });
+    } catch { /* Non-fatal */ }
   }
 }
 
@@ -428,4 +446,84 @@ export function getWorktreePath(repoDir: string, instanceName: string): string |
     return resolve(wtDir);
   }
   return null;
+}
+
+// ── Merge lock ──────────────────────────────────────────────────
+
+const MERGE_LOCK_DIR = "merge-lock";
+const MERGE_LOCK_PID = "pid";
+const MERGE_LOCK_TIMEOUT_MS = 60_000;
+const MERGE_LOCK_POLL_MS = 500;
+
+/**
+ * Acquire a merge lock for the repo. Prevents concurrent rebase+merge operations.
+ * Uses mkdir-based atomic lock (same pattern as reflection-lock.ts).
+ */
+export function acquireMergeLock(
+  repoDir: string,
+  timeoutMs: number = MERGE_LOCK_TIMEOUT_MS,
+): boolean {
+  const lockDir = join(repoDir, ".garyclaw", MERGE_LOCK_DIR);
+  const pidFile = join(lockDir, MERGE_LOCK_PID);
+
+  if (tryMergeLock(lockDir, pidFile)) return true;
+
+  // Check if reentrant (same process)
+  if (isOwnMergeLock(pidFile)) return true;
+
+  // Poll until timeout
+  const deadline = Date.now() + timeoutMs;
+  const sleepBuf = new Int32Array(new SharedArrayBuffer(4));
+  while (Date.now() < deadline) {
+    Atomics.wait(sleepBuf, 0, 0, MERGE_LOCK_POLL_MS);
+
+    if (tryMergeLock(lockDir, pidFile)) return true;
+
+    // Stale lock recovery
+    if (isStaleMergeLock(pidFile)) {
+      try { rmSync(lockDir, { recursive: true, force: true }); } catch { /* race */ }
+      if (tryMergeLock(lockDir, pidFile)) return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Release the merge lock. Safe to call even if not held.
+ */
+export function releaseMergeLock(repoDir: string): void {
+  const lockDir = join(repoDir, ".garyclaw", MERGE_LOCK_DIR);
+  try { rmSync(lockDir, { recursive: true, force: true }); } catch { /* noop */ }
+}
+
+function tryMergeLock(lockDir: string, pidFile: string): boolean {
+  try {
+    mkdirSync(lockDir, { recursive: false });
+    writeFileSync(pidFile, String(process.pid));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isOwnMergeLock(pidFile: string): boolean {
+  try {
+    const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+    return pid === process.pid;
+  } catch {
+    return false;
+  }
+}
+
+function isStaleMergeLock(pidFile: string): boolean {
+  try {
+    const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+    if (isNaN(pid) || pid <= 0) return true;
+    process.kill(pid, 0); // Throws if process doesn't exist
+    return false;
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && err.code === "ESRCH") return true;
+    return false;
+  }
 }

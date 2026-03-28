@@ -503,6 +503,20 @@ export async function buildPrioritizePrompt(
     lines.push("");
   }
 
+  // Claimed items from parallel daemon instances
+  const claimedItems = config.claimedTodoItems;
+  if (claimedItems && claimedItems.length > 0) {
+    lines.push("### Already Claimed by Other Instances");
+    lines.push("");
+    lines.push("These items are actively being implemented by parallel daemon instances.");
+    lines.push("**Do NOT pick them.** Score claimed items as 0/10 on ALL dimensions.");
+    lines.push("");
+    for (const item of claimedItems) {
+      lines.push(`- **${item.title}** (instance: ${item.instanceName})`);
+    }
+    lines.push("");
+  }
+
   // Phase 2+3 — SCORE and RANK instructions
   lines.push("## Phase 2 — SCORE");
   lines.push("");
