@@ -25,7 +25,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Auto-Research Trigger: COMPLETE** (2026-03-27) — Post-job low-confidence analysis, keyword clustering, auto-enqueue research
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
-- 32 source modules + CLI, 71 test files, 1639 tests
+- 32 source modules + CLI, 72 test files, 1666 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -211,7 +211,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
 | `test/token-monitor.test.ts` | 24 | recordTurnUsage, shouldRelay, growthRate, edge cases |
-| `test/adaptive-turns.test.ts` | 25 | computeAdaptiveMaxTurns: fallback, growth prediction, heavy tools, clamping, relay, HEAVY_TOOLS constant |
+| `test/adaptive-turns.test.ts` | 28 | computeAdaptiveMaxTurns: fallback, growth prediction, heavy tools, clamping, relay, HEAVY_TOOLS constant, reason string contract |
 | `test/checkpoint.test.ts` | 35 | write/read/rotation, relay prompt tiering, token budget, codebaseSummary validation + relay |
 | `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
@@ -230,7 +230,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |
 | `test/daemon-ipc.test.ts` | 10 | Request/response over socket, malformed input, timeout |
 | `test/notifier.test.ts` | 28 | Notification formatting, summary generation, graceful failure, instance labels |
-| `test/job-runner.test.ts` | 41 | FIFO queue, dedup, budget, state persistence, job lifecycle, global budget, cross-instance dedup |
+| `test/job-runner.test.ts` | 48 | FIFO queue, dedup, budget, state persistence, job lifecycle, global budget, cross-instance dedup, adaptive_turns event collection |
 | `test/job-runner-extended.test.ts` | 17 | Extended job runner: budget edge cases, concurrent enqueue |
 | `test/job-runner.regression-2.test.ts` | 3 | Job runner regression: dedup with completed jobs |
 | `test/triggers.test.ts` | 53 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns |
@@ -248,7 +248,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/researcher.test.ts` | 33 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
 | `test/prioritize.test.ts` | 42 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
 | `test/worktree.test.ts` | 27 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch |
-| `test/dashboard.test.ts` | 40 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
+| `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
 | `test/auto-research.test.ts` | 33 | extractTopicKeywords, groupDecisionsByTopic, getResearchTopics, defaults |
 | `test/codebase-summary.test.ts` | 51 | extractObservations, extractFailedApproaches, deduplicateObservations, truncateToTokenBudget, buildCodebaseSummary, formatCodebaseSummaryForRelay |
 | `test/auto-research.regression-1.test.ts` | 19 | isTopicGroupFresh direct tests, seed-keyword clustering, 3-char acronym preservation |

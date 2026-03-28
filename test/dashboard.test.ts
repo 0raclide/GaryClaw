@@ -7,6 +7,7 @@ import {
   aggregateJobStats,
   aggregateOracleStats,
   aggregateBudgetStats,
+  aggregateAdaptiveTurnsStats,
   computeHealthScore,
   formatDashboard,
   buildDashboard,
@@ -20,6 +21,7 @@ import type {
   DaemonState,
   DaemonConfig,
   DashboardData,
+  AdaptiveTurnsJobStats,
 } from "../src/types.js";
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -280,6 +282,7 @@ describe("computeHealthScore", () => {
       jobs: { total: 5, complete: 5, failed: 0, queued: 0, running: 0, successRate: 100, totalCostUsd: 10, avgCostPerJob: 2, avgDurationSec: 300, failureBreakdown: {} },
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 0, dailyRemaining: 25, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     });
     expect(score).toBe(100);
@@ -291,6 +294,7 @@ describe("computeHealthScore", () => {
       jobs: { total: 5, complete: 0, failed: 5, queued: 0, running: 0, successRate: 0, totalCostUsd: 10, avgCostPerJob: 2, avgDurationSec: 300, failureBreakdown: { "unknown": 5 } },
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     });
     expect(score).toBeLessThan(70);
@@ -302,6 +306,7 @@ describe("computeHealthScore", () => {
       jobs: { total: 5, complete: 5, failed: 0, queued: 0, running: 0, successRate: 100, totalCostUsd: 10, avgCostPerJob: 2, avgDurationSec: 300, failureBreakdown: {} },
       oracle: { totalDecisions: 50, accuracyPercent: 50, confidenceAvg: 5, circuitBreakerTripped: true },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     });
     // Circuit breaker: 0 * 0.15 = -15, plus low accuracy
@@ -313,6 +318,7 @@ describe("computeHealthScore", () => {
       jobs: { total: 5, complete: 5, failed: 0, queued: 0, running: 0, successRate: 100, totalCostUsd: 24.5, avgCostPerJob: 4.9, avgDurationSec: 300, failureBreakdown: {} },
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 24.5, dailyRemaining: 0.5, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     });
     expect(score).toBeLessThan(100);
@@ -324,6 +330,7 @@ describe("computeHealthScore", () => {
       jobs: { total: 0, complete: 0, failed: 0, queued: 0, running: 0, successRate: 100, totalCostUsd: 0, avgCostPerJob: 0, avgDurationSec: 0, failureBreakdown: {} },
       oracle: { totalDecisions: 0, accuracyPercent: 100, confidenceAvg: 0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 0, dailyRemaining: 25, jobCount: 0, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     });
     expect(score).toBe(100);
@@ -335,6 +342,7 @@ describe("computeHealthScore", () => {
       jobs: { total: 5, complete: 1, failed: 4, queued: 0, running: 0, successRate: 20, totalCostUsd: 10, avgCostPerJob: 2, avgDurationSec: 300, failureBreakdown: {} },
       oracle: { totalDecisions: 50, accuracyPercent: 55, confidenceAvg: 5, circuitBreakerTripped: true },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     });
     expect(topConcern).toBe("Oracle memory disabled — accuracy below 60%");
@@ -345,6 +353,7 @@ describe("computeHealthScore", () => {
       jobs: { total: 10, complete: 7, failed: 3, queued: 0, running: 0, successRate: 70, totalCostUsd: 10, avgCostPerJob: 1, avgDurationSec: 300, failureBreakdown: { "garyclaw-bug": 2, "auth-issue": 1 } },
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 10, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     });
     expect(topConcern).toBe("GaryClaw bug detected in 2 job(s) — check logs");
@@ -355,6 +364,7 @@ describe("computeHealthScore", () => {
       jobs: { total: 10, complete: 7, failed: 3, queued: 0, running: 0, successRate: 70, totalCostUsd: 10, avgCostPerJob: 1, avgDurationSec: 300, failureBreakdown: { "auth-issue": 3 } },
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 10, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     });
     expect(topConcern).toBe("3 job(s) failed today — review failure categories");
@@ -365,6 +375,7 @@ describe("computeHealthScore", () => {
       jobs: { total: 5, complete: 5, failed: 0, queued: 0, running: 0, successRate: 100, totalCostUsd: 10, avgCostPerJob: 2, avgDurationSec: 300, failureBreakdown: {} },
       oracle: { totalDecisions: 0, accuracyPercent: 100, confidenceAvg: 0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 0, dailySpentUsd: 0, dailyRemaining: 0, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     });
     expect(score).toBe(100); // budgetHeadroom defaults to 100 when limit is 0
@@ -382,6 +393,7 @@ describe("formatDashboard", () => {
       jobs: { total: 7, complete: 6, failed: 1, queued: 0, running: 0, successRate: 85.7, totalCostUsd: 16.53, avgCostPerJob: 2.36, avgDurationSec: 512, failureBreakdown: { "auth-issue": 1 } },
       oracle: { totalDecisions: 122, accuracyPercent: 100, confidenceAvg: 9.0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 16.53, dailyRemaining: 8.47, jobCount: 7, maxJobsPerDay: 20, byInstance: { default: { totalUsd: 13.0, jobCount: 6 }, reviewer: { totalUsd: 3.53, jobCount: 1 } } },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: ["default", "reviewer"],
     };
   }
@@ -436,6 +448,7 @@ describe("formatDashboard", () => {
       jobs: { total: 0, complete: 0, failed: 0, queued: 0, running: 0, successRate: 100, totalCostUsd: 0, avgCostPerJob: 0, avgDurationSec: 0, failureBreakdown: {} },
       oracle: { totalDecisions: 0, accuracyPercent: 100, confidenceAvg: 0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 0, dailyRemaining: 25, jobCount: 0, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       instances: [],
     };
     const md = formatDashboard(data);
@@ -527,5 +540,239 @@ describe("formatDuration", () => {
 
   it("handles Infinity", () => {
     expect(formatDuration(Infinity)).toBe("0s");
+  });
+});
+
+// ── aggregateAdaptiveTurnsStats ──────────────────────────────
+
+function makeAdaptiveTurnsJobStats(overrides: Partial<AdaptiveTurnsJobStats> = {}): AdaptiveTurnsJobStats {
+  return {
+    segmentCount: 4,
+    adaptiveCount: 2,
+    fallbackCount: 1,
+    clampedCount: 1,
+    heavyToolActivations: 1,
+    minTurns: 3,
+    maxTurns: 15,
+    totalTurns: 32,
+    ...overrides,
+  };
+}
+
+describe("aggregateAdaptiveTurnsStats", () => {
+  it("returns zeros for empty jobs array", () => {
+    const stats = aggregateAdaptiveTurnsStats([], TODAY);
+    expect(stats.totalSegments).toBe(0);
+    expect(stats.adaptiveSegments).toBe(0);
+    expect(stats.avgTurns).toBe(0);
+    expect(stats.adaptiveRate).toBe(0);
+  });
+
+  it("returns zeros when no jobs have adaptiveTurnsStats (backward compat)", () => {
+    const jobs = [makeJob({ id: "j1" }), makeJob({ id: "j2" })];
+    const stats = aggregateAdaptiveTurnsStats(jobs, TODAY);
+    expect(stats.totalSegments).toBe(0);
+    expect(stats.minTurns).toBe(0);
+    expect(stats.maxTurns).toBe(0);
+  });
+
+  it("aggregates single job with stats", () => {
+    const jobs = [
+      makeJob({
+        id: "j1",
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats(),
+      }),
+    ];
+    const stats = aggregateAdaptiveTurnsStats(jobs, TODAY);
+    expect(stats.totalSegments).toBe(4);
+    expect(stats.adaptiveSegments).toBe(2);
+    expect(stats.fallbackSegments).toBe(1);
+    expect(stats.clampedSegments).toBe(1);
+    expect(stats.heavyToolActivations).toBe(1);
+    expect(stats.avgTurns).toBe(8); // 32/4
+    expect(stats.minTurns).toBe(3);
+    expect(stats.maxTurns).toBe(15);
+    expect(stats.adaptiveRate).toBe(50); // 2/4 * 100
+  });
+
+  it("aggregates multiple jobs", () => {
+    const jobs = [
+      makeJob({
+        id: "j1",
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats({
+          segmentCount: 3, adaptiveCount: 2, fallbackCount: 1, clampedCount: 0,
+          heavyToolActivations: 1, minTurns: 5, maxTurns: 12, totalTurns: 27,
+        }),
+      }),
+      makeJob({
+        id: "j2",
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats({
+          segmentCount: 2, adaptiveCount: 1, fallbackCount: 0, clampedCount: 1,
+          heavyToolActivations: 0, minTurns: 3, maxTurns: 10, totalTurns: 13,
+        }),
+      }),
+    ];
+    const stats = aggregateAdaptiveTurnsStats(jobs, TODAY);
+    expect(stats.totalSegments).toBe(5);
+    expect(stats.adaptiveSegments).toBe(3);
+    expect(stats.fallbackSegments).toBe(1);
+    expect(stats.clampedSegments).toBe(1);
+    expect(stats.heavyToolActivations).toBe(1);
+    expect(stats.avgTurns).toBe(8); // 40/5
+    expect(stats.minTurns).toBe(3); // min(5, 3)
+    expect(stats.maxTurns).toBe(12); // max(12, 10)
+    expect(stats.adaptiveRate).toBe(60); // 3/5 * 100
+  });
+
+  it("handles null minTurns in a job (never received events)", () => {
+    const jobs = [
+      makeJob({
+        id: "j1",
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats({ minTurns: null, segmentCount: 0, totalTurns: 0, maxTurns: 0 }),
+      }),
+    ];
+    const stats = aggregateAdaptiveTurnsStats(jobs, TODAY);
+    expect(stats.minTurns).toBe(0); // null → 0
+  });
+
+  it("picks min across jobs where one has null minTurns", () => {
+    const jobs = [
+      makeJob({
+        id: "j1",
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats({ minTurns: null, segmentCount: 1, totalTurns: 5, maxTurns: 5 }),
+      }),
+      makeJob({
+        id: "j2",
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats({ minTurns: 7, segmentCount: 1, totalTurns: 7, maxTurns: 7 }),
+      }),
+    ];
+    const stats = aggregateAdaptiveTurnsStats(jobs, TODAY);
+    expect(stats.minTurns).toBe(7); // skips null, uses 7
+  });
+
+  it("filters to today's jobs only", () => {
+    const jobs = [
+      makeJob({
+        id: "j1",
+        enqueuedAt: `${TODAY}T10:00:00Z`,
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats({ segmentCount: 3, totalTurns: 30 }),
+      }),
+      makeJob({
+        id: "j2",
+        enqueuedAt: "2026-03-26T10:00:00Z", // yesterday
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats({ segmentCount: 5, totalTurns: 50 }),
+      }),
+    ];
+    const stats = aggregateAdaptiveTurnsStats(jobs, TODAY);
+    expect(stats.totalSegments).toBe(3); // only today's job
+  });
+
+  it("mixes jobs with and without stats", () => {
+    const jobs = [
+      makeJob({ id: "j1" }), // no stats (--no-adaptive or pre-existing)
+      makeJob({
+        id: "j2",
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats({ segmentCount: 2, adaptiveCount: 2, fallbackCount: 0, clampedCount: 0, totalTurns: 20, minTurns: 8, maxTurns: 12 }),
+      }),
+    ];
+    const stats = aggregateAdaptiveTurnsStats(jobs, TODAY);
+    expect(stats.totalSegments).toBe(2); // only j2
+    expect(stats.adaptiveRate).toBe(100);
+  });
+
+  it("handles all-fallback job", () => {
+    const jobs = [
+      makeJob({
+        id: "j1",
+        adaptiveTurnsStats: makeAdaptiveTurnsJobStats({
+          segmentCount: 3, adaptiveCount: 0, fallbackCount: 3, clampedCount: 0,
+          heavyToolActivations: 0, minTurns: 15, maxTurns: 15, totalTurns: 45,
+        }),
+      }),
+    ];
+    const stats = aggregateAdaptiveTurnsStats(jobs, TODAY);
+    expect(stats.adaptiveRate).toBe(0); // no adaptive segments
+    expect(stats.fallbackSegments).toBe(3);
+  });
+});
+
+// ── formatDashboard adaptive turns section ───────────────────
+
+describe("formatDashboard adaptive turns", () => {
+  function makeFullData(): DashboardData {
+    return {
+      generatedAt: "2026-03-27T11:00:00Z",
+      healthScore: 92,
+      topConcern: null,
+      jobs: { total: 7, complete: 6, failed: 1, queued: 0, running: 0, successRate: 85.7, totalCostUsd: 16.53, avgCostPerJob: 2.36, avgDurationSec: 512, failureBreakdown: {} },
+      oracle: { totalDecisions: 122, accuracyPercent: 100, confidenceAvg: 9.0, circuitBreakerTripped: false },
+      budget: { dailyLimitUsd: 25, dailySpentUsd: 16.53, dailyRemaining: 8.47, jobCount: 7, maxJobsPerDay: 20, byInstance: {} },
+      adaptiveTurns: { totalSegments: 24, adaptiveSegments: 16, fallbackSegments: 6, clampedSegments: 2, heavyToolActivations: 4, avgTurns: 8.3, minTurns: 3, maxTurns: 15, adaptiveRate: 66.7 },
+      instances: [],
+    };
+  }
+
+  it("renders adaptive turns section when data exists", () => {
+    const md = formatDashboard(makeFullData());
+    expect(md).toContain("## Adaptive Turns");
+    expect(md).toContain("| Total Segments | 24 |");
+    expect(md).toContain("| Adaptive | 16 (66.7%) |");
+    expect(md).toContain("| Fallback | 6 |");
+    expect(md).toContain("| Clamped | 2 |");
+    expect(md).toContain("| Heavy Tool Activations | 4 |");
+    expect(md).toContain("| Avg Turns/Segment | 8.3 |");
+    expect(md).toContain("| Min Turns | 3 |");
+    expect(md).toContain("| Max Turns | 15 |");
+  });
+
+  it("omits adaptive turns section when totalSegments is 0", () => {
+    const data = makeFullData();
+    data.adaptiveTurns = { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 };
+    const md = formatDashboard(data);
+    expect(md).not.toContain("## Adaptive Turns");
+  });
+
+  it("renders adaptive turns between Oracle and Budget sections", () => {
+    const md = formatDashboard(makeFullData());
+    const oracleIdx = md.indexOf("## Oracle");
+    const adaptiveIdx = md.indexOf("## Adaptive Turns");
+    const budgetIdx = md.indexOf("## Budget");
+    expect(oracleIdx).toBeLessThan(adaptiveIdx);
+    expect(adaptiveIdx).toBeLessThan(budgetIdx);
+  });
+});
+
+// ── buildDashboard adaptive turns ────────────────────────────
+
+describe("buildDashboard adaptive turns", () => {
+  it("includes adaptive turns stats from jobs", () => {
+    const state: DaemonState = {
+      version: 1,
+      jobs: [
+        makeJob({
+          id: "j1",
+          adaptiveTurnsStats: makeAdaptiveTurnsJobStats({
+            segmentCount: 4, adaptiveCount: 3, fallbackCount: 1, clampedCount: 0,
+            heavyToolActivations: 2, minTurns: 5, maxTurns: 12, totalTurns: 36,
+          }),
+        }),
+      ],
+      dailyCost: { date: TODAY, totalUsd: 2.36, jobCount: 1 },
+    };
+    const data = buildDashboard(state, makeMetrics(), makeGlobalBudget(), makeDaemonConfig(), TODAY);
+    expect(data.adaptiveTurns.totalSegments).toBe(4);
+    expect(data.adaptiveTurns.adaptiveSegments).toBe(3);
+    expect(data.adaptiveTurns.heavyToolActivations).toBe(2);
+    expect(data.adaptiveTurns.avgTurns).toBe(9); // 36/4
+  });
+
+  it("returns zero adaptive turns when no jobs have stats", () => {
+    const state: DaemonState = {
+      version: 1,
+      jobs: [makeJob({ id: "j1" })],
+      dailyCost: { date: TODAY, totalUsd: 2.36, jobCount: 1 },
+    };
+    const data = buildDashboard(state, makeMetrics(), makeGlobalBudget(), makeDaemonConfig(), TODAY);
+    expect(data.adaptiveTurns.totalSegments).toBe(0);
   });
 });

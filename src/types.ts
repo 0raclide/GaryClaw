@@ -291,6 +291,7 @@ export interface Job {
   researchTopic?: string;  // topic string for auto-research jobs
   failureCategory?: FailureCategory;
   retryable?: boolean;
+  adaptiveTurnsStats?: AdaptiveTurnsJobStats;  // undefined for pre-existing jobs or --no-adaptive
 }
 
 export interface DaemonState {
@@ -421,6 +422,19 @@ export interface DomainSection {
   content: string;
 }
 
+// ── Adaptive turns stats (per-job collection) ──────────────────
+
+export interface AdaptiveTurnsJobStats {
+  segmentCount: number;           // Total segments in this job
+  adaptiveCount: number;          // Segments that used growth-rate prediction
+  fallbackCount: number;          // Segments that used configured default ("no growth data")
+  clampedCount: number;           // Segments forced to minTurns ("already at/past target")
+  heavyToolActivations: number;   // Segments where heavy tool multiplier fired
+  minTurns: number | null;        // Lowest adaptive maxTurns predicted (null until first event)
+  maxTurns: number;               // Highest adaptive maxTurns predicted
+  totalTurns: number;             // Sum of all maxTurns (for computing avg)
+}
+
 // ── Dashboard ───────────────────────────────────────────────────
 
 export interface DashboardData {
@@ -452,6 +466,17 @@ export interface DashboardData {
     jobCount: number;
     maxJobsPerDay: number;
     byInstance: Record<string, { totalUsd: number; jobCount: number }>;
+  };
+  adaptiveTurns: {
+    totalSegments: number;          // Across all today's jobs
+    adaptiveSegments: number;       // Used growth-rate prediction
+    fallbackSegments: number;       // Used configured default
+    clampedSegments: number;        // Forced to minTurns (context budget exhausted)
+    heavyToolActivations: number;   // Heavy tool multiplier firings
+    avgTurns: number;               // Average maxTurns across all segments
+    minTurns: number;               // Lowest maxTurns seen today
+    maxTurns: number;               // Highest maxTurns seen today
+    adaptiveRate: number;           // % of segments using adaptive (0-100)
   };
   instances: string[];           // Active instance names
 }

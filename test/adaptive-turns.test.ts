@@ -463,4 +463,50 @@ describe("computeAdaptiveMaxTurns", () => {
       expect(HEAVY_TOOL_GROWTH_MULTIPLIER).toBe(2.5);
     });
   });
+
+  // ── Reason string contract (pinning for job-runner parser) ───
+
+  describe("reason string contract", () => {
+    it('fallback reason contains "no growth data"', () => {
+      // No turn history → fallback
+      const result = computeAdaptiveMaxTurns(state, 0.85, 15);
+      expect(result.reason).toContain("no growth data");
+    });
+
+    it('clamped reason contains "already at/past target"', () => {
+      state.contextWindow = 1_000_000;
+      // Build growing context to establish a positive growth rate
+      // and end past the target (0.85 * 0.85 * 1M = 722,500)
+      const sizes = [600_000, 650_000, 700_000, 750_000, 800_000, 900_000];
+      for (const size of sizes) {
+        recordTurnUsage(state, createMockSdkUsage({
+          input_tokens: 0,
+          cache_read_input_tokens: size,
+          cache_creation_input_tokens: 0,
+        }));
+      }
+      // Last turn at 900K — past 722.5K target, with positive growth rate
+      const result = computeAdaptiveMaxTurns(state, 0.85, 15);
+      expect(result.reason).toContain("already at/past target");
+    });
+
+    it('heavy tool reason contains "heavy tool"', () => {
+      state.contextWindow = 1_000_000;
+      // Add some growth data (need at least 2 turns for growth rate)
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 100_000,
+        cache_creation_input_tokens: 0,
+      }));
+      recordTurnUsage(state, createMockSdkUsage({
+        input_tokens: 0,
+        cache_read_input_tokens: 110_000,
+        cache_creation_input_tokens: 0,
+      }));
+      const result = computeAdaptiveMaxTurns(state, 0.85, 15, {
+        lastHeavyToolSeen: true,
+      });
+      expect(result.reason).toContain("heavy tool");
+    });
+  });
 });

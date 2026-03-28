@@ -741,4 +741,128 @@ describe("Job Runner", () => {
       expect(id).toBeTruthy();
     });
   });
+
+  // ── adaptive_turns event collection ──────────────────────────
+
+  describe("adaptive_turns event collection", () => {
+    it("initializes adaptiveTurnsStats on first adaptive_turns event", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 10, reason: "growth 5000 tok/turn, budget 50000 tok, predicted 10, clamped to 10", sessionIndex: 0, segmentIndex: 0 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+      await runner.processNext();
+
+      const job = runner.getState().jobs.find((j) => j.id === id)!;
+      expect(job.adaptiveTurnsStats).toBeDefined();
+      expect(job.adaptiveTurnsStats!.segmentCount).toBe(1);
+      expect(job.adaptiveTurnsStats!.adaptiveCount).toBe(1);
+      expect(job.adaptiveTurnsStats!.totalTurns).toBe(10);
+      expect(job.adaptiveTurnsStats!.minTurns).toBe(10);
+      expect(job.adaptiveTurnsStats!.maxTurns).toBe(10);
+    });
+
+    it("accumulates stats across multiple events", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 15, reason: "no growth data yet, using configured default", sessionIndex: 0, segmentIndex: 0 });
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 8, reason: "growth 5000 tok/turn, budget 40000 tok, predicted 8, clamped to 8", sessionIndex: 0, segmentIndex: 1 });
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 3, reason: "already at/past target (800000 >= 722500)", sessionIndex: 1, segmentIndex: 0 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+      await runner.processNext();
+
+      const stats = runner.getState().jobs.find((j) => j.id === id)!.adaptiveTurnsStats!;
+      expect(stats.segmentCount).toBe(3);
+      expect(stats.fallbackCount).toBe(1);
+      expect(stats.adaptiveCount).toBe(1);
+      expect(stats.clampedCount).toBe(1);
+      expect(stats.totalTurns).toBe(26); // 15 + 8 + 3
+      expect(stats.minTurns).toBe(3);
+      expect(stats.maxTurns).toBe(15);
+    });
+
+    it("classifies fallback reason correctly", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 15, reason: "no growth data yet, using configured default", sessionIndex: 0, segmentIndex: 0 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+      await runner.processNext();
+
+      const stats = runner.getState().jobs.find((j) => j.id === id)!.adaptiveTurnsStats!;
+      expect(stats.fallbackCount).toBe(1);
+      expect(stats.adaptiveCount).toBe(0);
+      expect(stats.clampedCount).toBe(0);
+    });
+
+    it("classifies clamped reason correctly", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 3, reason: "already at/past target (900000 >= 722500)", sessionIndex: 0, segmentIndex: 0 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+      await runner.processNext();
+
+      const stats = runner.getState().jobs.find((j) => j.id === id)!.adaptiveTurnsStats!;
+      expect(stats.clampedCount).toBe(1);
+      expect(stats.adaptiveCount).toBe(0);
+      expect(stats.fallbackCount).toBe(0);
+    });
+
+    it("detects heavy tool activations", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 5, reason: "growth 8000 tok/turn (heavy tool: x2.5), budget 100000 tok, predicted 5, clamped to 5", sessionIndex: 0, segmentIndex: 0 });
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 10, reason: "growth 5000 tok/turn, budget 50000 tok, predicted 10, clamped to 10", sessionIndex: 0, segmentIndex: 1 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+      await runner.processNext();
+
+      const stats = runner.getState().jobs.find((j) => j.id === id)!.adaptiveTurnsStats!;
+      expect(stats.heavyToolActivations).toBe(1); // only first has "heavy tool"
+      expect(stats.adaptiveCount).toBe(2); // both are adaptive (growth rate predictions)
+    });
+
+    it("job without adaptive_turns events has no stats", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        cbs.onEvent({ type: "cost_update", costUsd: 0.05, sessionIndex: 0 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+      await runner.processNext();
+
+      const job = runner.getState().jobs.find((j) => j.id === id)!;
+      expect(job.adaptiveTurnsStats).toBeUndefined();
+    });
+
+    it("tracks minTurns correctly with null initialization", async () => {
+      const deps = createMockDeps();
+      deps.runSkill.mockImplementation(async (_config: GaryClawConfig, cbs: OrchestratorCallbacks) => {
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 12, reason: "growth 3000 tok/turn, budget 36000 tok, predicted 12, clamped to 12", sessionIndex: 0, segmentIndex: 0 });
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 5, reason: "growth 6000 tok/turn, budget 30000 tok, predicted 5, clamped to 5", sessionIndex: 0, segmentIndex: 1 });
+        cbs.onEvent({ type: "adaptive_turns", maxTurns: 8, reason: "growth 4000 tok/turn, budget 32000 tok, predicted 8, clamped to 8", sessionIndex: 0, segmentIndex: 2 });
+      });
+
+      const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+      const id = runner.enqueue(["qa"], "manual", "trigger")!;
+      await runner.processNext();
+
+      const stats = runner.getState().jobs.find((j) => j.id === id)!.adaptiveTurnsStats!;
+      expect(stats.minTurns).toBe(5);
+      expect(stats.maxTurns).toBe(12);
+    });
+  });
 });

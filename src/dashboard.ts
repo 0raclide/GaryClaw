@@ -16,6 +16,7 @@ import type {
   OracleMetrics,
   GlobalBudget,
   BudgetConfig,
+  AdaptiveTurnsJobStats,
 } from "./types.js";
 
 // ── Pure aggregation functions ──────────────────────────────────
@@ -102,6 +103,69 @@ export function aggregateBudgetStats(
     jobCount: globalBudget.jobCount,
     maxJobsPerDay: config.maxJobsPerDay,
     byInstance: globalBudget.byInstance ?? {},
+  };
+}
+
+/**
+ * Aggregate adaptive turns statistics from today's jobs.
+ * Jobs without adaptiveTurnsStats (pre-existing or --no-adaptive) are silently excluded.
+ */
+export function aggregateAdaptiveTurnsStats(
+  jobs: Job[],
+  todayStr?: string,
+): DashboardData["adaptiveTurns"] {
+  const today = todayStr ?? new Date().toISOString().slice(0, 10);
+  const todayJobs = jobs.filter((j) => j.enqueuedAt.startsWith(today));
+  const withStats = todayJobs.filter((j) => j.adaptiveTurnsStats);
+
+  if (withStats.length === 0) {
+    return {
+      totalSegments: 0,
+      adaptiveSegments: 0,
+      fallbackSegments: 0,
+      clampedSegments: 0,
+      heavyToolActivations: 0,
+      avgTurns: 0,
+      minTurns: 0,
+      maxTurns: 0,
+      adaptiveRate: 0,
+    };
+  }
+
+  let totalSegments = 0;
+  let adaptiveSegments = 0;
+  let fallbackSegments = 0;
+  let clampedSegments = 0;
+  let heavyToolActivations = 0;
+  let totalTurns = 0;
+  let globalMin: number | null = null;
+  let globalMax = 0;
+
+  for (const job of withStats) {
+    const s = job.adaptiveTurnsStats!;
+    totalSegments += s.segmentCount;
+    adaptiveSegments += s.adaptiveCount;
+    fallbackSegments += s.fallbackCount;
+    clampedSegments += s.clampedCount;
+    heavyToolActivations += s.heavyToolActivations;
+    totalTurns += s.totalTurns;
+    // null-safe min: skip jobs where minTurns was never set
+    if (s.minTurns !== null) {
+      globalMin = globalMin === null ? s.minTurns : Math.min(globalMin, s.minTurns);
+    }
+    if (s.maxTurns > globalMax) globalMax = s.maxTurns;
+  }
+
+  return {
+    totalSegments,
+    adaptiveSegments,
+    fallbackSegments,
+    clampedSegments,
+    heavyToolActivations,
+    avgTurns: totalSegments > 0 ? totalTurns / totalSegments : 0,
+    minTurns: globalMin ?? 0,
+    maxTurns: globalMax,
+    adaptiveRate: totalSegments > 0 ? (adaptiveSegments / totalSegments) * 100 : 0,
   };
 }
 
@@ -209,6 +273,25 @@ export function formatDashboard(data: DashboardData): string {
     `| Circuit Breaker | ${data.oracle.circuitBreakerTripped ? "TRIPPED" : "OK"} |`,
   );
 
+  // Adaptive Turns section (only when data exists)
+  if (data.adaptiveTurns.totalSegments > 0) {
+    lines.push(
+      "",
+      "## Adaptive Turns",
+      "",
+      "| Metric | Value |",
+      "|--------|-------|",
+      `| Total Segments | ${data.adaptiveTurns.totalSegments} |`,
+      `| Adaptive | ${data.adaptiveTurns.adaptiveSegments} (${data.adaptiveTurns.adaptiveRate.toFixed(1)}%) |`,
+      `| Fallback | ${data.adaptiveTurns.fallbackSegments} |`,
+      `| Clamped | ${data.adaptiveTurns.clampedSegments} |`,
+      `| Heavy Tool Activations | ${data.adaptiveTurns.heavyToolActivations} |`,
+      `| Avg Turns/Segment | ${data.adaptiveTurns.avgTurns.toFixed(1)} |`,
+      `| Min Turns | ${data.adaptiveTurns.minTurns} |`,
+      `| Max Turns | ${data.adaptiveTurns.maxTurns} |`,
+    );
+  }
+
   // Budget section
   const remainingPct =
     data.budget.dailyLimitUsd > 0
@@ -258,9 +341,10 @@ export function buildDashboard(
   const jobs = aggregateJobStats(state.jobs, todayStr);
   const oracle = aggregateOracleStats(metrics);
   const budget = aggregateBudgetStats(globalBudget, config.budget);
+  const adaptiveTurns = aggregateAdaptiveTurnsStats(state.jobs, todayStr);
   const instances = Object.keys(globalBudget.byInstance ?? {});
 
-  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, instances });
+  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, instances });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -269,6 +353,7 @@ export function buildDashboard(
     jobs,
     oracle,
     budget,
+    adaptiveTurns,
     instances,
   };
 }

@@ -413,6 +413,41 @@ function buildCallbacks(job: Job, config: DaemonConfig, deps: JobRunnerDeps): Or
       ) {
         throw new PerJobCostExceededError(job.costUsd, config.budget.perJobCostLimitUsd);
       }
+      // Collect adaptive turns stats
+      if (event.type === "adaptive_turns") {
+        if (!job.adaptiveTurnsStats) {
+          job.adaptiveTurnsStats = {
+            segmentCount: 0,
+            adaptiveCount: 0,
+            fallbackCount: 0,
+            clampedCount: 0,
+            heavyToolActivations: 0,
+            minTurns: null,
+            maxTurns: 0,
+            totalTurns: 0,
+          };
+        }
+        const stats = job.adaptiveTurnsStats;
+        stats.segmentCount++;
+        stats.totalTurns += event.maxTurns;
+        stats.minTurns =
+          stats.minTurns === null
+            ? event.maxTurns
+            : Math.min(stats.minTurns, event.maxTurns);
+        stats.maxTurns = Math.max(stats.maxTurns, event.maxTurns);
+
+        // Parse reason string to classify segment type
+        if (event.reason.includes("no growth data")) {
+          stats.fallbackCount++;
+        } else if (event.reason.includes("already at/past target")) {
+          stats.clampedCount++;
+        } else {
+          stats.adaptiveCount++;
+        }
+        if (event.reason.includes("heavy tool")) {
+          stats.heavyToolActivations++;
+        }
+      }
       // Log key events
       if (event.type === "error") {
         deps.log("error", `[${job.id}] ${event.message}`);
