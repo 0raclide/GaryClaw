@@ -226,3 +226,24 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 **Effort:** S (human: ~2 hours / CC: ~15 min)
 **Depends on:** First dogfood run completing on an external repo
 **Added by:** /plan-eng-review on 2026-03-28, confirmed by /qa on 2026-03-28
+
+## P2: Wire Deterministic TS Analysis Into Evaluate Pipeline Path
+
+**What:** The evaluate skill has well-tested pure TS analysis functions (writeEvaluationReport, parseClaudeImprovements, deduplicateImprovements, extractObviousImprovements) that are never called in the actual pipeline path. The pipeline currently relies on Claude writing files via the prompt, which is best-effort. Wire the deterministic path: after the evaluate segment completes, run all analysis functions from TypeScript, parse Claude's `<improvements>` output, merge with obvious improvements via dedup, and write the final improvement-candidates.md. Also includes 3 accepted code quality fixes.
+
+**Why:** Without this wiring, the self-improvement loop is broken. The cli.ts post-pipeline hook reads improvement-candidates.md to append to GaryClaw's TODOS.md, but that file only exists if Claude happens to write it. The tested, deterministic TypeScript path is orphaned from the runtime pipeline. This blocks the entire evaluate skill from functioning as designed.
+
+**Pros:** Closes the self-improvement feedback loop. Makes the evaluate skill deterministic instead of best-effort. Enables the dedup merge logic (obvious + Claude candidates) that's already tested. Fixes 3 code quality issues found in eng review.
+
+**Cons:** Requires understanding how to extract Claude's segment output after runSkillWithPrompt completes. May need a small pipeline.ts change to capture segment output.
+
+**Context:** Found by /plan-eng-review on 2026-03-28. Four accepted findings rolled into one TODO:
+- 1A: Wire TS analysis into pipeline (writeEvaluationReport + parseClaudeImprovements + deduplicateImprovements called after segment)
+- 2A: Fix effort scale mapping in formatImprovementCandidates (human/CC scales are identical, should show compression ratio: XS→human:~30min/CC:~5min, S→human:~2days/CC:~20min, M→human:~1week/CC:~1h)
+- 3A: Use atomic read-then-write for TODOS.md append in cli.ts hook (safeReadText + safeWriteText instead of appendFileSync)
+- 4A: Add 4 CLI hook tests (happy path, skip same project, skip missing candidates, error handling) + 4 minor branch tests (priority.md extraction, researchTriggered, duration, adaptiveTurnsUsed)
+- Add error boundary in buildEvaluatePrompt around analysis function calls
+
+**Effort:** S (human: ~3 days / CC: ~20 min)
+**Depends on:** Nothing (evaluate.ts and all analysis functions already exist and are tested)
+**Added by:** /plan-eng-review on 2026-03-28
