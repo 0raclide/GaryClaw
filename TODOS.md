@@ -207,7 +207,7 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 - [x] `readDecisionsFromLog` silently drops corrupt JSONL lines — add warning log — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-002)
 - [ ] `parseDomainSections` edge case with adjacent sections without body text — add test
 - [x] `createResearchCanUseTool` sync return used where async expected — align signatures — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-003)
-- [ ] Research cost extraction uses `(msg as any).total_cost_usd` — use extractResultData instead
+- [x] Research cost extraction uses `(msg as any).total_cost_usd` — use extractResultData instead — Fixed by /qa Run 10 on main, 2026-03-28 (ISSUE-002)
 - [ ] `extractTopicKeywords` doesn't filter numeric-only tokens — add isNaN guard
 - [ ] `isTopicGroupFresh` brittle to topic naming variations — consider fuzzy matching
 - [x] `branchName` doesn't sanitize `instanceName` for illegal git branch chars — add validation — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-002)
