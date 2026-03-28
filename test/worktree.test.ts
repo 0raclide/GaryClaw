@@ -221,16 +221,27 @@ describe("mergeWorktreeBranch", () => {
     expect(result.commitCount).toBe(2);
   });
 
-  it("fails when branches have diverged", () => {
+  it("rebases and merges when branches have diverged (no conflict)", () => {
     const info = createWorktree(repoDir, "builder", "main");
     makeCommit(info.path, "feature.txt", "feature", "Add feature in worktree");
 
-    // Make a commit on main too (diverge)
+    // Make a commit on main too (diverge) — different file, so rebase succeeds
     makeCommit(repoDir, "main-change.txt", "main change", "Change on main");
 
     const result = mergeWorktreeBranch(repoDir, "builder", "main");
+    expect(result.merged).toBe(true);
+    expect(result.commitCount).toBe(1);
+  });
+
+  it("fails when rebase has conflicts", () => {
+    const info = createWorktree(repoDir, "builder", "main");
+    // Both branches modify the same file — rebase will conflict
+    makeCommit(info.path, "shared.txt", "worktree version", "Edit shared file in worktree");
+    makeCommit(repoDir, "shared.txt", "main version", "Edit shared file on main");
+
+    const result = mergeWorktreeBranch(repoDir, "builder", "main");
     expect(result.merged).toBe(false);
-    expect(result.reason).toContain("cannot be fast-forwarded");
+    expect(result.reason).toContain("conflicts");
     expect(result.commitCount).toBe(1);
   });
 
