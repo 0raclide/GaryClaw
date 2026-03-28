@@ -9,7 +9,7 @@
  */
 
 import { createInterface } from "node:readline";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -522,6 +522,11 @@ ${BOLD}Daemon Config (daemon.json triggers):${RESET}
 // ── Main ────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Capture the original working directory before --project-dir redirects.
+  // Used by post-pipeline evaluate hook to write improvement candidates
+  // back to GaryClaw's own TODOS.md (not the target repo).
+  const garyClawRoot = process.cwd();
+
   const parsed = parseArgs(process.argv);
 
   if (parsed.command === "help" || parsed.command === "--help") {
@@ -597,6 +602,25 @@ async function main(): Promise<void> {
       console.log("");
 
       await runPipeline(parsed.skills, config, cbs);
+
+      // Post-pipeline evaluate hook: if the pipeline included "evaluate" and
+      // the target repo is different from GaryClaw's own root, append any
+      // improvement candidates to GaryClaw's TODOS.md.
+      if (parsed.skills.includes("evaluate") && parsed.projectDir !== garyClawRoot) {
+        const candidatesPath = join(parsed.projectDir, ".garyclaw", "improvement-candidates.md");
+        const garyClawTodosPath = join(garyClawRoot, "TODOS.md");
+        if (existsSync(candidatesPath)) {
+          try {
+            const candidates = readFileSync(candidatesPath, "utf-8");
+            if (candidates.trim()) {
+              appendFileSync(garyClawTodosPath, "\n\n" + candidates, "utf-8");
+              console.log(`\n${GREEN}Evaluate:${RESET} Appended ${candidates.split("## P").length - 1} improvement candidate(s) to ${garyClawTodosPath}`);
+            }
+          } catch (err) {
+            console.log(`${YELLOW}Warning:${RESET} Could not append improvement candidates to TODOS.md: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
     }
 
     return;
