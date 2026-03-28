@@ -157,7 +157,10 @@ export function getCommitEmails(
       { cwd: projectDir, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] },
     ).trim();
     if (!output) return [];
-    return output.split("\n").filter(Boolean).slice(0, 100); // Cap to prevent memory spike on pathological ranges
+    const emails = output.split("\n").filter(Boolean);
+    // If more than 100 commits in range, return empty (don't filter — safe default: trigger fires)
+    if (emails.length > 100) return [];
+    return emails;
   } catch {
     return []; // On error, don't filter (safe default: trigger fires)
   }

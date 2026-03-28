@@ -198,6 +198,25 @@ describe("self-commit filtering", () => {
     );
   });
 
+  it("fires trigger when getCommitEmails returns empty due to >100 cap", () => {
+    const deps = createMockDeps();
+    const trigger = vi.fn();
+
+    deps.getHead = vi.fn()
+      .mockReturnValueOnce("aaa1111111111")
+      .mockReturnValueOnce("bbb2222222222");
+    // Simulate >100 cap: getCommitEmails returns [] (safe default)
+    deps.getCommitEmails = vi.fn().mockReturnValue([]);
+
+    const poller = createGitPoller(createTestConfig(), "/tmp/project", trigger, deps);
+    poller.start();
+    deps.advanceTimers();
+    deps.fireDebounce();
+
+    // Empty array means "couldn't determine" — trigger should fire
+    expect(trigger).toHaveBeenCalledOnce();
+  });
+
   it("passes correct range to getCommitEmails", () => {
     const deps = createMockDeps();
     const trigger = vi.fn();
