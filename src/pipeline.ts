@@ -354,8 +354,17 @@ async function executePipelineFrom(
         const { wrapped, getAccumulatedText } = createTextAccumulatingCallbacks(callbacks);
         await runSkillWithPrompt(skillConfig, wrapped, evalPrompt);
 
-        // Run deterministic post-evaluate analysis
-        runPostEvaluateAnalysis(config.projectDir, getAccumulatedText());
+        // Run deterministic post-evaluate analysis — wrap in try/catch so a
+        // crash here doesn't mark the whole evaluate skill as "failed" when
+        // the Claude run itself succeeded.
+        try {
+          runPostEvaluateAnalysis(config.projectDir, getAccumulatedText());
+        } catch (postErr) {
+          callbacks.onEvent({
+            type: "assistant_text",
+            text: `\n[Warning] Post-evaluate analysis failed: ${postErr instanceof Error ? postErr.message : String(postErr)}. The evaluate skill ran successfully but deterministic analysis could not complete.\n`,
+          });
+        }
       } else if (prevEntry?.report) {
         // Override the initial prompt via a custom prompt in the skill config
         // runSkill uses `Run the /${skillName} skill...` as default prompt,
