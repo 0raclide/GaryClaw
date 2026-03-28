@@ -507,8 +507,8 @@ describe("Job Runner", () => {
 
       const runner = createJobRunner(createTestConfig(), TEST_DIR, createMockDeps());
       const staleJob = runner.getState().jobs[0];
-      expect(staleJob.status).toBe("failed");
-      expect(staleJob.error).toContain("restarted");
+      expect(staleJob.status).toBe("queued");
+      expect(staleJob.retryCount).toBe(1);
     });
 
     it("handles corrupt state file gracefully", () => {

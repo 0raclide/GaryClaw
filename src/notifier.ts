@@ -36,6 +36,18 @@ export function notifyJobError(job: Job, config: DaemonConfig): void {
 }
 
 /**
+ * Send a macOS notification when a crashed job is resumed.
+ */
+export function notifyJobResumed(job: Job, completedSkillCount: number, config: DaemonConfig): void {
+  if (!config.notifications.enabled || !config.notifications.onComplete) return;
+
+  const instanceLabel = config.name ? ` [${config.name}]` : "";
+  const title = `GaryClaw${instanceLabel} Job Recovered`;
+  const message = `Resuming /${job.skills.join(" → /")} from skill ${completedSkillCount + 1}/${job.skills.length} (attempt ${job.retryCount ?? 1}/2)`;
+  sendNotification(title, message);
+}
+
+/**
  * Send a macOS notification for an escalated decision.
  */
 export function notifyEscalation(question: string, config: DaemonConfig): void {

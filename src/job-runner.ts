@@ -10,9 +10,9 @@ import { readFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { safeWriteJSON } from "./safe-json.js";
 import { buildSdkEnv } from "./sdk-wrapper.js";
-import { runPipeline } from "./pipeline.js";
+import { runPipeline, resumePipeline, readPipelineState } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
-import { notifyJobComplete, notifyJobError, writeSummary } from "./notifier.js";
+import { notifyJobComplete, notifyJobError, notifyJobResumed, writeSummary } from "./notifier.js";
 import { generateDashboard } from "./dashboard.js";
 import {
   readGlobalBudget,
@@ -60,20 +60,24 @@ export interface JobRunner {
 
 export interface JobRunnerDeps {
   runPipeline: typeof runPipeline;
+  resumePipeline: typeof resumePipeline;
   runSkill: typeof runSkill;
   buildSdkEnv: typeof buildSdkEnv;
   notifyJobComplete: typeof notifyJobComplete;
   notifyJobError: typeof notifyJobError;
+  notifyJobResumed: typeof notifyJobResumed;
   writeSummary: typeof writeSummary;
   log: (level: string, message: string) => void;
 }
 
 const defaultDeps: JobRunnerDeps = {
   runPipeline,
+  resumePipeline,
   runSkill,
   buildSdkEnv,
   notifyJobComplete,
   notifyJobError,
+  notifyJobResumed,
   writeSummary,
   log: () => {},
 };
@@ -100,12 +104,31 @@ export function createJobRunner(
   let state = loadState(checkpointDir);
   let running = false;
 
-  // On start, mark any "running" jobs as "failed" (stale from crash)
+  // On start, attempt to resume crashed jobs instead of marking them failed
   for (const job of state.jobs) {
     if (job.status === "running") {
-      job.status = "failed";
-      job.error = "Daemon restarted — job was interrupted";
-      job.completedAt = new Date().toISOString();
+      const retryCount = (job.retryCount ?? 0) + 1;
+      if (retryCount > 2) {
+        // Too many crashes — this is a real bug, not transient
+        job.status = "failed";
+        job.error = `Daemon restarted ${retryCount} times — job abandoned (likely a persistent failure, not transient)`;
+        job.completedAt = new Date().toISOString();
+        job.failureCategory = "daemon_crash" as any; // Generic crash category
+        job.retryable = false;
+
+        // Append failure record for observability
+        const record = buildFailureRecord(
+          new Error(job.error), job.id, job.skills, resolvedInstanceName,
+        );
+        appendFailureRecord(record, checkpointDir);
+        d.log("error", `Job ${job.id} failed after ${retryCount} crash retries`);
+      } else {
+        // Re-queue for resume
+        job.status = "queued";
+        job.retryCount = retryCount;
+        job.costUsd = 0;
+        d.log("info", `Job ${job.id} interrupted — re-queued for resume (attempt ${retryCount}/2)`);
+      }
     }
   }
   persistState(state, checkpointDir);
@@ -239,9 +262,36 @@ export function createJobRunner(
 
     const clawConfig = buildGaryClawConfig(jobConfig, nextJob, jobDir, d, claimedItems);
 
+    // Detect if this is a pipeline resume (retry with existing pipeline.json)
+    let isPipelineResume = (nextJob.retryCount ?? 0) > 0 && nextJob.skills.length > 1;
+
+    if (isPipelineResume) {
+      const pipelineState = readPipelineState(jobDir);
+      if (pipelineState) {
+        const completedCost = pipelineState.skills
+          .filter(s => s.status === "complete" && s.report)
+          .reduce((sum, s) => sum + (s.report?.estimatedCostUsd ?? 0), 0);
+        nextJob.priorSkillCostUsd = completedCost;
+        const completedCount = pipelineState.skills.filter(s => s.status === "complete").length;
+        d.log("info", `Resuming pipeline: ${completedCount}/${pipelineState.skills.length} skills already complete ($${completedCost.toFixed(3)} spent)`);
+
+        // Send recovery notification
+        d.notifyJobResumed(nextJob, completedCount, jobConfig);
+      } else {
+        d.log("warn", `No valid pipeline.json found for resumed job ${nextJob.id} — falling back to fresh pipeline`);
+        isPipelineResume = false;
+      }
+    }
+
     try {
       if (nextJob.skills.length === 1) {
+        // Single-skill jobs retry from scratch (cheap, $0.30-0.50)
+        if ((nextJob.retryCount ?? 0) > 0) {
+          d.log("info", `Retrying single-skill job ${nextJob.id} from scratch (attempt ${nextJob.retryCount}/2)`);
+        }
         await d.runSkill({ ...clawConfig, skillName: nextJob.skills[0] }, callbacks);
+      } else if (isPipelineResume) {
+        await d.resumePipeline(jobDir, clawConfig, callbacks);
       } else {
         await d.runPipeline(nextJob.skills, clawConfig, callbacks);
       }
@@ -319,6 +369,9 @@ export function createJobRunner(
 
       d.writeSummary(nextJob, jobDir);
       d.notifyJobError(nextJob, jobConfig);
+      if ((nextJob.retryCount ?? 0) > 0) {
+        d.log("warn", `Retry ${nextJob.retryCount}/2 failed for ${nextJob.id} [${classification.category}]`);
+      }
       d.log("error", `Failed ${nextJob.id} [${classification.category}]: ${nextJob.error}`);
     }
 
