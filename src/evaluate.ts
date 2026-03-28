@@ -824,8 +824,11 @@ export function runPostEvaluateAnalysis(
   projectDir: string,
   claudeOutput: string,
 ): EvaluationReport {
-  // 1. Run deterministic analysis
-  const bootstrap = safeAnalyze(() => analyzeBootstrapQuality(projectDir), defaultBootstrapEvaluation());
+  // 1. Run deterministic analysis (error notes for traceability, matching buildEvaluatePrompt)
+  const bootstrap = safeAnalyze(() => analyzeBootstrapQuality(projectDir), {
+    ...defaultBootstrapEvaluation(),
+    qualityNotes: ["analyzeBootstrapQuality threw an error"],
+  });
   const oracle = safeAnalyze(() => analyzeOraclePerformance(projectDir), defaultOracleEvaluation());
   const pipeline = safeAnalyze(() => analyzePipelineHealth(projectDir), defaultPipelineEvaluation());
 
