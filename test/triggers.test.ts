@@ -657,6 +657,8 @@ describe("createCronPoller sleep resilience", () => {
     const matchedDate1 = new Date(matchedIso1!);
     expect(matchedDate1.getHours()).toBe(22);
     expect(matchedDate1.getMinutes()).toBe(0);
+    // Should use recovery detail format (gap > 2 min)
+    expect(detail1).toMatch(/^Cron recovered after \d+ min, \d+ window\(s\) missed/);
   });
 
   it("trigger detail shows the matched time, not current time", () => {
@@ -678,6 +680,8 @@ describe("createCronPoller sleep resilience", () => {
     const matchedDate = new Date(matchedIso!);
     expect(matchedDate.getHours()).toBe(16);
     expect(matchedDate.getMinutes()).toBe(0);
+    // Should use recovery format (164 min gap)
+    expect(detail).toMatch(/^Cron recovered after/);
   });
 
   it("does not fire for windows before start()", () => {
@@ -716,6 +720,10 @@ describe("createCronPoller sleep resilience", () => {
     deps.setTime(new Date(2026, 2, 26, 14, 0, 0));
     deps.advanceTimers();
     expect(trigger).toHaveBeenCalledOnce();
+    // Normal tick (1 min gap) uses "Cron matched:" format, not recovery
+    const normalDetail = trigger.mock.calls[0][1] as string;
+    expect(normalDetail).toMatch(/^Cron matched:/);
+    expect(normalDetail).not.toMatch(/recovered/);
 
     // 14:01 — no match
     deps.setTime(new Date(2026, 2, 26, 14, 1, 0));
@@ -761,6 +769,66 @@ describe("createCronPoller sleep resilience", () => {
     const matchedDateMidnight = new Date(matchedIsoMidnight!);
     expect(matchedDateMidnight.getHours()).toBe(2);
     expect(matchedDateMidnight.getMinutes()).toBe(0);
+    // Should use recovery format (420 min gap)
+    expect(detailMidnight).toMatch(/^Cron recovered after/);
+  });
+
+  it("recovery detail includes gap duration and window count", () => {
+    const trigger = vi.fn();
+    // Start at 14:01, sleep to 22:01
+    const startTime = new Date(2026, 2, 26, 14, 1, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start();
+
+    deps.setTime(new Date(2026, 2, 26, 22, 1, 0));
+    deps.advanceTimers();
+
+    expect(trigger).toHaveBeenCalledOnce();
+    const detail = trigger.mock.calls[0][1] as string;
+    // Gap is 480 minutes (14:01 to 22:01)
+    expect(detail).toContain("480 min");
+    // Windows missed: 16:00, 18:00, 20:00, 22:00 = 4
+    expect(detail).toContain("4 window(s) missed");
+    expect(detail).toContain("firing once");
+  });
+
+  it("scan starts at minute-floored boundary (clean ISO timestamps)", () => {
+    const trigger = vi.fn();
+    // Start at 14:00:30 (30 seconds into the minute)
+    const startTime = new Date(2026, 2, 26, 14, 0, 30);
+    const deps = createMockCronDeps(startTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start();
+
+    // 14:00:30 → scan starts at 14:00:00 (floored). 14:00 matches cron.
+    expect(trigger).toHaveBeenCalledOnce();
+    const detail = trigger.mock.calls[0][1] as string;
+    // The ISO timestamp should be at :00 seconds (floored minute boundary)
+    const matchedIso = detail.match(/at (.+)$/)?.[1];
+    const matchedDate = new Date(matchedIso!);
+    expect(matchedDate.getSeconds()).toBe(0);
+    expect(matchedDate.getMilliseconds()).toBe(0);
+  });
+
+  it("short gap (2 min) uses normal detail format, not recovery", () => {
+    const trigger = vi.fn();
+    const startTime = new Date(2026, 2, 26, 13, 58, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start();
+
+    // 2-minute gap to 14:00 — under the 2-min recovery threshold
+    deps.setTime(new Date(2026, 2, 26, 14, 0, 0));
+    deps.advanceTimers();
+
+    expect(trigger).toHaveBeenCalledOnce();
+    const detail = trigger.mock.calls[0][1] as string;
+    expect(detail).toMatch(/^Cron matched:/);
+    expect(detail).not.toMatch(/recovered/);
   });
 
   it("dedup still works — same minute checked twice fires only once", () => {

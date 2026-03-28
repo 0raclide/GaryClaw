@@ -312,16 +312,18 @@ export function createCronPoller(
     const now = d.now();
     const nowMs = now.getTime();
 
-    // Scan every minute from lastCheckedAt to now.
+    // Scan every minute from lastCheckedAt (floored to minute boundary) to now.
     // The lastFiredMinute guard prevents double-fire if a minute was already checked.
     // This scan is O(minutes-slept) per tick — 1440 iterations max for 24h sleep, <1ms.
-    const scanStart = lastCheckedAt;
+    const scanStart = lastCheckedAt - (lastCheckedAt % 60_000);
     let latestMatch: Date | null = null;
+    let matchCount = 0;
 
     for (let t = scanStart; t <= nowMs; t += 60_000) {
       const candidate = new Date(t);
       if (matchesCronSchedule(schedule, candidate)) {
         latestMatch = candidate;
+        matchCount++;
       }
     }
 
@@ -329,7 +331,10 @@ export function createCronPoller(
       const minuteKey = `${latestMatch.getFullYear()}-${latestMatch.getMonth()}-${latestMatch.getDate()}-${latestMatch.getHours()}-${latestMatch.getMinutes()}`;
       if (minuteKey !== lastFiredMinute) {
         lastFiredMinute = minuteKey;
-        const detail = `Cron matched: ${config.expression} at ${latestMatch.toISOString()}`;
+        const gapMinutes = Math.floor((nowMs - lastCheckedAt) / 60_000);
+        const detail = gapMinutes > 2
+          ? `Cron recovered after ${gapMinutes} min, ${matchCount} window(s) missed, firing once: ${config.expression} at ${latestMatch.toISOString()}`
+          : `Cron matched: ${config.expression} at ${latestMatch.toISOString()}`;
         onTrigger(config.skills, detail);
       }
     }
