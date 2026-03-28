@@ -578,6 +578,228 @@ describe("createCronPoller", () => {
   });
 });
 
+describe("createCronPoller sleep resilience", () => {
+  function createCronConfig(overrides: Partial<CronTrigger> = {}): CronTrigger {
+    return {
+      type: "cron",
+      expression: "0 */2 * * *", // every 2 hours
+      skills: ["qa"],
+      ...overrides,
+    };
+  }
+
+  function createMockCronDeps(nowDate: Date): CronPollerDeps & {
+    _intervalCallbacks: (() => void)[];
+    advanceTimers: () => void;
+    setTime: (d: Date) => void;
+  } {
+    let currentTime = nowDate;
+    const intervalCallbacks: (() => void)[] = [];
+    return {
+      now: vi.fn(() => currentTime),
+      setInterval: vi.fn((fn: () => void, _ms: number) => {
+        intervalCallbacks.push(fn);
+        return 1 as any;
+      }),
+      clearInterval: vi.fn(),
+      _intervalCallbacks: intervalCallbacks,
+      advanceTimers() {
+        for (const cb of intervalCallbacks) cb();
+      },
+      setTime(d: Date) {
+        currentTime = d;
+      },
+    };
+  }
+
+  it("fires after waking past a cron window", () => {
+    const trigger = vi.fn();
+    // Start at 14:00
+    const startTime = new Date(2026, 2, 26, 14, 0, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start();
+    // 14:00 matches "0 */2 * * *", so it fires immediately
+    expect(trigger).toHaveBeenCalledOnce();
+
+    // Simulate sleep: jump to 14:45 (past nothing new) — no extra trigger
+    deps.setTime(new Date(2026, 2, 26, 14, 45, 0));
+    deps.advanceTimers();
+    expect(trigger).toHaveBeenCalledOnce();
+
+    // Simulate sleep: jump to 16:45 (past 16:00 window)
+    deps.setTime(new Date(2026, 2, 26, 16, 45, 0));
+    deps.advanceTimers();
+    expect(trigger).toHaveBeenCalledTimes(2);
+  });
+
+  it("fires the latest match only after long sleep", () => {
+    const trigger = vi.fn();
+    // Start at 14:01 (just after 14:00 window)
+    const startTime = new Date(2026, 2, 26, 14, 1, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start();
+    // 14:01 doesn't match, no fire
+    expect(trigger).not.toHaveBeenCalled();
+
+    // Sleep from 14:01 to 22:01 (misses 16:00, 18:00, 20:00, 22:00)
+    deps.setTime(new Date(2026, 2, 26, 22, 1, 0));
+    deps.advanceTimers();
+
+    // Should fire exactly once (for 22:00, the latest match)
+    expect(trigger).toHaveBeenCalledOnce();
+    // Verify the matched time has hour=22 (use Date to check, since toISOString is UTC)
+    const detail1 = trigger.mock.calls[0][1] as string;
+    const matchedIso1 = detail1.match(/at (.+)$/)?.[1];
+    const matchedDate1 = new Date(matchedIso1!);
+    expect(matchedDate1.getHours()).toBe(22);
+    expect(matchedDate1.getMinutes()).toBe(0);
+  });
+
+  it("trigger detail shows the matched time, not current time", () => {
+    const trigger = vi.fn();
+    const startTime = new Date(2026, 2, 26, 14, 1, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start();
+
+    // Sleep to 16:45 — should catch 16:00 window
+    deps.setTime(new Date(2026, 2, 26, 16, 45, 0));
+    deps.advanceTimers();
+
+    expect(trigger).toHaveBeenCalledOnce();
+    // Detail should reference 16:00, not 16:45
+    const detail = trigger.mock.calls[0][1] as string;
+    const matchedIso = detail.match(/at (.+)$/)?.[1];
+    const matchedDate = new Date(matchedIso!);
+    expect(matchedDate.getHours()).toBe(16);
+    expect(matchedDate.getMinutes()).toBe(0);
+  });
+
+  it("does not fire for windows before start()", () => {
+    const trigger = vi.fn();
+    // Cron is "0 14 * * *". Start at 15:00 (past the 14:00 window)
+    const startTime = new Date(2026, 2, 26, 15, 0, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const config = createCronConfig({ expression: "0 14 * * *" });
+    const poller = createCronPoller(config, trigger, deps);
+    poller!.start();
+
+    // Advance 60s — should NOT fire for the 14:00 window
+    deps.setTime(new Date(2026, 2, 26, 15, 1, 0));
+    deps.advanceTimers();
+
+    expect(trigger).not.toHaveBeenCalled();
+  });
+
+  it("normal operation unchanged (awake, 60s ticks)", () => {
+    const trigger = vi.fn();
+    // Start at 13:58
+    const startTime = new Date(2026, 2, 26, 13, 58, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start();
+    expect(trigger).not.toHaveBeenCalled(); // 13:58 doesn't match
+
+    // 13:59
+    deps.setTime(new Date(2026, 2, 26, 13, 59, 0));
+    deps.advanceTimers();
+    expect(trigger).not.toHaveBeenCalled();
+
+    // 14:00 — matches!
+    deps.setTime(new Date(2026, 2, 26, 14, 0, 0));
+    deps.advanceTimers();
+    expect(trigger).toHaveBeenCalledOnce();
+
+    // 14:01 — no match
+    deps.setTime(new Date(2026, 2, 26, 14, 1, 0));
+    deps.advanceTimers();
+    expect(trigger).toHaveBeenCalledOnce();
+  });
+
+  it("long sleep (24h+) fires exactly once", () => {
+    const trigger = vi.fn();
+    const startTime = new Date(2026, 2, 26, 14, 1, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start();
+
+    // Sleep for 25 hours (from 14:01 to next day 15:01)
+    // Missed: 16:00, 18:00, 20:00, 22:00, 00:00, 02:00, 04:00, 06:00, 08:00, 10:00, 12:00, 14:00
+    deps.setTime(new Date(2026, 2, 27, 15, 1, 0));
+    deps.advanceTimers();
+
+    // Should fire exactly once (for 14:00 on the 27th, the latest match)
+    expect(trigger).toHaveBeenCalledOnce();
+  });
+
+  it("sleep across midnight fires for overnight window", () => {
+    const trigger = vi.fn();
+    // Cron fires at 2am: "0 2 * * *"
+    const startTime = new Date(2026, 2, 26, 23, 0, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const config = createCronConfig({ expression: "0 2 * * *" });
+    const poller = createCronPoller(config, trigger, deps);
+    poller!.start();
+    expect(trigger).not.toHaveBeenCalled();
+
+    // Sleep from 23:00 to 06:00 — should catch the 02:00 window
+    deps.setTime(new Date(2026, 2, 27, 6, 0, 0));
+    deps.advanceTimers();
+
+    expect(trigger).toHaveBeenCalledOnce();
+    const detailMidnight = trigger.mock.calls[0][1] as string;
+    const matchedIsoMidnight = detailMidnight.match(/at (.+)$/)?.[1];
+    const matchedDateMidnight = new Date(matchedIsoMidnight!);
+    expect(matchedDateMidnight.getHours()).toBe(2);
+    expect(matchedDateMidnight.getMinutes()).toBe(0);
+  });
+
+  it("dedup still works — same minute checked twice fires only once", () => {
+    const trigger = vi.fn();
+    const matchingTime = new Date(2026, 2, 26, 14, 0, 0);
+    const deps = createMockCronDeps(matchingTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start(); // Fires once at 14:00
+    expect(trigger).toHaveBeenCalledOnce();
+
+    // Check again at same minute (e.g., 14:00:30)
+    deps.setTime(new Date(2026, 2, 26, 14, 0, 30));
+    deps.advanceTimers();
+    expect(trigger).toHaveBeenCalledOnce(); // Still just once
+
+    // 14:00:59
+    deps.setTime(new Date(2026, 2, 26, 14, 0, 59));
+    deps.advanceTimers();
+    expect(trigger).toHaveBeenCalledOnce(); // Still just once
+  });
+
+  it("clock jumping backward does not fire", () => {
+    const trigger = vi.fn();
+    const startTime = new Date(2026, 2, 26, 14, 1, 0);
+    const deps = createMockCronDeps(startTime);
+
+    const poller = createCronPoller(createCronConfig(), trigger, deps);
+    poller!.start();
+
+    // Clock jumps backward (NTP correction)
+    deps.setTime(new Date(2026, 2, 26, 13, 50, 0));
+    deps.advanceTimers();
+
+    // Should not fire — scan range is empty (start > end)
+    expect(trigger).not.toHaveBeenCalled();
+  });
+});
+
 describe("validateCronExpression", () => {
   it("returns null for valid expression", () => {
     expect(validateCronExpression("0 2 * * *")).toBeNull();

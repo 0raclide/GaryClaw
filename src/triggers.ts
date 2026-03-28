@@ -306,22 +306,40 @@ export function createCronPoller(
   const d = { ...defaultCronDeps, ...deps };
   let timer: ReturnType<typeof globalThis.setInterval> | null = null;
   let lastFiredMinute: string | null = null; // "YYYY-MM-DD HH:MM" to avoid double-fire
+  let lastCheckedAt: number = 0; // ms timestamp, initialized in start()
 
   function check(): void {
     const now = d.now();
-    const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
+    const nowMs = now.getTime();
 
-    if (minuteKey === lastFiredMinute) return; // Already fired this minute
+    // Scan every minute from lastCheckedAt to now.
+    // The lastFiredMinute guard prevents double-fire if a minute was already checked.
+    // This scan is O(minutes-slept) per tick — 1440 iterations max for 24h sleep, <1ms.
+    const scanStart = lastCheckedAt;
+    let latestMatch: Date | null = null;
 
-    if (matchesCronSchedule(schedule, now)) {
-      lastFiredMinute = minuteKey;
-      const detail = `Cron matched: ${config.expression} at ${now.toISOString()}`;
-      onTrigger(config.skills, detail);
+    for (let t = scanStart; t <= nowMs; t += 60_000) {
+      const candidate = new Date(t);
+      if (matchesCronSchedule(schedule, candidate)) {
+        latestMatch = candidate;
+      }
     }
+
+    if (latestMatch) {
+      const minuteKey = `${latestMatch.getFullYear()}-${latestMatch.getMonth()}-${latestMatch.getDate()}-${latestMatch.getHours()}-${latestMatch.getMinutes()}`;
+      if (minuteKey !== lastFiredMinute) {
+        lastFiredMinute = minuteKey;
+        const detail = `Cron matched: ${config.expression} at ${latestMatch.toISOString()}`;
+        onTrigger(config.skills, detail);
+      }
+    }
+
+    lastCheckedAt = nowMs;
   }
 
   return {
     start() {
+      lastCheckedAt = d.now().getTime();
       check(); // Check immediately on start
       timer = d.setInterval(check, 60_000);
     },
