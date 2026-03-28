@@ -525,3 +525,59 @@ export interface SegmentResult {
   totalCostUsd: number;
   numTurns: number;
 }
+
+// ── Evaluation (dogfood campaign evaluator) ──────────────────────
+
+export interface BootstrapEvaluation {
+  claudeMdExists: boolean;
+  claudeMdSizeTokens: number;
+  claudeMdHasSections: string[];         // e.g. ["Architecture", "Tech Stack", "Test Strategy"]
+  claudeMdMissingSections: string[];     // expected but absent
+  todosMdExists: boolean;
+  todosMdItemCount: number;
+  todosMdItemsAboveThreshold: number;    // items that scored >5.0 in prioritize
+  qualityScore: number;                  // 0-100
+  qualityNotes: string[];
+}
+
+export interface OracleEvaluation {
+  totalDecisions: number;
+  lowConfidenceCount: number;            // confidence < 6
+  escalatedCount: number;
+  averageConfidence: number;
+  topicClusters: { topic: string; count: number; avgConfidence: number }[];
+  researchTriggered: boolean;
+}
+
+export interface PipelineEvaluation {
+  skillsRun: string[];
+  skillsCompleted: string[];
+  skillsFailed: string[];
+  totalRelays: number;
+  totalCostUsd: number;
+  totalDurationSec: number;
+  contextGrowthRate: number;             // average across segments
+  adaptiveTurnsUsed: boolean;
+}
+
+export type ImprovementPriority = "P2" | "P3" | "P4";
+export type ImprovementEffort = "XS" | "S" | "M";
+export type ImprovementCategory = "bootstrap" | "oracle" | "pipeline" | "skill" | "relay";
+
+export interface ImprovementCandidate {
+  title: string;
+  priority: ImprovementPriority;
+  effort: ImprovementEffort;
+  category: ImprovementCategory;
+  description: string;
+  evidence: string;                      // specific data from the dogfood run
+}
+
+export interface EvaluationReport {
+  targetRepo: string;
+  timestamp: string;
+  bootstrap: BootstrapEvaluation;
+  oracle: OracleEvaluation;
+  pipeline: PipelineEvaluation;
+  improvements: ImprovementCandidate[];
+}
