@@ -458,6 +458,8 @@ export interface DashboardData {
     avgCostPerJob: number;
     avgDurationSec: number;
     failureBreakdown: Record<string, number>;  // FailureCategory → count
+    crashRecoveries: number;       // Jobs that completed after crash retry
+    crashRecoverySavedUsd: number; // Cost of prior skills not re-run ($saved)
   };
   oracle: {
     totalDecisions: number;
