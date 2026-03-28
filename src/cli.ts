@@ -491,6 +491,9 @@ ${BOLD}Examples:${RESET}
   garyclaw run design-review --threshold 0.80
   garyclaw run plan-ceo-review plan-eng-review implement  # review then build
   garyclaw run implement --autonomous         # implement from design doc
+  garyclaw run bootstrap --autonomous --project-dir /path/to/target  # bootstrap a new repo
+  garyclaw run bootstrap prioritize implement qa --autonomous       # full dogfood pipeline
+  garyclaw run bootstrap prioritize implement qa evaluate --autonomous  # dogfood + self-eval
   garyclaw resume --checkpoint-dir .garyclaw
   garyclaw replay
   garyclaw daemon start                       # start default daemon
