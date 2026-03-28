@@ -11,7 +11,7 @@
 
 import { join } from "node:path";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 
 import { estimateTokens } from "./checkpoint.js";
 import { safeReadJSON, safeReadText, safeWriteJSON, safeWriteText } from "./safe-json.js";
@@ -572,7 +572,10 @@ export function parseClaudeImprovements(output: string): ImprovementCandidate[] 
           });
         }
       }
-      return valid;
+      // Only return if we found at least one qualifying item.
+      // A block with valid JSON but zero qualifying items should
+      // not short-circuit — try earlier blocks instead.
+      if (valid.length > 0) return valid;
     } catch {
       continue;
     }
@@ -863,11 +866,16 @@ export function writeEvaluationReport(projectDir: string, report: EvaluationRepo
   safeWriteText(join(dir, "evaluation-report.md"), formatEvaluationReport(report));
 
   // Also write improvement candidates for standalone mode
+  const candidatesPath = join(dir, "improvement-candidates.md");
   if (report.improvements.length > 0) {
     safeWriteText(
-      join(dir, "improvement-candidates.md"),
+      candidatesPath,
       formatImprovementCandidates(report.improvements, report.timestamp.split("T")[0]),
     );
+  } else {
+    // Delete stale file from a previous run to prevent cli.ts hook from
+    // re-appending the same improvements to TODOS.md on every subsequent run.
+    try { unlinkSync(candidatesPath); } catch { /* file may not exist */ }
   }
 }
 
