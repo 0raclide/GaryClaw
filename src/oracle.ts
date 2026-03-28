@@ -305,8 +305,11 @@ export function createSdkOracleQueryFn(
     });
 
     for await (const msg of gen) {
-      if (msg.type === "result" && (msg as any).subtype === "success") {
-        result = (msg as any).result ?? "";
+      if (msg.type === "result") {
+        const m = msg as Record<string, unknown>;
+        if (m.subtype === "success" && typeof m.result === "string") {
+          result = m.result;
+        }
       }
     }
 
