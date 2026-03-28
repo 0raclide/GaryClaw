@@ -26,7 +26,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
 **Dogfood Bootstrap: COMPLETE** (2026-03-28) — Cold-start bootstrap skill, codebase analysis, CLAUDE.md/TODOS.md generation for external repos
-- 34 source modules + CLI, 79 test files, 1823 tests
+- 34 source modules + CLI, 81 test files, 1832 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -240,6 +240,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/bootstrap.test.ts` | 52 | walkFileTree, detectTechStack, filePriority, safeReadFile, findCiConfig, findTestDir, buildFileTreeString, truncateToTokenBudget, analyzeCodebase, buildBootstrapPrompt |
 | `test/pipeline-bootstrap.test.ts` | 4 | bootstrap skill dispatch, idempotency, pipeline chaining |
 | `test/evaluate.test.ts` | 72 | scoreTokenEfficiency, extractDependencies, computeFrameworkCoverage, detectSections, analyzeBootstrapQuality, analyzeOraclePerformance, analyzePipelineHealth, extractObviousImprovements, parseClaudeImprovements, deduplicateImprovements, formatEvaluationReport, formatDuration, formatImprovementCandidates, writeEvaluationReport, buildEvaluatePrompt |
+| `test/evaluate.regression-1.test.ts` | 6 | buildEvaluatePrompt error boundary interface completeness |
+| `test/evaluate.regression-2.test.ts` | 3 | buildEvaluatePrompt improvement-candidates.md prompt instruction |
 | `test/pipeline-evaluate.test.ts` | 5 | evaluate skill dispatch, previous skills context, standalone, events, full pipeline |
 | `test/implement.test.ts` | 48 | findDesignDoc, loadDesignDoc, extractImplementationOrder, validateImplementationOrder, formatReviewContext, buildImplementPrompt |
 | `test/implement-loaddesigndoc.regression-1.test.ts` | 7 | loadDesignDoc regression: absolute/relative paths, missing files |
