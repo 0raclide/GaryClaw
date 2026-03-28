@@ -62,6 +62,9 @@ npx tsx src/cli.ts run bootstrap --autonomous --project-dir /path/to/target
 # Full dogfood pipeline: bootstrap → prioritize → implement → QA
 npx tsx src/cli.ts run bootstrap prioritize implement qa --autonomous --project-dir /path/to/target
 
+# Dogfood + self-evaluation (appends improvement candidates to GaryClaw's TODOS.md)
+npx tsx src/cli.ts run bootstrap prioritize implement qa evaluate --autonomous --project-dir /path/to/target
+
 # Resume from last checkpoint or pipeline
 npx tsx src/cli.ts resume --checkpoint-dir .garyclaw
 
