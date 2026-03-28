@@ -1,14 +1,16 @@
 {
   "date": "2026-03-28",
   "target": "npm test (vitest)",
-  "healthScore": 99,
-  "run": 9,
+  "healthScore": 100,
+  "run": 10,
   "issues": [
-    { "id": "ISSUE-001", "title": "Dead adaptiveMaxTurns parameter in relay.ts", "severity": "medium", "category": "functional", "status": "fixed", "commit": "e2c16f8" },
-    { "id": "ISSUE-002", "title": "Stale relay signature in adaptive maxTurns design doc", "severity": "low", "category": "content", "status": "fixed", "commit": "1258ceb" }
+    { "id": "ISSUE-001", "title": "daemon-ipc.test.ts afterEach hook timeout", "severity": "medium", "category": "test-infra", "status": "fixed", "commit": "9503f76" },
+    { "id": "ISSUE-002", "title": "worktree.test.ts beforeEach hook timeout", "severity": "medium", "category": "test-infra", "status": "fixed", "commit": "9503f76" },
+    { "id": "ISSUE-003", "title": "buildDashboard date-sensitive test failure", "severity": "high", "category": "functional", "status": "fixed", "commit": "63f37fd" },
+    { "id": "ISSUE-004", "title": "Test suite I/O contention (94s to 6s)", "severity": "medium", "category": "performance", "status": "fixed", "commit": "d3a164b" }
   ],
   "categoryScores": {
-    "console": 97,
+    "console": 100,
     "links": 100,
     "visual": 100,
     "functional": 100,
@@ -18,15 +20,11 @@
     "accessibility": 100
   },
   "testResults": {
-    "files": 69,
-    "tests": 1630,
-    "passed": 1630,
+    "files": 72,
+    "tests": 1642,
+    "passed": 1642,
     "failed": 0,
-    "skipped": 0
-  },
-  "engReviewGaps": {
-    "total": 1,
-    "covered": 1,
-    "remaining": 0
+    "skipped": 0,
+    "durationSeconds": 5.96
   }
 }
