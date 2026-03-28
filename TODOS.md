@@ -218,3 +218,11 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 **Effort:** XS each (human: ~30 min each / CC: ~5 min each)
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-27
+
+## P3: Evaluate Bootstrap Output Quality After First Dogfood Run
+
+**What:** After the first dogfood run on an external repo, evaluate bootstrap output quality: is CLAUDE.md accurate enough for the pipeline? Does TODOS.md produce items scoring >5.0 in prioritize? If not, implement Approach B (QA pre-scan before bootstrap).
+**Why:** The entire bootstrap skill is a bet that single-pass analysis produces useful artifacts. The bet needs an explicit evaluation checkpoint. Without it, the evaluation gets forgotten and we ship a bootstrap skill that might produce unusable output.
+**Effort:** S (human: ~2 hours / CC: ~15 min)
+**Depends on:** First dogfood run completing on an external repo
+**Added by:** /plan-eng-review on 2026-03-28, confirmed by /qa on 2026-03-28
