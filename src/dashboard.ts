@@ -253,8 +253,9 @@ export function buildDashboard(
   metrics: OracleMetrics,
   globalBudget: GlobalBudget,
   config: DaemonConfig,
+  todayStr?: string,
 ): DashboardData {
-  const jobs = aggregateJobStats(state.jobs);
+  const jobs = aggregateJobStats(state.jobs, todayStr);
   const oracle = aggregateOracleStats(metrics);
   const budget = aggregateBudgetStats(globalBudget, config.budget);
   const instances = Object.keys(globalBudget.byInstance ?? {});

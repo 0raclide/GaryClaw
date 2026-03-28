@@ -457,7 +457,7 @@ describe("buildDashboard", () => {
       ],
       dailyCost: { date: TODAY, totalUsd: 5.0, jobCount: 2 },
     };
-    const data = buildDashboard(state, makeMetrics(), makeGlobalBudget(), makeDaemonConfig());
+    const data = buildDashboard(state, makeMetrics(), makeGlobalBudget(), makeDaemonConfig(), TODAY);
 
     expect(data.healthScore).toBeGreaterThan(0);
     expect(data.jobs.total).toBe(2);
@@ -484,7 +484,7 @@ describe("buildDashboard", () => {
     };
     const emptyBudget: GlobalBudget = { date: TODAY, totalUsd: 0, jobCount: 0, byInstance: {} };
 
-    const data = buildDashboard(state, emptyMetrics, emptyBudget, makeDaemonConfig());
+    const data = buildDashboard(state, emptyMetrics, emptyBudget, makeDaemonConfig(), TODAY);
     expect(data.healthScore).toBe(100);
     expect(data.topConcern).toBeNull();
     expect(data.jobs.total).toBe(0);
@@ -496,7 +496,7 @@ describe("buildDashboard", () => {
       jobs: [makeJob()],
       dailyCost: { date: TODAY, totalUsd: 5.0, jobCount: 1 },
     };
-    const data = buildDashboard(state, makeMetrics(), makeGlobalBudget(), makeDaemonConfig());
+    const data = buildDashboard(state, makeMetrics(), makeGlobalBudget(), makeDaemonConfig(), TODAY);
     expect(data.instances).toContain("default");
     expect(data.instances).toContain("reviewer");
   });
