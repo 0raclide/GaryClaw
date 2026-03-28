@@ -227,7 +227,9 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 **Depends on:** First dogfood run completing on an external repo
 **Added by:** /plan-eng-review on 2026-03-28, confirmed by /qa on 2026-03-28
 
-## P2: Wire Deterministic TS Analysis Into Evaluate Pipeline Path
+## ~~P2: Wire Deterministic TS Analysis Into Evaluate Pipeline Path~~ — COMPLETE (2026-03-28)
+
+Implemented in commit 0b53787 + eng review fixes. `createTextAccumulatingCallbacks` in pipeline.ts wraps evaluate callbacks for text capture. `runPostEvaluateAnalysis` in evaluate.ts runs full deterministic pipeline: analyzeBootstrapQuality + analyzeOraclePerformance + analyzePipelineHealth + extractObviousImprovements + parseClaudeImprovements (last-valid-match) + deduplicateImprovements + writeEvaluationReport. Default evaluation helpers extracted for DRY. 18 tests in pipeline-evaluate-wiring.test.ts. All sub-items (1A-4A + error boundary) complete.
 
 **What:** The evaluate skill has well-tested pure TS analysis functions (writeEvaluationReport, parseClaudeImprovements, deduplicateImprovements, extractObviousImprovements) that are never called in the actual pipeline path. The pipeline currently relies on Claude writing files via the prompt, which is best-effort. Wire the deterministic path: after the evaluate segment completes, run all analysis functions from TypeScript, parse Claude's `<improvements>` output, merge with obvious improvements via dedup, and write the final improvement-candidates.md. Also includes 3 accepted code quality fixes.
 
@@ -247,3 +249,63 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 **Effort:** S (human: ~3 days / CC: ~20 min)
 **Depends on:** Nothing (evaluate.ts and all analysis functions already exist and are tested)
 **Added by:** /plan-eng-review on 2026-03-28
+
+## P2: Self-Commit Filtering in Git Poller
+
+**What:** The git poller should ignore commits made by the daemon itself. When HEAD changes, run `git log --format=%ce {oldHead}..{newHead}` and skip the trigger if every commit has `committer_email === "garyclaw-daemon@local"`. This requires the daemon to set `GIT_COMMITTER_EMAIL=garyclaw-daemon@local` in the env passed to `buildSdkEnv()` (already verified in spike: "Verify GIT_COMMITTER_EMAIL Propagation Through SDK" — COMPLETE 2026-03-27), and the poller to check committer identity before firing.
+
+**Why:** The daemon's biggest dollar waste. Every pipeline run triggers a QA cascade: implement commits code → poller detects HEAD change → fires QA → QA commits fixes → poller detects again → fires more QA. On 2026-03-28, the daemon ran 8 QA passes (~$6) chasing its own commits when 2-3 would have sufficed. This happens on every cron cycle. At 12 cycles/day, that's $30-60/day wasted.
+
+**Pros:** Saves $3-5 per pipeline run. Eliminates the self-triggering cascade entirely. The GIT_COMMITTER_EMAIL approach is already spiked and verified. The git poller already has the old/new HEAD values — just needs to check the committer before calling onTrigger.
+
+**Cons:** Daemon commits become invisible to the git poller. If a daemon commit introduces a regression, QA won't auto-trigger from the poll. Mitigation: the pipeline already includes QA as the final skill, so regressions are caught in-pipeline. External commits (human pushes) still trigger QA normally.
+
+**Implementation notes:**
+- In `src/sdk-wrapper.ts` `buildSdkEnv()`: add `GIT_COMMITTER_EMAIL: "garyclaw-daemon@local"` to the env object
+- In `src/triggers.ts` `getGitHead()`: add a new export `getCommitAuthors(projectDir, oldHead, newHead): string[]` that returns committer emails via `git log --format=%ce {old}..{new}`
+- In `src/triggers.ts` `createGitPoller` poll function: after detecting HEAD change, call `getCommitAuthors()` and skip trigger if all are `garyclaw-daemon@local`
+- Add `committerEmail` to `GitPollerDeps` for testability (injectable like `getHead`)
+
+**Effort:** XS (human: ~30 min / CC: ~5 min)
+**Depends on:** Nothing (GIT_COMMITTER_EMAIL spike already passed)
+**Added by:** human observation on 2026-03-28
+
+## P2: Sleep-Resilient Cron Poller
+
+**What:** The cron poller currently checks every 60s: "does the current minute match the cron expression?" If macOS sleeps through a matching minute, the trigger is permanently lost. Fix: track `lastCheckedAt` timestamp and on each tick, check if *any* matching minute occurred between `lastCheckedAt` and now. When the laptop wakes after hours of sleep, the poller catches up immediately and fires the missed trigger.
+
+**Why:** The self-improvement pipeline runs on `0 */2 * * *` (every 2 hours). macOS sleep regularly causes missed triggers overnight — observed on 2026-03-27 when the cron poller missed triggers during sleep. Each missed trigger = one lost improvement cycle. Over a night of sleep (8h), that's 3-4 missed cycles, which means 3-4 features/fixes that could have been built but weren't.
+
+**Pros:** Makes overnight autonomous operation reliable. The daemon becomes truly "start and forget" instead of "check in every few hours." Simple change to `createCronPoller` — replace the "does current minute match?" check with a "did any minute since lastCheckedAt match?" scan.
+
+**Cons:** After a long sleep, the catch-up fire is delayed until the next 60s tick. Could fire multiple triggers if multiple cron windows were missed — but the job dedup will collapse them. One edge case: if the laptop sleeps for 24+ hours, firing all missed triggers at once could be expensive. Mitigation: cap catch-up to 1 trigger (fire at most once per wake, regardless of how many windows were missed).
+
+**Implementation notes:**
+- In `src/triggers.ts` `createCronPoller`: add `let lastCheckedAt = Date.now()` state
+- On each `check()` tick: scan every minute from `lastCheckedAt` to `now` against the cron schedule. If any match and `lastFiredMinute` doesn't cover it, fire once and update `lastCheckedAt = Date.now()`
+- Cap catch-up: if multiple windows were missed, fire only once (the most recent match)
+- Add `lastCheckedAt` to `CronPollerDeps` for testability
+
+**Effort:** S (human: ~2 days / CC: ~15 min)
+**Depends on:** Nothing
+**Added by:** human observation on 2026-03-28
+
+## P2: Pipeline Resume After Daemon Crash
+
+**What:** When the daemon restarts after a crash (Mac sleep, OOM, signal), it currently marks any running pipeline job as "failed" and moves on. Instead, it should detect the interrupted pipeline, read its `pipeline.json` state, and resume from the last completed skill. The pipeline state already tracks per-skill status (`complete`, `running`, `pending`). The crashed skill gets retried; subsequent skills run normally.
+
+**Why:** The full self-improvement pipeline (`prioritize → office-hours → implement → eng-review → qa`) costs $3-4 and takes 30-40 minutes. On 2026-03-28, a pipeline died mid-implement after spending $1.29 on prioritize + office-hours. That $1.29 was wasted — the daemon started fresh on the next cycle. Over a week of overnight operation with daily Mac sleeps, this wastes $10-20 in abandoned pipelines.
+
+**Pros:** Recovers $1-3 per crash. Makes the daemon resilient to interruptions. The infrastructure already exists: `pipeline.json` has skill status, the `resume` CLI command exists, and `job-runner.ts` already persists job state. The main work is wiring the daemon's restart logic to attempt resume instead of marking failed.
+
+**Cons:** Resuming a crashed skill is not always safe — if implement was mid-commit, the working tree might be dirty. Mitigation: the relay system already handles dirty working trees via `git stash --include-untracked`. The resumed skill starts fresh with a checkpoint prompt. One risk: if the crash was caused by the skill itself (infinite loop, OOM), resuming will hit the same crash. Mitigation: track retry count per job. If a job crashes twice, mark it failed and move on.
+
+**Implementation notes:**
+- In `src/job-runner.ts` `createJobRunner()`: change the startup loop that marks `running` jobs as `failed`. Instead, mark them as `queued` with a `retryCount` field incremented. If `retryCount >= 2`, mark as `failed`.
+- In `processNext()`: when starting a job with `retryCount > 0` and a `pipeline.json` that has completed skills, call `runPipeline` with a `resumeFromSkill` index derived from the pipeline state's `currentSkillIndex`.
+- In `src/pipeline.ts`: add `resumeFromSkill` parameter to `runPipeline()` that skips already-completed skills (their state is preserved in pipeline.json).
+- Add `retryCount` to the `Job` interface in `types.ts`.
+
+**Effort:** S (human: ~3 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** human observation on 2026-03-28

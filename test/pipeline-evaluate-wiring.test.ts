@@ -228,7 +228,7 @@ describe("runPostEvaluateAnalysis", () => {
     expect(content).toContain("## P");
   });
 
-  it("handles multiple <improvements> blocks (uses first only)", () => {
+  it("handles multiple <improvements> blocks (uses last valid match)", () => {
     writeFileSync(join(TEST_DIR, "CLAUDE.md"), "# Project\n## Architecture\nA\n## Tech Stack\nB\n## Test Strategy\nC\n## Usage\nD");
 
     const claudeOutput = `First block:
@@ -242,11 +242,32 @@ Second block:
 
     const report = runPostEvaluateAnalysis(TEST_DIR, claudeOutput);
 
-    // Only the first block should be parsed
+    // Last valid block should be used (last-valid-match strategy)
     const firstBlock = report.improvements.find((i) => i.title === "First block improvement");
     const secondBlock = report.improvements.find((i) => i.title === "Second block improvement");
-    expect(firstBlock).toBeDefined();
-    expect(secondBlock).toBeUndefined();
+    expect(firstBlock).toBeUndefined();
+    expect(secondBlock).toBeDefined();
+  });
+
+  it("handles broken first block with valid second block (relay split)", () => {
+    writeFileSync(join(TEST_DIR, "CLAUDE.md"), "# Project\n## Architecture\nA\n## Tech Stack\nB\n## Test Strategy\nC\n## Usage\nD");
+
+    // Simulate relay boundary splitting the first block mid-JSON
+    const claudeOutput = `First block (truncated by relay):
+<improvements>
+[{"title": "Truncated improvement", "priority": "P3", "effort": "XS", "category": "skill", "descri
+</improvements>
+Second block (complete after relay):
+<improvements>
+[{"title": "Valid improvement after relay", "priority": "P3", "effort": "XS", "category": "skill", "description": "Complete item", "evidence": "From post-relay segment"}]
+</improvements>`;
+
+    const report = runPostEvaluateAnalysis(TEST_DIR, claudeOutput);
+
+    // Should skip the broken first block and use the valid second block
+    const validImprovement = report.improvements.find((i) => i.title === "Valid improvement after relay");
+    expect(validImprovement).toBeDefined();
+    expect(validImprovement!.evidence).toBe("From post-relay segment");
   });
 });
 

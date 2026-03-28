@@ -26,7 +26,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
 **Dogfood Bootstrap: COMPLETE** (2026-03-28) — Cold-start bootstrap skill, codebase analysis, CLAUDE.md/TODOS.md generation for external repos
-- 34 source modules + CLI, 82 test files, 1863 tests
+- 34 source modules + CLI, 85 test files, 1865 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -243,7 +243,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/evaluate.regression-1.test.ts` | 6 | buildEvaluatePrompt error boundary interface completeness |
 | `test/evaluate.regression-2.test.ts` | 3 | buildEvaluatePrompt improvement-candidates.md prompt instruction |
 | `test/pipeline-evaluate.test.ts` | 6 | evaluate skill dispatch, previous skills context, standalone, events, full pipeline, callback wrapping |
-| `test/pipeline-evaluate-wiring.test.ts` | 15 | createTextAccumulatingCallbacks, runPostEvaluateAnalysis, default evaluation helpers |
+| `test/pipeline-evaluate-wiring.test.ts` | 18 | createTextAccumulatingCallbacks, runPostEvaluateAnalysis, default evaluation helpers, last-valid-match relay split |
 | `test/implement.test.ts` | 48 | findDesignDoc, loadDesignDoc, extractImplementationOrder, validateImplementationOrder, formatReviewContext, buildImplementPrompt |
 | `test/implement-loaddesigndoc.regression-1.test.ts` | 7 | loadDesignDoc regression: absolute/relative paths, missing files |
 | `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |
@@ -253,7 +253,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-extended.test.ts` | 17 | Extended job runner: budget edge cases, concurrent enqueue |
 | `test/job-runner.regression-2.test.ts` | 3 | Job runner regression: dedup with completed jobs |
 | `test/job-runner.regression-3.test.ts` | 3 | Job runner regression: "adaptive disabled" reason classification |
-| `test/triggers.test.ts` | 53 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns |
+| `test/triggers.test.ts` | 54 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns, log on null HEAD |
 | `test/daemon.test.ts` | 51 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request, autoResearch validation |
 | `test/daemon-extended.test.ts` | 46 | Extended daemon: shutdown, poller lifecycle, IPC edge cases |
 | `test/daemon-lifecycle.test.ts` | 14 | Daemon start/stop lifecycle, signal handling |

@@ -535,40 +535,49 @@ const VALID_CATEGORIES = new Set<ImprovementCategory>(["bootstrap", "oracle", "p
 /**
  * Parse improvement candidates from Claude's segment output.
  * Expects a JSON array within an <improvements> block.
+ *
+ * Uses a "last valid match" strategy: iterates all <improvements> blocks
+ * from last to first, returning the first one that successfully parses.
+ * This handles relay boundary splits where the first block may be
+ * truncated mid-JSON.
  */
 export function parseClaudeImprovements(output: string): ImprovementCandidate[] {
-  // Extract <improvements> block
-  const match = output.match(/<improvements>([\s\S]*?)<\/improvements>/);
-  if (!match) return [];
+  // Extract all <improvements> blocks
+  const blocks = [...output.matchAll(/<improvements>([\s\S]*?)<\/improvements>/g)];
+  if (blocks.length === 0) return [];
 
-  try {
-    const parsed = JSON.parse(match[1].trim());
-    if (!Array.isArray(parsed)) return [];
+  // Try each block from last to first, return first that parses
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(blocks[i][1].trim());
+      if (!Array.isArray(parsed)) continue;
 
-    const valid: ImprovementCandidate[] = [];
-    for (const item of parsed) {
-      if (
-        typeof item.title === "string" &&
-        typeof item.description === "string" &&
-        typeof item.evidence === "string" &&
-        VALID_PRIORITIES.has(item.priority) &&
-        VALID_EFFORTS.has(item.effort) &&
-        VALID_CATEGORIES.has(item.category)
-      ) {
-        valid.push({
-          title: item.title,
-          priority: item.priority,
-          effort: item.effort,
-          category: item.category,
-          description: item.description,
-          evidence: item.evidence,
-        });
+      const valid: ImprovementCandidate[] = [];
+      for (const item of parsed) {
+        if (
+          typeof item.title === "string" &&
+          typeof item.description === "string" &&
+          typeof item.evidence === "string" &&
+          VALID_PRIORITIES.has(item.priority) &&
+          VALID_EFFORTS.has(item.effort) &&
+          VALID_CATEGORIES.has(item.category)
+        ) {
+          valid.push({
+            title: item.title,
+            priority: item.priority,
+            effort: item.effort,
+            category: item.category,
+            description: item.description,
+            evidence: item.evidence,
+          });
+        }
       }
+      return valid;
+    } catch {
+      continue;
     }
-    return valid;
-  } catch {
-    return [];
   }
+  return [];
 }
 
 // ── Dedup improvements ───────────────────────────────────────────
@@ -804,9 +813,9 @@ function safeAnalyze<T>(fn: () => T, fallback: T): T {
  *
  * Note on multi-relay text: if the evaluate skill relays, the accumulated
  * claudeOutput contains text from ALL segments. parseClaudeImprovements
- * uses regex .match() which returns the FIRST <improvements> block only.
- * This is correct: Claude should only emit <improvements> at the end of its
- * analysis. If multiple blocks exist, the first is authoritative.
+ * uses a "last valid match" strategy: iterates all <improvements> blocks
+ * from last to first, returning the first one that parses. This handles
+ * relay boundary splits where an earlier block may be truncated mid-JSON.
  */
 export function runPostEvaluateAnalysis(
   projectDir: string,

@@ -15,16 +15,22 @@ export interface GitPoller {
 
 export type TriggerCallback = (skills: string[], triggerDetail: string) => void;
 
+export type LogFn = (level: string, msg: string) => void;
+
 export interface GitPollerDeps {
   getHead: (projectDir: string, branch?: string) => string | null;
+  log: LogFn;
   setInterval: (fn: () => void, ms: number) => ReturnType<typeof globalThis.setInterval>;
   clearInterval: (id: ReturnType<typeof globalThis.setInterval>) => void;
   setTimeout: (fn: () => void, ms: number) => ReturnType<typeof globalThis.setTimeout>;
   clearTimeout: (id: ReturnType<typeof globalThis.setTimeout>) => void;
 }
 
+const noop: LogFn = () => {};
+
 const defaultDeps: GitPollerDeps = {
   getHead: getGitHead,
+  log: noop,
   setInterval: globalThis.setInterval.bind(globalThis),
   clearInterval: globalThis.clearInterval.bind(globalThis),
   setTimeout: globalThis.setTimeout.bind(globalThis),
@@ -54,7 +60,10 @@ export function createGitPoller(
 
   function poll(): void {
     const head = d.getHead(projectDir, config.branch);
-    if (head === null) return; // Failed to read HEAD
+    if (head === null) {
+      d.log("warn", `Git poll: failed to read HEAD for ${projectDir}${config.branch ? ` (branch: ${config.branch})` : ""}`);
+      return;
+    }
 
     // First poll — just record the current HEAD
     if (lastHead === null) {

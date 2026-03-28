@@ -150,6 +150,22 @@ describe("createGitPoller", () => {
     expect(trigger).not.toHaveBeenCalled();
   });
 
+  it("logs warning when getHead returns null", () => {
+    const deps = createMockDeps();
+    const trigger = vi.fn();
+    const log = vi.fn();
+
+    deps.getHead = vi.fn().mockReturnValue(null);
+
+    const poller = createGitPoller(createTestConfig(), "/tmp/project", trigger, { ...deps, log });
+    poller.start();
+
+    deps.advanceTimers();
+
+    expect(log).toHaveBeenCalledWith("warn", expect.stringContaining("failed to read HEAD"));
+    expect(log).toHaveBeenCalledWith("warn", expect.stringContaining("/tmp/project"));
+  });
+
   it("stop() clears interval and debounce timers", () => {
     const deps = createMockDeps();
     const trigger = vi.fn();

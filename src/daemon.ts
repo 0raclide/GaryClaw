@@ -539,7 +539,7 @@ export function startPollers(
       const poller = createGitPoller(trigger, config.projectDir, (skills, detail) => {
         log("info", `Git poll triggered: ${detail}`);
         runner.enqueue(skills, "git_poll", detail);
-      });
+      }, { log });
       poller.start();
       pollers.push(poller);
       log("info", `Git poller started: every ${trigger.intervalSeconds}s, skills=[${trigger.skills.join(",")}]`);
