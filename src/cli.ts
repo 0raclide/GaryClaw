@@ -523,6 +523,47 @@ ${BOLD}Daemon Config (daemon.json triggers):${RESET}
 `);
 }
 
+// ── Post-pipeline evaluate hook ──────────────────────────────────
+
+/**
+ * If the pipeline included "evaluate" and the target repo differs from
+ * GaryClaw's root, append improvement candidates to GaryClaw's TODOS.md.
+ *
+ * Exported for testing. Called from main() after runPipeline completes.
+ */
+export function appendEvaluateCandidates(
+  skills: string[],
+  projectDir: string,
+  garyClawRoot: string,
+): { appended: boolean; count: number } {
+  if (!skills.includes("evaluate") || projectDir === garyClawRoot) {
+    return { appended: false, count: 0 };
+  }
+
+  const candidatesPath = join(projectDir, ".garyclaw", "improvement-candidates.md");
+  if (!existsSync(candidatesPath)) {
+    return { appended: false, count: 0 };
+  }
+
+  try {
+    const candidates = readFileSync(candidatesPath, "utf-8");
+    if (!candidates.trim()) {
+      return { appended: false, count: 0 };
+    }
+
+    const garyClawTodosPath = join(garyClawRoot, "TODOS.md");
+    const existing = safeReadText(garyClawTodosPath) ?? "";
+    safeWriteText(garyClawTodosPath, existing + "\n\n" + candidates);
+
+    const count = candidates.split("## P").length - 1;
+    console.log(`\n${GREEN}Evaluate:${RESET} Appended ${count} improvement candidate(s) to ${garyClawTodosPath}`);
+    return { appended: true, count };
+  } catch (err) {
+    console.log(`${YELLOW}Warning:${RESET} Could not append improvement candidates to TODOS.md: ${err instanceof Error ? err.message : String(err)}`);
+    return { appended: false, count: 0 };
+  }
+}
+
 // ── Main ────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -607,25 +648,8 @@ async function main(): Promise<void> {
 
       await runPipeline(parsed.skills, config, cbs);
 
-      // Post-pipeline evaluate hook: if the pipeline included "evaluate" and
-      // the target repo is different from GaryClaw's own root, append any
-      // improvement candidates to GaryClaw's TODOS.md.
-      if (parsed.skills.includes("evaluate") && parsed.projectDir !== garyClawRoot) {
-        const candidatesPath = join(parsed.projectDir, ".garyclaw", "improvement-candidates.md");
-        const garyClawTodosPath = join(garyClawRoot, "TODOS.md");
-        if (existsSync(candidatesPath)) {
-          try {
-            const candidates = readFileSync(candidatesPath, "utf-8");
-            if (candidates.trim()) {
-              const existing = safeReadText(garyClawTodosPath) ?? "";
-              safeWriteText(garyClawTodosPath, existing + "\n\n" + candidates);
-              console.log(`\n${GREEN}Evaluate:${RESET} Appended ${candidates.split("## P").length - 1} improvement candidate(s) to ${garyClawTodosPath}`);
-            }
-          } catch (err) {
-            console.log(`${YELLOW}Warning:${RESET} Could not append improvement candidates to TODOS.md: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-      }
+      // Post-pipeline evaluate hook
+      appendEvaluateCandidates(parsed.skills, parsed.projectDir, garyClawRoot);
     }
 
     return;
