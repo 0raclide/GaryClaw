@@ -720,7 +720,7 @@ export function formatImprovementCandidates(
 
 **Why:** ${c.evidence}
 
-**Effort:** ${c.effort} (human: ~${effortEstimate(c.effort)} / CC: ~${effortEstimate(c.effort)})
+**Effort:** ${c.effort} (human: ~${humanEffortEstimate(c.effort)} / CC: ~${ccEffortEstimate(c.effort)})
 **Depends on:** Nothing
 **Added by:** evaluate skill on ${date}`);
   }
@@ -728,11 +728,19 @@ export function formatImprovementCandidates(
   return blocks.join("\n\n");
 }
 
-function effortEstimate(effort: ImprovementEffort): string {
+function humanEffortEstimate(effort: ImprovementEffort): string {
   switch (effort) {
-    case "XS": return "15min";
-    case "S": return "1h";
-    case "M": return "3h";
+    case "XS": return "30min";
+    case "S": return "2 days";
+    case "M": return "1 week";
+  }
+}
+
+function ccEffortEstimate(effort: ImprovementEffort): string {
+  switch (effort) {
+    case "XS": return "5min";
+    case "S": return "20min";
+    case "M": return "1h";
   }
 }
 

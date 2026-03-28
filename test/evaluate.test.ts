@@ -767,12 +767,23 @@ describe("formatImprovementCandidates", () => {
     expect(result).toContain("## P3: Second");
   });
 
-  it("includes effort estimates", () => {
+  it("includes separate human and CC effort estimates", () => {
     const candidates: ImprovementCandidate[] = [
       { title: "XS task", priority: "P4", effort: "XS", category: "skill", description: "A", evidence: "B" },
     ];
     const result = formatImprovementCandidates(candidates);
-    expect(result).toContain("~15min");
+    expect(result).toContain("human: ~30min");
+    expect(result).toContain("CC: ~5min");
+  });
+
+  it("shows compression ratio across all effort levels", () => {
+    const xs: ImprovementCandidate[] = [{ title: "T", priority: "P4", effort: "XS", category: "skill", description: "A", evidence: "B" }];
+    const s: ImprovementCandidate[] = [{ title: "T", priority: "P3", effort: "S", category: "skill", description: "A", evidence: "B" }];
+    const m: ImprovementCandidate[] = [{ title: "T", priority: "P2", effort: "M", category: "skill", description: "A", evidence: "B" }];
+
+    expect(formatImprovementCandidates(xs)).toContain("human: ~30min / CC: ~5min");
+    expect(formatImprovementCandidates(s)).toContain("human: ~2 days / CC: ~20min");
+    expect(formatImprovementCandidates(m)).toContain("human: ~1 week / CC: ~1h");
   });
 });
 
