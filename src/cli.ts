@@ -9,7 +9,7 @@
  */
 
 import { createInterface } from "node:readline";
-import { readFileSync, existsSync, appendFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,7 @@ import {
   readGlobalBudget,
 } from "./daemon-registry.js";
 import { getWorktreePath, listWorktrees, worktreeDir, removeWorktree } from "./worktree.js";
+import { safeReadText, safeWriteText } from "./safe-json.js";
 import type { GaryClawConfig, OrchestratorCallbacks, OrchestratorEvent, InstanceInfo } from "./types.js";
 
 // ── ANSI colors ─────────────────────────────────────────────────
@@ -616,7 +617,8 @@ async function main(): Promise<void> {
           try {
             const candidates = readFileSync(candidatesPath, "utf-8");
             if (candidates.trim()) {
-              appendFileSync(garyClawTodosPath, "\n\n" + candidates, "utf-8");
+              const existing = safeReadText(garyClawTodosPath) ?? "";
+              safeWriteText(garyClawTodosPath, existing + "\n\n" + candidates);
               console.log(`\n${GREEN}Evaluate:${RESET} Appended ${candidates.split("## P").length - 1} improvement candidate(s) to ${garyClawTodosPath}`);
             }
           } catch (err) {
