@@ -345,6 +345,19 @@ export async function startDaemon(checkpointDir: string, instanceName?: string):
   // Migrate flat layout to instance dirs on first start
   migrateToInstanceDir(checkpointDir);
 
+  // Ensure .garyclaw/ is in .gitignore (daemon state should never be committed)
+  const projectDir = join(checkpointDir, "..");
+  const gitignorePath = join(projectDir, ".gitignore");
+  try {
+    const gitignoreContent = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "";
+    if (!gitignoreContent.includes(".garyclaw")) {
+      const entry = gitignoreContent.endsWith("\n") || gitignoreContent === ""
+        ? ".garyclaw/\n"
+        : "\n.garyclaw/\n";
+      appendFileSync(gitignorePath, entry, "utf-8");
+    }
+  } catch { /* non-fatal — gitignore update is best-effort */ }
+
   // Instance-specific directory for all daemon files
   const instDir = ensureInstanceDir(checkpointDir, name);
 
