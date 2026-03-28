@@ -25,7 +25,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Auto-Research Trigger: COMPLETE** (2026-03-27) — Post-job low-confidence analysis, keyword clustering, auto-enqueue research
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
-- 32 source modules + CLI, 72 test files, 1666 tests
+- 32 source modules + CLI, 73 test files, 1669 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -233,6 +233,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner.test.ts` | 48 | FIFO queue, dedup, budget, state persistence, job lifecycle, global budget, cross-instance dedup, adaptive_turns event collection |
 | `test/job-runner-extended.test.ts` | 17 | Extended job runner: budget edge cases, concurrent enqueue |
 | `test/job-runner.regression-2.test.ts` | 3 | Job runner regression: dedup with completed jobs |
+| `test/job-runner.regression-3.test.ts` | 3 | Job runner regression: "adaptive disabled" reason classification |
 | `test/triggers.test.ts` | 53 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns |
 | `test/daemon.test.ts` | 51 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request, autoResearch validation |
 | `test/daemon-extended.test.ts` | 46 | Extended daemon: shutdown, poller lifecycle, IPC edge cases |
@@ -275,6 +276,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/worktree.regression-1.test.ts` | 16 | Worktree regression: branch and path resolution edge cases |
 | `test/worktree.regression-2.test.ts` | 10 | Worktree regression: merge and cleanup edge cases |
 | `test/dashboard.regression-1.test.ts` | 13 | Dashboard regression: health score edge cases |
+| `test/dashboard.regression-2.test.ts` | 3 | Dashboard regression: budget config edge cases |
 | `test/auto-research.regression-2.test.ts` | 14 | Auto-research regression: freshness and clustering edge cases |
 | `test/pid-utils.regression-1.test.ts` | 13 | PID utils regression: process-name verification edge cases |
 | `test/step-tracking.test.ts` | 45 | Step tracking: progress tracking, step lifecycle, event emission |
