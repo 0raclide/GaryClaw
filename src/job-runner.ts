@@ -437,7 +437,7 @@ function buildGaryClawConfig(
     relayThresholdRatio: config.orchestrator.relayThresholdRatio,
     checkpointDir: jobDir,
     settingSources: ["user", "project"],
-    env: deps.buildSdkEnv(process.env as Record<string, string>),
+    env: deps.buildSdkEnv(process.env as Record<string, string>, { tagDaemonCommits: true }),
     askTimeoutMs: config.orchestrator.askTimeoutMs,
     maxRelaySessions: config.orchestrator.maxRelaySessions,
     autonomous: true,

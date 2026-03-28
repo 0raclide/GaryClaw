@@ -34,12 +34,9 @@ describe("sdk-wrapper", () => {
       expect("UNDEFINED_VAR" in env).toBe(false);
     });
 
-    it("works with empty env (still sets committer fields)", () => {
+    it("works with empty env (no committer fields by default)", () => {
       const env = buildSdkEnv({});
-      expect(env).toEqual({
-        GIT_COMMITTER_EMAIL: GARYCLAW_DAEMON_EMAIL,
-        GIT_COMMITTER_NAME: "GaryClaw Daemon",
-      });
+      expect(env).toEqual({});
     });
 
     it("works when ANTHROPIC_API_KEY is already absent", () => {
@@ -48,22 +45,34 @@ describe("sdk-wrapper", () => {
       expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     });
 
-    it("sets GIT_COMMITTER_EMAIL to GARYCLAW_DAEMON_EMAIL", () => {
+    it("does NOT set GIT_COMMITTER_EMAIL without tagDaemonCommits", () => {
       const env = buildSdkEnv({ PATH: "/usr/bin" });
+      expect(env.GIT_COMMITTER_EMAIL).toBeUndefined();
+      expect(env.GIT_COMMITTER_NAME).toBeUndefined();
+    });
+
+    it("sets GIT_COMMITTER_EMAIL when tagDaemonCommits is true", () => {
+      const env = buildSdkEnv({ PATH: "/usr/bin" }, { tagDaemonCommits: true });
       expect(env.GIT_COMMITTER_EMAIL).toBe(GARYCLAW_DAEMON_EMAIL);
       expect(env.GIT_COMMITTER_EMAIL).toBe("garyclaw-daemon@local");
     });
 
-    it("sets GIT_COMMITTER_NAME to GaryClaw Daemon", () => {
-      const env = buildSdkEnv({ PATH: "/usr/bin" });
+    it("sets GIT_COMMITTER_NAME when tagDaemonCommits is true", () => {
+      const env = buildSdkEnv({ PATH: "/usr/bin" }, { tagDaemonCommits: true });
       expect(env.GIT_COMMITTER_NAME).toBe("GaryClaw Daemon");
     });
 
-    it("overrides user-provided GIT_COMMITTER_EMAIL", () => {
-      const env = buildSdkEnv({
-        GIT_COMMITTER_EMAIL: "user@example.com",
-      });
+    it("overrides user-provided GIT_COMMITTER_EMAIL when tagDaemonCommits", () => {
+      const env = buildSdkEnv(
+        { GIT_COMMITTER_EMAIL: "user@example.com" },
+        { tagDaemonCommits: true },
+      );
       expect(env.GIT_COMMITTER_EMAIL).toBe(GARYCLAW_DAEMON_EMAIL);
+    });
+
+    it("preserves user GIT_COMMITTER_EMAIL without tagDaemonCommits", () => {
+      const env = buildSdkEnv({ GIT_COMMITTER_EMAIL: "user@example.com" });
+      expect(env.GIT_COMMITTER_EMAIL).toBe("user@example.com");
     });
   });
 

@@ -76,9 +76,15 @@ export function extractResultData(msg: SDKMessage): SegmentResult | null {
 /**
  * Build SDK-safe env by stripping ANTHROPIC_API_KEY.
  * This ensures the SDK uses Claude Max login instead of API billing.
+ *
+ * When `tagDaemonCommits` is true, sets GIT_COMMITTER_EMAIL/NAME so the
+ * git poller can distinguish daemon-made commits from human pushes.
+ * Only the daemon job runner should set this flag — direct CLI runs should
+ * not be tagged, otherwise the poller would incorrectly skip user commits.
  */
 export function buildSdkEnv(
   processEnv: Record<string, string | undefined>,
+  options?: { tagDaemonCommits?: boolean },
 ): Record<string, string> {
   const { ANTHROPIC_API_KEY: _, ...rest } = processEnv;
   // Filter out undefined values
@@ -89,8 +95,10 @@ export function buildSdkEnv(
     }
   }
   // Tag daemon commits so the git poller can filter self-triggers
-  env.GIT_COMMITTER_EMAIL = GARYCLAW_DAEMON_EMAIL;
-  env.GIT_COMMITTER_NAME = "GaryClaw Daemon";
+  if (options?.tagDaemonCommits) {
+    env.GIT_COMMITTER_EMAIL = GARYCLAW_DAEMON_EMAIL;
+    env.GIT_COMMITTER_NAME = "GaryClaw Daemon";
+  }
   return env;
 }
 
