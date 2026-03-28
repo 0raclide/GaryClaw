@@ -18,6 +18,7 @@ import type {
 import { ORACLE_MEMORY_BUDGETS } from "./types.js";
 import { readOracleMemory, writeDomainExpertise } from "./oracle-memory.js";
 import { estimateTokens } from "./checkpoint.js";
+import { extractResultData } from "./sdk-wrapper.js";
 
 // ── Config ──────────────────────────────────────────────────────
 
@@ -151,13 +152,12 @@ export async function runResearch(
         }
       }
       if (msg.type === "result") {
-        if ((msg as any).subtype === "success") {
-          resultText = (msg as any).result ?? "";
+        const resultData = extractResultData(msg);
+        if (resultData && resultData.subtype === "success") {
+          resultText = resultData.resultText;
         }
-        // Extract cost from result message (same field as extractResultData)
-        const totalCost = (msg as any).total_cost_usd;
-        if (typeof totalCost === "number") {
-          costUsd = totalCost;
+        if (resultData && resultData.totalCostUsd > 0) {
+          costUsd = resultData.totalCostUsd;
         }
       }
     }
