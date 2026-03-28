@@ -25,7 +25,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Auto-Research Trigger: COMPLETE** (2026-03-27) — Post-job low-confidence analysis, keyword clustering, auto-enqueue research
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
-- 32 source modules + CLI, 73 test files, 1669 tests
+**Dogfood Bootstrap: COMPLETE** (2026-03-28) — Cold-start bootstrap skill, codebase analysis, CLAUDE.md/TODOS.md generation for external repos
+- 33 source modules + CLI, 75 test files, 1725 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -54,6 +55,12 @@ npx tsx src/cli.ts run prioritize --autonomous
 
 # Full autonomous loop: prioritize → implement → QA
 npx tsx src/cli.ts run prioritize implement qa --autonomous
+
+# Bootstrap a new repo (generates CLAUDE.md + TODOS.md from codebase analysis)
+npx tsx src/cli.ts run bootstrap --autonomous --project-dir /path/to/target
+
+# Full dogfood pipeline: bootstrap → prioritize → implement → QA
+npx tsx src/cli.ts run bootstrap prioritize implement qa --autonomous --project-dir /path/to/target
 
 # Resume from last checkpoint or pipeline
 npx tsx src/cli.ts resume --checkpoint-dir .garyclaw
@@ -150,6 +157,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics |
 | `src/reflection.ts` | Post-job reflection: decision outcomes, reopened detection, quality metrics |
 | `src/researcher.ts` | Domain expertise research: web search, freshness tracking, section merge |
+| `src/bootstrap.ts` | Bootstrap skill: codebase analysis, CLAUDE.md/TODOS.md generation for cold-start repos |
 | `src/implement.ts` | Implement skill: design doc discovery, review context, prompt builder |
 | `src/prioritize.ts` | Prioritize skill: TODOS.md parsing, overnight goal, oracle context, scoring prompt |
 | `src/worktree.ts` | Git worktree isolation: create, remove, merge, list worktrees for parallel instances |
@@ -225,6 +233,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-extended.test.ts` | 10 | pipeline edge cases, resume, error propagation |
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
+| `test/bootstrap.test.ts` | 52 | walkFileTree, detectTechStack, filePriority, safeReadFile, findCiConfig, findTestDir, buildFileTreeString, truncateToTokenBudget, analyzeCodebase, buildBootstrapPrompt |
+| `test/pipeline-bootstrap.test.ts` | 4 | bootstrap skill dispatch, idempotency, pipeline chaining |
 | `test/implement.test.ts` | 48 | findDesignDoc, loadDesignDoc, extractImplementationOrder, validateImplementationOrder, formatReviewContext, buildImplementPrompt |
 | `test/implement-loaddesigndoc.regression-1.test.ts` | 7 | loadDesignDoc regression: absolute/relative paths, missing files |
 | `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |
@@ -323,6 +333,9 @@ Each named daemon instance operates in its own git worktree with a dedicated bra
 
 ### Auto-Research Trigger — COMPLETE
 Post-job analysis of low-confidence Oracle decisions. Keyword extraction from decision questions, topic grouping by 2+ shared keywords, freshness-aware filtering against domain-expertise.md. When 3+ low-confidence decisions cluster around a topic, auto-enqueue a research job. Gated behind `autoResearch.enabled` config flag (default: false). Research jobs go through normal FIFO queue with budget/dedup. See `src/auto-research.ts`.
+
+### Dogfood Bootstrap — COMPLETE
+`src/bootstrap.ts` — cold-start bootstrap skill for external repos. `analyzeCodebase()` gathers file listings and key file contents within a 50K token budget using a tiered strategy (config files → README → file tree → sampled source). `buildBootstrapPrompt()` assembles the analysis into a prompt with idempotency gates (skips CLAUDE.md/TODOS.md generation if files already exist). Integrated into pipeline.ts for `garyclaw run bootstrap prioritize implement qa --autonomous --project-dir <target>`.
 
 ### Phase 4b: Scheduling (DEFERRED)
 Cron triggers, config hot-reload via SIGHUP.
