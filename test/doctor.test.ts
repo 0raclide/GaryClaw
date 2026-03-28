@@ -257,7 +257,13 @@ describe("doctor", () => {
 
   describe("checkOrphanedWorktrees", () => {
     it("PASS when no worktrees exist", () => {
-      const result = checkOrphanedWorktrees(defaultOptions());
+      // Must mock listWorktrees because TEST_DIR is inside a real git repo
+      // and git traverses up to find the repo root's worktrees
+      const result = checkOrphanedWorktrees(defaultOptions(), {
+        listWorktrees: () => [],
+        removeWorktree: () => {},
+        worktreeHasUnmergedCommits: () => false,
+      });
       expect(result.status).toBe("PASS");
     });
 

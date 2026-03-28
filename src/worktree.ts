@@ -340,24 +340,28 @@ export function mergeWorktreeBranch(
   }
 
   try {
-    // Rebase: puts instance commits on top of current baseBranch
-    try {
-      execFileSync("git", ["rebase", baseBranch, branch], {
-        cwd: repoDir,
-        stdio: "pipe",
-      });
-    } catch {
-      // Rebase conflict — abort and bail
-      try { execFileSync("git", ["rebase", "--abort"], { cwd: repoDir, stdio: "pipe" }); } catch { /* noop */ }
-      restoreBranch(repoDir, originalBranch, baseBranch);
-      return {
-        merged: false,
-        commitCount,
-        reason: `Rebase of ${branch} onto ${baseBranch} had conflicts — needs manual resolution`,
-      };
+    // Rebase: run in worktree dir (which is already on the instance branch)
+    // to avoid disrupting the main repo's working directory.
+    const wtDir = worktreeDir(repoDir, instanceName);
+    if (existsSync(wtDir)) {
+      try {
+        execFileSync("git", ["rebase", baseBranch], {
+          cwd: wtDir,
+          stdio: "pipe",
+        });
+      } catch {
+        // Rebase conflict — abort and bail
+        try { execFileSync("git", ["rebase", "--abort"], { cwd: wtDir, stdio: "pipe" }); } catch { /* noop */ }
+        restoreBranch(repoDir, originalBranch, baseBranch);
+        return {
+          merged: false,
+          commitCount,
+          reason: `Rebase of ${branch} onto ${baseBranch} had conflicts — needs manual resolution`,
+        };
+      }
     }
 
-    // After successful rebase, ff-only merge is guaranteed to work
+    // After successful rebase (or no worktree), ff-only merge
     try {
       execFileSync("git", ["merge", "--ff-only", branch], {
         cwd: repoDir,
@@ -368,7 +372,7 @@ export function mergeWorktreeBranch(
       return {
         merged: false,
         commitCount,
-        reason: `Fast-forward merge failed after rebase — unexpected state`,
+        reason: `Branch ${branch} has ${commitCount} commit(s) that cannot be fast-forwarded — needs manual merge or rebase`,
       };
     }
 
@@ -499,6 +503,9 @@ export function releaseMergeLock(repoDir: string): void {
 
 function tryMergeLock(lockDir: string, pidFile: string): boolean {
   try {
+    // Ensure parent .garyclaw dir exists (recursive), then atomic mkdir for lock
+    const parentDir = join(lockDir, "..");
+    mkdirSync(parentDir, { recursive: true });
     mkdirSync(lockDir, { recursive: false });
     writeFileSync(pidFile, String(process.pid));
     return true;
