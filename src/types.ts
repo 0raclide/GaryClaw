@@ -294,6 +294,8 @@ export interface Job {
   researchTopic?: string;  // topic string for auto-research jobs
   failureCategory?: FailureCategory;
   retryable?: boolean;
+  retryCount?: number;           // How many times this job has been retried after crash (1 = first retry, 2 = second retry)
+  priorSkillCostUsd?: number;    // Cost of already-completed skills (for dashboard "saved" reporting, not budget checks)
   adaptiveTurnsStats?: AdaptiveTurnsJobStats;  // undefined for pre-existing jobs or --no-adaptive
   claimedTodoTitle?: string;  // TODO item title claimed by this job's prioritize skill
 }
