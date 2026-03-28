@@ -7,6 +7,7 @@
 
 import { execFileSync } from "node:child_process";
 import type { GitPollTrigger, CronTrigger } from "./types.js";
+import { GARYCLAW_DAEMON_EMAIL } from "./sdk-wrapper.js";
 
 export interface GitPoller {
   start(): void;
@@ -19,6 +20,7 @@ export type LogFn = (level: string, msg: string) => void;
 
 export interface GitPollerDeps {
   getHead: (projectDir: string, branch?: string) => string | null;
+  getCommitEmails: (projectDir: string, oldHead: string, newHead: string) => string[];
   log: LogFn;
   setInterval: (fn: () => void, ms: number) => ReturnType<typeof globalThis.setInterval>;
   clearInterval: (id: ReturnType<typeof globalThis.setInterval>) => void;
@@ -30,6 +32,7 @@ const noop: LogFn = () => {};
 
 const defaultDeps: GitPollerDeps = {
   getHead: getGitHead,
+  getCommitEmails: getCommitEmails,
   log: noop,
   setInterval: globalThis.setInterval.bind(globalThis),
   clearInterval: globalThis.clearInterval.bind(globalThis),
@@ -73,6 +76,15 @@ export function createGitPoller(
 
     // No change
     if (head === lastHead) return;
+
+    // Check if all commits are self-made (daemon's own commits)
+    const selfEmail = config.selfCommitEmail ?? GARYCLAW_DAEMON_EMAIL;
+    const emails = d.getCommitEmails(projectDir, lastHead, head);
+    if (emails.length > 0 && emails.every(e => e === selfEmail)) {
+      d.log("debug", `Git poll: skipping self-commits (${emails.length} commits from ${selfEmail})`);
+      lastHead = head; // Update HEAD so we don't re-check these commits
+      return;
+    }
 
     // HEAD changed — start/restart debounce
     pendingHead = head;
@@ -126,6 +138,28 @@ export function getGitHead(projectDir: string, branch?: string): string | null {
     }).trim();
   } catch {
     return null;
+  }
+}
+
+/**
+ * Get committer emails for commits in a range.
+ * Returns empty array on error or if range is invalid.
+ */
+export function getCommitEmails(
+  projectDir: string,
+  oldHead: string,
+  newHead: string,
+): string[] {
+  try {
+    const output = execFileSync(
+      "git",
+      ["log", "--format=%ce", `${oldHead}..${newHead}`],
+      { cwd: projectDir, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+    if (!output) return [];
+    return output.split("\n").filter(Boolean).slice(0, 100); // Cap to prevent memory spike on pathological ranges
+  } catch {
+    return []; // On error, don't filter (safe default: trigger fires)
   }
 }
 
