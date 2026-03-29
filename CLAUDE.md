@@ -242,7 +242,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/oracle-prompt-prefix.test.ts` | 11 | buildOraclePromptPrefix: preamble, principles, memory injection, recent decisions, projectContext truncation |
 | `test/oracle-batch.test.ts` | 32 | askOracleBatch: single delegation, multi-question batching, batch prompt, parseBatchOracleResponse, fallback chain, otherProposal |
 | `test/oracle-extended.test.ts` | 32 | Extended oracle edge cases, principle matching, response parsing |
-| `test/sdk-wrapper.test.ts` | 12 | env stripping, usage extraction, result parsing |
+| `test/sdk-wrapper.test.ts` | 17 | env stripping, usage extraction, result parsing |
 | `test/sdk-wrapper-verifyauth.regression-1.test.ts` | 9 | verifyAuth error handling regression |
 | `test/report.test.ts` | 13 | merge/dedup, markdown formatting |
 | `test/relay.test.ts` | 9 | git stash/pop, relay segment construction |
@@ -277,7 +277,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/daemon.test.ts` | 55 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request, autoResearch validation, merge config |
 | `test/daemon-extended.test.ts` | 46 | Extended daemon: shutdown, poller lifecycle, IPC edge cases |
 | `test/daemon-lifecycle.test.ts` | 14 | Daemon start/stop lifecycle, signal handling |
-| `test/daemon-registry.test.ts` | 42 | Instance discovery, global budget, cross-instance dedup, migration |
+| `test/daemon-registry.test.ts` | 47 | Instance discovery, global budget, cross-instance dedup, migration |
 | `test/reflection-lock.test.ts` | 12 | Acquire/release, reentrant, stale recovery, timeout |
 | `test/safe-json.test.ts` | 21 | Atomic write/read, corruption recovery, .bak rename, validation |
 | `test/safe-json-extended.test.ts` | 13 | Extended safe-json: concurrent writes, large files, encoding |
@@ -287,7 +287,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
 | `test/prioritize.test.ts` | 42 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
-| `test/worktree.test.ts` | 41 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
+| `test/worktree.test.ts` | 28 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
 | `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
 | `test/auto-research.test.ts` | 33 | extractTopicKeywords, groupDecisionsByTopic, getResearchTopics, defaults |
 | `test/codebase-summary.test.ts` | 51 | extractObservations, extractFailedApproaches, deduplicateObservations, truncateToTokenBudget, buildCodebaseSummary, formatCodebaseSummaryForRelay |
@@ -325,7 +325,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/qa-regressions.regression-1.test.ts` | 9 | QA regression: issue extraction edge cases |
 | `test/qa-regressions.regression-2.test.ts` | 10 | QA regression: report formatting edge cases |
 | `test/bootstrap.regression-1.test.ts` | 14 | Bootstrap regression: walkFileTree permission errors, detectTechStack edge cases, safeReadFile edge cases, budget edge cases |
-| `test/file-conflict.test.ts` | 31 | extractPredictedFiles, expandWithDependencies, hasFileOverlap, DEFAULT_FILE_DEPS validation |
+| `test/file-conflict.test.ts` | 30 | extractPredictedFiles, expandWithDependencies, hasFileOverlap, DEFAULT_FILE_DEPS validation |
 | `test/daemon-registry-file-conflict.test.ts` | 7 | getClaimedFiles: cross-instance scanning, self-exclusion, status filtering, aggregation |
 | `test/job-runner-file-conflict.test.ts` | 8 | File conflict integration: skip conflicting items, fall-through, fail-open, custom dep map, idle on all blocked |
 | `test/todo-state.test.ts` | 58 | slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation truth table, getStartSkill, findNextSkill, skillToTodoState |
