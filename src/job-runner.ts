@@ -547,6 +547,18 @@ export function createJobRunner(
           d.log("warn", `Auto-research trigger failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+
+      // Continuous mode: after a successful pipeline, re-enqueue the same skill set
+      // to immediately pick up the next TODO. Pre-assignment ensures a different item
+      // is claimed each cycle. Stops when backlog is exhausted (enqueue returns null).
+      if (nextJob.status === "complete" && nextJob.skills.length > 1 && nextJob.skills.includes("prioritize")) {
+        const reEnqueueId = enqueue(nextJob.skills, "continuous", "auto re-enqueue after successful pipeline", nextJob.designDoc);
+        if (reEnqueueId) {
+          d.log("info", `Continuous: re-enqueued pipeline as ${reEnqueueId}`);
+        } else {
+          d.log("info", `Continuous: re-enqueue skipped (budget/dedup/exhausted)`);
+        }
+      }
     } finally {
       running = false;
     }
