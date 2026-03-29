@@ -1,5 +1,56 @@
 # TODOS
 
+## P2: Pre-Merge Validation Gate (Reimplement from Design Doc)
+
+**What:** Run tests in the worktree after rebase but before ff-only merge. Test failure blocks merge (retryable error). Merge audit JSONL log tracks all attempts. Dashboard merge health as 5th signal. Previously built by worker-2 overnight but could not be merged due to conflicts with Workers 5+1 on main. Design doc preserved.
+
+**Why:** Every auto-merge overnight failed with "Working tree has uncommitted changes." This is the #1 reliability blocker for parallel daemon operation. Without a test gate, broken code lands on main and triggers $30-60 of wasted QA cascades.
+
+**Design doc:** `docs/designs/pre-merge-validation-gate.md` (complete architecture, interfaces, test strategy)
+
+**Effort:** S (human: ~2 days / CC: ~20 min — reimplementation from existing design, not greenfield)
+**Depends on:** Nothing
+**Added by:** Session 3 overnight parallel run — worker-2 built it but branch conflicted on merge (2026-03-29)
+
+## P2: File-Level Conflict Prevention for Parallel Instances
+
+**What:** When parallel daemon instances claim TODO items, also analyze which source files each item is likely to modify (from the design doc or TODO description). Prevent two instances from claiming items that touch the same files. Currently, parallel workers all branch from the same commit and independently modify the same core files (oracle.ts, types.ts, evaluate.ts, dashboard.ts), making only the first-to-merge succeed. The rest conflict.
+
+**Why:** On 2026-03-29, 5 parallel workers built 5 features overnight ($49.60). Only 2 could be merged cleanly — the other 3 conflicted because they all modified oracle.ts and types.ts independently. That's ~$30 of work that needed reimplementation.
+
+**Implementation notes:**
+- In `processNext()` pre-assignment: after picking a TODO, scan its description/design-doc for file paths mentioned
+- Build a `claimedFiles` set (union of all files claimed by running instances)
+- Skip TODO items whose likely-modified files overlap with `claimedFiles`
+- Heuristic: extract paths from `**Implementation notes:**` and `**Files:**` sections in TODO descriptions
+- Fallback: if no files detectable, allow the claim (don't block work over missing metadata)
+
+**Effort:** S (human: ~2 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** human observation on 2026-03-29
+
+## P3: Semantic Validation for Bootstrap (Reimplement from Design Doc)
+
+**What:** Five pure-TS validators that check CLAUDE.md claims against reality: validateFileReferences, validateTechStackClaims, validateTestClaims, validateCommands, validateTodosFormat. Runs in <100ms. Feeds correction prompts when bootstrap quality gate triggers re-bootstrap. Previously built by worker-4 overnight but could not be merged.
+
+**Why:** Bootstrap can hallucinate file paths, wrong test frameworks, non-existent commands. Downstream skills (implement, QA) waste tokens working from incorrect assumptions. Semantic validation catches these before the pipeline continues.
+
+**Design doc:** `docs/designs/evaluate-bootstrap-quality.md` + `docs/designs/todos-format-validation.md`
+
+**Effort:** S (human: ~2 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** Session 3 overnight parallel run — worker-4 built it but branch conflicted (2026-03-29)
+
+## P3: Fix Auto-Merge Dirty Working Tree Detection
+
+**What:** The auto-merge function in `mergeWorktreeBranch()` checks `git diff --quiet` on the main repo before merging. This fails when any daemon-generated files (`.garyclaw/` artifacts, uncommitted session changes) are present. The fix: either stash before merge, or scope the dirty check to tracked files only (ignoring `.garyclaw/`).
+
+**Why:** Every overnight auto-merge failed with "Working tree has uncommitted changes." The worktrees themselves were clean — the main repo had uncommitted changes from our session or from daemon artifacts.
+
+**Effort:** XS (human: ~30 min / CC: ~5 min)
+**Depends on:** Nothing
+**Added by:** human observation on 2026-03-29
+
 ## ~~P2: garyclaw doctor — Self-Diagnostic Command~~ — COMPLETE (2026-03-27)
 
 Implemented in 7 commits (340c87f..c2b4827). 6 subsystem checks, --fix/--json/--skip-auth flags, shared pid-utils.ts, 72 tests.
