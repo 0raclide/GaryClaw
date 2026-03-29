@@ -27,7 +27,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
 **Dogfood Bootstrap: COMPLETE** (2026-03-28) — Cold-start bootstrap skill, codebase analysis, CLAUDE.md/TODOS.md generation for external repos
 **Pipeline Resume After Crash: COMPLETE** (2026-03-29) — Re-queue interrupted jobs, retry limit (3 crashes = abandon), pipeline resume from last completed skill, dashboard crash recovery stats
-- 34 source modules + CLI, 87 test files, 1896 tests
+**Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
+- 34 source modules + CLI, 100 test files, 2010 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -161,7 +162,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics |
 | `src/reflection.ts` | Post-job reflection: decision outcomes, reopened detection, quality metrics |
 | `src/researcher.ts` | Domain expertise research: web search, freshness tracking, section merge |
-| `src/bootstrap.ts` | Bootstrap skill: codebase analysis, CLAUDE.md/TODOS.md generation for cold-start repos |
+| `src/bootstrap.ts` | Bootstrap skill: codebase analysis, CLAUDE.md/TODOS.md generation for cold-start repos, enriched re-bootstrap prompt |
 | `src/implement.ts` | Implement skill: design doc discovery, review context, prompt builder |
 | `src/prioritize.ts` | Prioritize skill: TODOS.md parsing, overnight goal, oracle context, scoring prompt |
 | `src/worktree.ts` | Git worktree isolation: create, remove, merge, list worktrees for parallel instances |
@@ -196,6 +197,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Auto-research trigger** — post-job keyword extraction from low-confidence decisions, topic grouping by 2+ shared keywords, freshness-aware dedup, gated behind `autoResearch.enabled` (default: false)
 - **Adaptive maxTurns** — per-segment turn prediction from `computeGrowthRate()` + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max. User's `--max-turns` is ceiling. Fresh monitor per relay session naturally falls back to configured default. `HEAVY_TOOLS` (WebFetch/WebSearch/Screenshot) trigger 2.5x growth rate multiplier for next segment. `--no-adaptive` disables.
 - **Pipeline resume after crash** — On daemon restart, `running` jobs re-queued with `retryCount` instead of marked failed. Jobs exceeding 2 retries abandoned. Multi-skill jobs with `pipeline.json` call `resumePipeline()` to skip completed skills. Single-skill jobs retry from scratch. `priorSkillCostUsd` tracks pre-crash spending for dashboard reporting. Recovery notification sent on resume.
+- **Bootstrap quality gate** — After bootstrap in a pipeline, `analyzeBootstrapQuality()` checks score. If < `BOOTSTRAP_QUALITY_THRESHOLD` (50), runs QA pre-scan (maxRelaySessions:1) → `buildEnrichedBootstrapPrompt()` → re-bootstrap. Capped at 1 enrichment retry via `bootstrapEnriched` flag on PipelineState. Fail-open on scoring errors. Opt-out via `bootstrapQualityGate: false`. Dashboard tracks enrichment count + avg score delta.
 - **Sleep-resilient cron poller** — `lastCheckedAt` scan on wake (floored to minute boundary), single-fire cap (latest match only), O(minutes-slept) per tick. Recovery logging: gaps > 2 min produce "Cron recovered after N min, M window(s) missed" detail for daemon log observability. Catches missed cron windows during macOS sleep. No persistence across daemon restarts (catch-up only for windows missed while poller was running). Clock backward jump is safe (empty scan range).
 
 ---
@@ -242,6 +244,9 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
 | `test/bootstrap.test.ts` | 52 | walkFileTree, detectTechStack, filePriority, safeReadFile, findCiConfig, findTestDir, buildFileTreeString, truncateToTokenBudget, analyzeCodebase, buildBootstrapPrompt |
 | `test/pipeline-bootstrap.test.ts` | 4 | bootstrap skill dispatch, idempotency, pipeline chaining |
+| `test/pipeline-bootstrap-gate.test.ts` | 12 | Quality gate trigger, skip when score >= 50, enrichment flow, retry cap, event emission, fail-open, config flag |
+| `test/bootstrap-enriched.test.ts` | 10 | buildEnrichedBootstrapPrompt: QA findings, missing CLAUDE.md, truncation, token budget |
+| `test/dashboard-enrichment.test.ts` | 9 | Bootstrap enrichment stats: aggregation, formatting, zero/positive/negative delta |
 | `test/evaluate.test.ts` | 72 | scoreTokenEfficiency, extractDependencies, computeFrameworkCoverage, detectSections, analyzeBootstrapQuality, analyzeOraclePerformance, analyzePipelineHealth, extractObviousImprovements, parseClaudeImprovements, deduplicateImprovements, formatEvaluationReport, formatDuration, formatImprovementCandidates, writeEvaluationReport, buildEvaluatePrompt |
 | `test/evaluate.regression-1.test.ts` | 6 | buildEvaluatePrompt error boundary interface completeness |
 | `test/evaluate.regression-2.test.ts` | 3 | buildEvaluatePrompt improvement-candidates.md prompt instruction |
