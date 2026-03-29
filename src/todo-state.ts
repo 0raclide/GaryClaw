@@ -213,6 +213,7 @@ export function detectArtifacts(
   };
 
   const keywords = extractKeywords(title);
+  const baseBranch = resolveBaseBranchSafe(projectDir);
 
   // 1. Design docs in docs/designs/
   try {
@@ -257,7 +258,6 @@ export function detectArtifacts(
         result.branchExists = true;
         // Count commits ahead of main
         try {
-          const baseBranch = resolveBaseBranchSafe(projectDir);
           const count = execFileSync(
             "git", ["rev-list", "--count", `${baseBranch}..${match}`],
             { cwd: projectDir, encoding: "utf-8", timeout: 10000 },
@@ -270,7 +270,6 @@ export function detectArtifacts(
 
   // 3. Commits on main matching slug or keywords
   try {
-    const baseBranch = resolveBaseBranchSafe(projectDir);
     const log = execFileSync(
       "git", ["log", "--oneline", "-50", baseBranch],
       { cwd: projectDir, encoding: "utf-8", timeout: 10000 },
