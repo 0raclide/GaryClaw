@@ -384,27 +384,26 @@ export function createJobRunner(
     }
 
     // ── TODO state tracking: skip already-completed stages ────────
-    if (preAssignedTitle && nextJob.skills.length > 1) {
+    const todoTitle = nextJob.claimedTodoTitle ?? preAssignedTitle;
+    if (todoTitle && nextJob.skills.length > 1) {
       try {
-        const slug = slugify(preAssignedTitle);
-        const storedState = findTodoState(
-          parentCheckpointDir ?? checkpointDir,
-          preAssignedTitle,
-        );
+        const slug = slugify(todoTitle);
+        const stateCheckpointDir = parentCheckpointDir ?? checkpointDir;
+        const storedState = findTodoState(stateCheckpointDir, todoTitle);
         const artifacts = detectArtifacts(
           jobConfig.worktreePath ?? jobConfig.projectDir,
-          preAssignedTitle,
+          todoTitle,
           slug,
         );
         const reconciledState = reconcileState(
           storedState,
           artifacts,
-          parentCheckpointDir ?? checkpointDir,
+          stateCheckpointDir,
         );
 
         const startSkill = getStartSkill(reconciledState);
         if (startSkill === "skip") {
-          d.log("info", `TODO "${preAssignedTitle}" already complete (${reconciledState.state}) — skipping`);
+          d.log("info", `TODO "${todoTitle}" already complete (${reconciledState.state}) — skipping`);
           nextJob.status = "complete";
           nextJob.completedAt = new Date().toISOString();
           running = false;
@@ -418,9 +417,9 @@ export function createJobRunner(
         if (startIndex > 0 && startIndex < nextJob.skills.length) {
           const skippedSkills = nextJob.skills.slice(0, startIndex);
           nextJob.skills = nextJob.skills.slice(startIndex);
-          d.log("info", `TODO "${preAssignedTitle}" at state "${reconciledState.state}" — skipping [${skippedSkills.join(", ")}]`);
+          d.log("info", `TODO "${todoTitle}" at state "${reconciledState.state}" — skipping [${skippedSkills.join(", ")}]`);
         } else if (startIndex >= nextJob.skills.length) {
-          d.log("info", `TODO "${preAssignedTitle}" at state "${reconciledState.state}" — all pipeline skills already complete`);
+          d.log("info", `TODO "${todoTitle}" at state "${reconciledState.state}" — all pipeline skills already complete`);
           nextJob.status = "complete";
           nextJob.completedAt = new Date().toISOString();
           running = false;
