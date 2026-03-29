@@ -147,6 +147,7 @@ describe("computeHealthScore edge cases", () => {
       },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
+      mergeHealth: { totalAttempts: 0, merged: 0, blocked: 0, successRate: 100, avgTestDurationMs: 0, testFailures: 0, rebaseConflicts: 0 },
       instances: [],
     };
     const { score } = computeHealthScore(data);
@@ -172,6 +173,7 @@ describe("computeHealthScore edge cases", () => {
       },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
+      mergeHealth: { totalAttempts: 0, merged: 0, blocked: 0, successRate: 100, avgTestDurationMs: 0, testFailures: 0, rebaseConflicts: 0 },
       instances: [],
     };
     const { topConcern } = computeHealthScore(data);
@@ -203,6 +205,7 @@ describe("formatDashboard edge cases", () => {
       },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
+      mergeHealth: { totalAttempts: 0, merged: 0, blocked: 0, successRate: 100, avgTestDurationMs: 0, testFailures: 0, rebaseConflicts: 0 },
       instances: [],
     };
     const result = formatDashboard(data);
@@ -229,6 +232,7 @@ describe("formatDashboard edge cases", () => {
       },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
       bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
+      mergeHealth: { totalAttempts: 0, merged: 0, blocked: 0, successRate: 100, avgTestDurationMs: 0, testFailures: 0, rebaseConflicts: 0 },
       instances: [],
     };
     const result = formatDashboard(data);
