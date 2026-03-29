@@ -33,7 +33,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
-- 38 source modules + CLI, 156 test files, 2707 tests
+- 38 source modules + CLI, 157 test files, 2711 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -266,6 +266,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-compose.test.ts` | 44 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
 | `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
 | `test/pipeline-history.test.ts` | 37 | readPipelineOutcomes, appendPipelineOutcome, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker |
+| `test/pipeline-compose-oracle.regression-1.test.ts` | 4 | Oracle override same-length different-skills: set-membership check, identical no-op, length diff, empty |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
 | `test/bootstrap.test.ts` | 52 | walkFileTree, detectTechStack, filePriority, safeReadFile, findCiConfig, findTestDir, buildFileTreeString, truncateToTokenBudget, analyzeCodebase, buildBootstrapPrompt |
 | `test/pipeline-bootstrap.test.ts` | 4 | bootstrap skill dispatch, idempotency, pipeline chaining |
