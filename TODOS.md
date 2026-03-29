@@ -164,7 +164,7 @@ All three items from `docs/designs/implement-skill-hardening.md` implemented: `v
 
 Implemented in commit 923c08a. Aggregates avg/min/max adaptive turns per job, segment count with adaptive prediction vs. fallback default, heavy tool multiplier activation distribution. 27 tests in `test/dashboard.test.ts` and `test/dashboard.regression-1.test.ts`.
 
-## P2: Self-Maintaining Backlog — Auto-Complete + Rate Limit Resilience
+## ~~P2: Self-Maintaining Backlog — Auto-Complete + Rate Limit Resilience~~ — COMPLETE (2026-03-29)
 
 **What:** Two capabilities that make the daemon's backlog management fully autonomous:
 
