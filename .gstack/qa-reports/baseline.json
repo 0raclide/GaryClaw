@@ -1,18 +1,21 @@
 {
   "date": "2026-03-29",
-  "project": "GaryClaw",
-  "healthScore": 100,
-  "testFiles": 157,
-  "testsRun": 2717,
-  "testsPassed": 2717,
-  "testsFailed": 0,
-  "duration": "9.36s",
-  "issues": [],
+  "url": "http://localhost:3000",
+  "healthScore": 87,
+  "issues": [
+    { "id": "ISSUE-001", "title": "Search bar does not filter or navigate on submit", "severity": "high", "category": "functional" },
+    { "id": "ISSUE-002", "title": "Activity tracker Failed to fetch console errors", "severity": "medium", "category": "console" },
+    { "id": "ISSUE-003", "title": "Quick-view close does not clear URL query parameter", "severity": "low", "category": "ux" },
+    { "id": "ISSUE-004", "title": "Sign-in email field lacks client-side validation", "severity": "medium", "category": "functional" }
+  ],
   "categoryScores": {
-    "functional": 100,
-    "console": 100,
+    "console": 70,
+    "links": 100,
+    "visual": 100,
+    "functional": 75,
+    "ux": 97,
+    "performance": 100,
     "content": 100,
-    "ux": 100,
-    "performance": 100
+    "accessibility": 85
   }
 }

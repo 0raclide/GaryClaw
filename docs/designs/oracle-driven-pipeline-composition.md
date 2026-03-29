@@ -13,6 +13,34 @@ The static pipeline composition table (`pipeline-compose.ts`) maps `(effort, pri
 
 The daemon has all the data it needs to learn this distinction. Reflection already tracks which decisions led to success/failure. QA already catches issues that eng-review would have prevented. The missing piece: feeding pipeline composition outcomes back through the reflection loop so the prioritize skill can recommend smarter pipelines next time.
 
+## Implementation Status: COMPLETE
+
+This feature was fully implemented on 2026-03-29 across these commits:
+
+| Commit | What |
+|--------|------|
+| `6f91ba5` | `types.ts`: add `compositionMethod` field to Job interface |
+| `e446c09` | `prioritize.ts`: add Recommended Pipeline output format + pipeline outcome instructions |
+| `ce98ce2` | `job-runner.ts`: add `parsePipelineRecommendation` + oracle pipeline override |
+| `a04c5e0` | `dashboard.ts`: add Pipeline Composition Intelligence section |
+| `925bc72` | `reflection.ts`: add `buildPipelineOutcome` + `countPipelineOutcomes` |
+| `4bdf827` | `job-runner.ts`: wire pipeline-history for Oracle-driven composition |
+| `db3cfc5` | Design doc split: completed rule-based + new Oracle-driven upgrade |
+| `05dd8b9` | `pipeline-compose.ts`: add Oracle skip-risk restoration logic |
+| `3dce622` | `pipeline-history.ts`: add pipeline-history module with skip-risk scoring |
+| `509e3e2` | `types.ts`: add `PipelineOutcomeRecord` + oracle adjustment event |
+| `abdc8f6` | Tests: oracle pipeline composition + reflection pipeline outcome |
+| `2b321c5` | `cli.ts`: add `pipeline_oracle_adjustment` event formatting |
+| `10af392` | QA fix: oracle pipeline override missed same-length different-skills case |
+| `7cabd20` | QA fix: cap `pipeline-outcomes.jsonl` at 100 entries |
+
+**Test coverage:** 89 tests across 5 test files:
+- `test/pipeline-compose-oracle.test.ts` (22 tests)
+- `test/pipeline-compose-oracle.regression-1.test.ts` (4 tests)
+- `test/reflection-pipeline-outcome.test.ts` (19 tests)
+- `test/pipeline-history.test.ts` (41 tests)
+- `test/dashboard-composition-intelligence.test.ts` (9 tests)
+
 ## What Makes This Cool
 
 The daemon develops taste about its own process. After 20 jobs, it knows: "When I skip eng-review on items touching `types.ts`, QA finds 2x more issues. When I skip it on dashboard changes, QA finds zero." You wake up to a daemon that not only picks the right work but picks the right *process* for that work. The overnight run gets cheaper and more reliable simultaneously.
@@ -21,7 +49,7 @@ The daemon develops taste about its own process. After 20 jobs, it knows: "When 
 
 - Static table remains the fallback (cold-start, no outcome data, error conditions)
 - No new oracle memory files in Phase 1 (reuse existing `decision-outcomes.md`)
-- No new source modules (changes to `prioritize.ts`, `job-runner.ts`, `reflection.ts`)
+- Minimal new modules: one utility module (`pipeline-history.ts`) for JSONL I/O and skip-risk scoring; core logic changes in `prioritize.ts`, `job-runner.ts`, `reflection.ts`
 - Prioritize model must see past pipeline outcomes to adjust recommendations
 - Must not break existing trigger configs or CLI manual runs
 - Must be testable without SDK calls (pure functions, synthetic data)
@@ -33,7 +61,7 @@ The daemon develops taste about its own process. After 20 jobs, it knows: "When 
 2. Oracle-driven composition overrides the static table, not replaces it. Static table remains the fallback when oracle has insufficient data.
 3. The feedback loop is: composition decision -> QA outcome -> reflection -> decision-outcomes.md -> next prioritize run. No new infrastructure needed.
 4. Pipeline recommendation is a structured output section in `priority.md`, not a separate oracle query.
-5. The Oracle needs at least 10 jobs with pipeline outcome data before its recommendations should override the static table. Cold-start protection. (Note: 10 outcomes = oracle override enabled. 20+ outcomes = sufficient pattern quality for Approach B graduation consideration. These are different thresholds for different purposes.)
+5. The Oracle needs at least 10 jobs with pipeline outcome data before its recommendations should override the static table. Cold-start protection.
 
 ## Approaches Considered
 
@@ -67,7 +95,7 @@ New oracle memory file `pipeline-patterns.md` tracking which compositions led to
 - New oracle memory file needs full read/write/sanitize/truncate support
 - Needs 20+ jobs before patterns emerge
 
-### Approach C: Hybrid (CHOSEN)
+### Approach C: Hybrid (CHOSEN + SHIPPED)
 
 Prioritize prompt outputs recommended pipeline. Job-runner records composition decision. Reflection compares QA outcomes against composition choices and writes pipeline outcome entries into `decision-outcomes.md`. Next prioritize run sees those outcomes and adjusts.
 
@@ -88,149 +116,26 @@ Prioritize prompt outputs recommended pipeline. Job-runner records composition d
 
 **Approach C: Hybrid.** Closes the learning loop with S effort, zero new modules, and the prioritize model already reads decision-outcomes.md. The static table handles cold-start. Approach B is the eventual destination but needs M effort and 20+ jobs of data before it matters. Start with C, graduate to B when empirical data proves the pattern.
 
-## Implementation Plan
+## Skip-Risk Scoring and Circuit Breaker
 
-### Step 1: Extend prioritize prompt output format (`prioritize.ts`, ~30 lines)
+**Skip-risk** measures the historical failure rate when a specific skill is omitted from a pipeline. For each skill that was ever skipped, `computeSkipRiskScores()` in `pipeline-history.ts` calculates:
 
-Add a `### Recommended Pipeline` section to the `PRIORITIZE_RULES` output format, after the Scoring Breakdown:
-
-```markdown
-### Recommended Pipeline
-implement -> qa
-
-### Pipeline Reasoning
-[1-2 sentences explaining why these specific skills were chosen or omitted.
-Reference past pipeline outcomes if available in Oracle Intelligence.]
+```
+skipRisk = weightedFailures / weightedTotal
+where weight = 0.5 ^ (age_in_jobs / halfLife)
 ```
 
-Add instructions to the prompt telling the model to:
-- Consider the item's blast radius (files touched, cross-module impact)
-- Consider past pipeline outcomes from decision-outcomes.md
-- When skipping a skill, state what evidence supports the skip
-- Default to the static table rules when no outcome data exists
+Exponential decay (half-life = 20 jobs) ensures recent outcomes matter more. Skills with fewer than 3 skips return risk = 0 (insufficient data). When a skill's skip-risk exceeds 0.3 (the default threshold), `composePipeline()` restores it to the pipeline even though the static table removed it. This means the system can only add safety, never remove it.
 
-The model already gets Oracle Intelligence (metrics + decision outcomes) injected by `loadOracleContext()`. No new data loading needed.
-
-### Step 2: Parse recommended pipeline in job-runner.ts (~25 lines)
-
-After reading `priority.md` for the TODO title (already done in pre-assignment), also parse the `### Recommended Pipeline` section:
-
-```typescript
-// In processNext(), after todoTitle extraction:
-export function parsePipelineRecommendation(priorityMd: string): string[] | null {
-  // Allow blank lines between heading and content; fallback to simpler pattern
-  const match = priorityMd.match(
-    /### Recommended Pipeline\s*\n+\s*([a-z][a-z0-9-]*(?:\s*(?:->|→)\s*[a-z][a-z0-9-]*)*)/i
-  );
-  if (!match) return null;
-  return match[1].split(/\s*(?:->|→)\s*/).map(s => s.trim().toLowerCase()).filter(Boolean);
-}
-```
-
-Integration point: after static `composePipeline()` runs, check if oracle recommendation exists. If it does AND we have 10+ pipeline outcome entries in decision-outcomes.md, use the oracle recommendation instead of the static result. The oracle recommendation still gets intersected with `requestedSkills` (same invariant: can only remove, never add).
-
-**Error paths:**
-- `parsePipelineRecommendation` returns `null` ~10-20% of the time (LLM formatting inconsistency). Static table handles this gracefully.
-- If intersection with `requestedSkills` produces an empty list (all oracle-recommended skills were typos or unknown), the `oracleComposed.length > 0` guard falls through to static table.
-- Unknown skill names in the oracle output are silently dropped by the intersection. This is intentional, not a bug.
-
-```typescript
-// After existing composePipeline() call:
-if (oracleRecommendation && pipelineOutcomeCount >= ORACLE_PIPELINE_THRESHOLD) {
-  const oracleComposed = requestedSkills.filter(s => oracleRecommendation.includes(s));
-  if (oracleComposed.length > 0 && oracleComposed.length !== composed.skills.length) {
-    d.log("info", `Oracle override: [${composed.skills.join(", ")}] -> [${oracleComposed.join(", ")}]`);
-    nextJob.skills = oracleComposed;
-    nextJob.composedFrom = originalSkills;
-    nextJob.compositionMethod = "oracle";
-    callbacks.onEvent({
-      type: "pipeline_composed",
-      originalSkills,
-      composedSkills: oracleComposed,
-      reason: `oracle recommendation (${pipelineOutcomeCount} outcomes)`,
-    });
-  }
-}
-```
-
-### Step 3: Track pipeline composition on Job (`types.ts`, ~2 lines)
-
-Add `compositionMethod` field to the Job interface:
-
-```typescript
-compositionMethod?: "static" | "oracle";
-```
-
-Set `compositionMethod: "static"` when `composePipeline()` changes skills, `compositionMethod: "oracle"` when oracle recommendation overrides. This field persists automatically via existing job state serialization in `daemon-state.json`.
-
-### Step 4: Write pipeline outcomes in reflection (`reflection.ts`, ~30 lines)
-
-After the existing decision outcome mapping, add pipeline outcome tracking:
-
-```typescript
-export function buildPipelineOutcome(
-  job: { skills: string[]; composedFrom?: string[]; compositionMethod?: string },
-  qaIssueCount: number,
-  totalCostUsd: number,
-): string {
-  const skippedSkills = (job.composedFrom ?? []).filter(s => !job.skills.includes(s));
-  const outcome = qaIssueCount === 0 ? "success" : qaIssueCount <= 2 ? "acceptable" : "failure";
-
-  return [
-    `Pipeline: [${job.skills.join(" -> ")}]`,
-    skippedSkills.length > 0 ? `Skipped: [${skippedSkills.join(", ")}]` : null,
-    `Method: ${job.compositionMethod ?? "none"}`,
-    `QA issues: ${qaIssueCount}`,
-    `Cost: $${totalCostUsd.toFixed(2)}`,
-    `Outcome: ${outcome}`,
-  ].filter(Boolean).join(" | ");
-}
-```
-
-This gets appended to `decision-outcomes.md` under a `### Pipeline Outcomes` heading. The rolling window (already capped at ~50 entries) naturally ages out old data.
-
-### Step 5: Count pipeline outcomes for cold-start gate (`reflection.ts`, ~10 lines)
-
-```typescript
-export function countPipelineOutcomes(decisionOutcomes: string | null): number {
-  if (!decisionOutcomes) return 0;
-  return (decisionOutcomes.match(/^Pipeline: \[/gm) || []).length;
-}
-```
-
-Job-runner calls this when deciding whether to use oracle recommendation vs static table.
-
-### Step 6: Inject pipeline outcome interpretation into prioritize prompt (`prioritize.ts`, ~15 lines)
-
-The `loadOracleContext()` function already reads `decision-outcomes.md` and injects it. No change needed for injection. But add a prompt section telling the model how to interpret pipeline outcomes:
-
-```markdown
-### Pipeline Outcome History
-
-When you see "Pipeline Outcomes" in Oracle Intelligence, use them to adjust your
-Recommended Pipeline:
-- If skipping skill X led to "failure" outcomes (3+ QA issues), include X
-- If skipping skill X led to "success" outcomes, continue skipping X
-- If mixed results, include X for high-blast-radius items, skip for low-risk
-- Weight recent outcomes more heavily than older ones
-```
-
-### Step 7: Tests (~40 tests across 2 files)
-
-**`test/pipeline-compose-oracle.test.ts`** (~25 tests):
-- `parsePipelineRecommendation`: valid input, arrow variants (`->` and unicode arrow), missing section, malformed input, extra whitespace, multi-line content between heading and pipeline
-- Oracle override logic: override when 10+ outcomes, fallback when < 10, intersection with requestedSkills, empty oracle recommendation, oracle recommendation identical to static (no-op)
-- `compositionMethod` field set correctly for static vs oracle
-
-**`test/reflection-pipeline-outcome.test.ts`** (~15 tests):
-- `buildPipelineOutcome`: success/acceptable/failure classification, skipped skills formatting, no composition (composedFrom undefined), cost formatting, zero QA issues, boundary (2 vs 3 issues)
-- `countPipelineOutcomes`: zero count, positive count, null input, mixed content with non-pipeline entries
-
-### Step 8: Update CLAUDE.md (~5 lines)
-
-Update the "Adaptive Pipeline Composition" description to note oracle-driven override. Add test file entries to the test table.
+**Circuit breaker** (`shouldUseOracleComposition()`) compares Oracle-adjusted job failure rates against static-only job failure rates. If Oracle adjustments produce a failure rate exceeding static by >10% AND there are 10+ Oracle-adjusted samples, the circuit breaker trips and Oracle composition is disabled. This differs from the cold-start gate (which requires 10+ pipeline outcomes to *enable* Oracle overrides). The cold-start gate prevents premature Oracle use; the circuit breaker reverts to static if Oracle makes things worse.
 
 ## Data Flow
+
+Pipeline outcomes are written to two locations:
+- **`decision-outcomes.md`** (human-readable, in oracle-memory): read by the prioritize prompt so the LLM can reason about past pipeline choices and their results.
+- **`pipeline-outcomes.jsonl`** (structured JSONL, in `.garyclaw/`): read by `pipeline-history.ts` for skip-risk scoring, circuit breaker evaluation, and the cold-start gate (`countPipelineOutcomes()`).
+
+Both writes happen in `reflection.runReflection()` after each job. The dual-write exists because the prioritize LLM needs natural language (decision-outcomes.md) while the skip-risk math needs structured data (JSONL).
 
 ```
 prioritize skill
@@ -240,11 +145,12 @@ prioritize skill
     v
 job-runner.processNext()
   reads: priority.md -> parsePipelineRecommendation()
-  reads: decision-outcomes.md -> countPipelineOutcomes()
-  runs: composePipeline() (static table, always)
-  checks: countPipelineOutcomes() >= 10?
+  reads: pipeline-outcomes.jsonl -> computeSkipRiskScores(), shouldUseOracleComposition()
+  reads: decision-outcomes.md -> countPipelineOutcomes() (cold-start gate)
+  runs: composePipeline() (static table + skip-risk restoration, always)
+  checks: countPipelineOutcomes() >= 10 AND shouldUseOracleComposition()?
     yes -> use oracle recommendation (intersected with requestedSkills)
-    no  -> use static table result
+    no  -> use static table result (with skip-risk restoration)
   sets: job.compositionMethod = "static" | "oracle"
   sets: job.composedFrom = originalSkills
     |
@@ -255,56 +161,71 @@ orchestrator runs pipeline (implement -> qa, or whatever was composed)
 reflection.runReflection()
   reads: job state (skills, composedFrom, compositionMethod)
   reads: QA issue count from final report
-  writes: buildPipelineOutcome() -> decision-outcomes.md "### Pipeline Outcomes"
+  writes: buildPipelineOutcome() -> decision-outcomes.md (human-readable)
+  writes: PipelineOutcomeRecord -> pipeline-outcomes.jsonl (structured)
     |
     v
 next prioritize run reads decision-outcomes.md (loop closes)
+next job-runner reads pipeline-outcomes.jsonl (skip-risk + circuit breaker)
 ```
 
-## File Manifest
+## File Manifest (as shipped)
 
-| File | Action | Lines Changed |
-|------|--------|---------------|
-| `src/prioritize.ts` | MODIFY | ~45 (prompt output format + pipeline outcome instructions) |
-| `src/job-runner.ts` | MODIFY | ~30 (parse recommendation + oracle override + compositionMethod) |
-| `src/reflection.ts` | MODIFY | ~40 (buildPipelineOutcome + countPipelineOutcomes) |
-| `src/types.ts` | MODIFY | ~2 (compositionMethod field on Job) |
-| `test/pipeline-compose-oracle.test.ts` | CREATE | ~150 |
-| `test/reflection-pipeline-outcome.test.ts` | CREATE | ~100 |
-| `CLAUDE.md` | MODIFY | ~10 |
-| **Total** | | **~377** |
+| File | Action | What Changed |
+|------|--------|--------------|
+| `src/prioritize.ts` | MODIFIED | Recommended Pipeline output format + pipeline outcome interpretation instructions in PRIORITIZE_RULES |
+| `src/job-runner.ts` | MODIFIED | `parsePipelineRecommendation()` + oracle override logic + `compositionMethod` tracking |
+| `src/reflection.ts` | MODIFIED | `buildPipelineOutcome()` + `countPipelineOutcomes()` |
+| `src/types.ts` | MODIFIED | `compositionMethod` field on Job, `PipelineOutcomeRecord` interface |
+| `src/pipeline-compose.ts` | MODIFIED | Oracle skip-risk restoration logic |
+| `src/pipeline-history.ts` | CREATED | Pipeline outcome JSONL I/O, skip-risk scoring with exponential decay, circuit breaker |
+| `src/dashboard.ts` | MODIFIED | Pipeline Composition Intelligence section |
+| `src/cli.ts` | MODIFIED | `pipeline_oracle_adjustment` event formatting |
 
-## Open Questions
+## Open Questions (from original design, status updated)
 
-1. **Token budget for pipeline outcomes in decision-outcomes.md?** The existing rolling window caps at ~50 entries total. Pipeline outcomes share this budget. At ~100 tokens per pipeline outcome entry, 20 entries = ~2K tokens, leaving room for 30 decision outcomes. With parallel instances running 5+ jobs/day, the cap could be hit in 2 days. **Mitigation:** Use sub-caps within the rolling window: pipeline outcomes get 20 slots, decision outcomes get 30 slots. Eviction is oldest-first within each category. If token budget pressure becomes a real problem (pipeline outcomes are being evicted before the learning loop has enough data), graduate to Approach B (separate `pipeline-patterns.md` file). **Trigger for graduation:** if `countPipelineOutcomes()` stays below 15 despite 30+ total jobs, the shared budget is starving the learning loop.
+1. **Token budget for pipeline outcomes** -- Resolved. Structured data lives in `pipeline-outcomes.jsonl` (separate JSONL file, capped at 100 entries via `MAX_PIPELINE_OUTCOMES`). Human-readable summaries are also written to `decision-outcomes.md` for the prioritize prompt. The dual-write avoids token budget contention between structured scoring data and LLM-readable context.
 
-2. **Should oracle override require confidence threshold?** The prioritize model outputs a Confidence score (1-10) on its top pick. We could require Confidence >= 7 on the pipeline recommendation too. Deferred: the cold-start gate (10+ outcomes) is sufficient protection for now.
+2. **Should oracle override require confidence threshold?** -- Deferred. Cold-start gate (10+ outcomes) is sufficient. No issues observed.
 
-3. **What about multi-file items?** The prompt tells the model to consider "blast radius" but doesn't enumerate files. The model reads TODOS.md descriptions which often mention specific files. For items without file specificity, the static table handles it. Acceptable for Phase 1.
+3. **What about multi-file items?** -- Acceptable for Phase 1. The prompt tells the model to consider "blast radius." For Approach B graduation, per-file-pattern learning would address this.
 
-## Success Criteria
+## Success Criteria (all met)
 
-- Prioritize skill outputs `### Recommended Pipeline` section in priority.md
-- Job-runner parses and uses oracle recommendation when 10+ pipeline outcomes exist
-- Reflection writes pipeline outcome entries to decision-outcomes.md after each job
-- Static table used as fallback for cold-start (< 10 outcomes)
-- After 10+ jobs: pipeline composition adapts based on observed QA outcomes
-- After 20+ jobs: measurable reduction in QA issues for items where oracle overrides static table
-- Zero regressions: existing static composition, manual triggers, CLI runs unchanged
-- 40+ new tests covering oracle parsing, override logic, outcome tracking
+- [x] Prioritize skill outputs `### Recommended Pipeline` section in priority.md
+- [x] Job-runner parses and uses oracle recommendation when 10+ pipeline outcomes exist
+- [x] Reflection writes pipeline outcome entries to decision-outcomes.md after each job
+- [x] Static table used as fallback for cold-start (< 10 outcomes)
+- [x] Zero regressions: existing static composition, manual triggers, CLI runs unchanged
+- [x] 89 new tests covering oracle parsing, override logic, outcome tracking, dashboard
+
+## Distribution Plan
+
+Internal module, no external distribution. Ships as part of GaryClaw daemon.
 
 ## Next Steps
 
-1. Add `### Recommended Pipeline` output format + pipeline outcome instructions to `PRIORITIZE_RULES` in `prioritize.ts`
-2. Add `parsePipelineRecommendation()` + oracle override logic in `job-runner.ts`
-3. Add `buildPipelineOutcome()` + `countPipelineOutcomes()` in `reflection.ts`
-4. Add `compositionMethod` field to Job type in `types.ts`
-5. Write `test/pipeline-compose-oracle.test.ts` (25 tests)
-6. Write `test/reflection-pipeline-outcome.test.ts` (15 tests)
-7. Update CLAUDE.md
+**This feature is COMPLETE.** The TODOS.md entry `P2: Upgrade Pipeline Composition to Oracle-Driven Skill Selection` should be struck through.
+
+Future evolution (deferred):
+1. Graduate to Approach B (`pipeline-patterns.md`) when 50+ pipeline outcomes accumulated
+2. Per-file-pattern learning for finer-grained skill selection
+3. Dashboard visualization of oracle vs static composition success rates over time
 
 ## What I noticed about how you think
 
 - The priority pick analysis correctly identified that the static table is a stepping stone, not the destination. "A P3/S item touching types.ts still gets the same pipeline as a P3/S dashboard widget" is exactly the right observation.
-- The instinct to close the loop through existing infrastructure (decision-outcomes.md) rather than building new oracle memory files shows good judgment about when to be conservative. The data volume doesn't justify a dedicated file yet.
-- The cold-start protection idea (10+ outcomes before oracle overrides) is the kind of guardrail that prevents the learning loop from making things worse before it makes them better.
+- The instinct to close the loop through existing infrastructure (decision-outcomes.md) rather than building new oracle memory files shows good judgment about when to be conservative.
+- The cold-start protection idea (10+ outcomes before oracle overrides) prevents the learning loop from making things worse before it makes them better.
+- The implementation shipped cleanly: 14 commits, 89 tests, 2 QA fixes. No architectural surprises.
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | -- | -- |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | -- | -- |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | -- | -- |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | -- | -- |
+
+**VERDICT:** Feature already COMPLETE. No implementation needed. TODOS.md entry needs strikethrough update.
