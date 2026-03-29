@@ -1,34 +1,27 @@
 {
   "date": "2026-03-29",
-  "url": "cli-test-suite",
-  "healthScore": 95,
+  "target": "garyclaw-test-suite",
+  "healthScore": 97,
   "issues": [
-    {
-      "id": "ISSUE-001",
-      "title": "CLAUDE.md stale counts and missing file-conflict.ts module entry",
-      "severity": "medium",
-      "category": "content",
-      "status": "fixed"
-    },
-    {
-      "id": "ISSUE-002",
-      "title": "getClaimedFiles duplicate per-instance file entries",
-      "severity": "low",
-      "category": "functional",
-      "status": "fixed"
-    }
+    { "id": "ISSUE-001", "title": "Git stderr warnings in temp-dir tests", "severity": "low", "category": "console" },
+    { "id": "ISSUE-002", "title": "Slow worktree test files (>6s)", "severity": "low", "category": "performance" },
+    { "id": "ISSUE-003", "title": "Test count drift in CLAUDE.md", "severity": "low", "category": "content" }
   ],
   "categoryScores": {
-    "console": 100,
-    "links": 100,
-    "functional": 92,
-    "visual": 100,
+    "console": 85,
+    "functional": 100,
+    "performance": 90,
+    "content": 95,
     "ux": 100,
-    "performance": 100,
-    "content": 85,
+    "links": 100,
+    "visual": 100,
     "accessibility": 100
   },
-  "testFiles": 123,
-  "testsRun": 2261,
-  "testsPassed": 2261
+  "testStats": {
+    "files": 123,
+    "tests": 2261,
+    "passed": 2261,
+    "failed": 0,
+    "duration": "7.14s"
+  }
 }

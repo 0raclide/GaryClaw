@@ -292,7 +292,7 @@ export type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelle
 
 export interface Job {
   id: string;
-  triggeredBy: "git_poll" | "cron" | "manual" | "auto_research";
+  triggeredBy: "git_poll" | "cron" | "manual" | "auto_research" | "continuous";
   triggerDetail: string;
   skills: string[];
   projectDir: string;
