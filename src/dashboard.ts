@@ -300,9 +300,18 @@ export function computeHealthScore(
       ? Math.min(100, (data.budget.dailyRemaining / data.budget.dailyLimitUsd) * 100)
       : 100;
   const circuitBreakerScore = data.oracle.circuitBreakerTripped ? 0 : 100;
+  // No merges attempted = healthy (don't penalize non-merging instances)
+  const mh = data.mergeHealth;
+  const mergeScore = !mh || mh.totalAttempts === 0
+    ? 100
+    : mh.successRate;
 
   const score = Math.round(
-    jobScore * 0.4 + oracleScore * 0.25 + budgetHeadroom * 0.2 + circuitBreakerScore * 0.15,
+    jobScore * 0.35 +
+    oracleScore * 0.20 +
+    budgetHeadroom * 0.20 +
+    circuitBreakerScore * 0.10 +
+    mergeScore * 0.15,
   );
 
   // Top concern selection (first matching rule wins)
@@ -312,6 +321,8 @@ export function computeHealthScore(
     topConcern = "Oracle memory disabled — accuracy below 60%";
   } else if (data.jobs.successRate < 50) {
     topConcern = "More jobs failing than succeeding — check failure breakdown";
+  } else if (mh && mh.totalAttempts > 0 && mh.successRate < 50) {
+    topConcern = "More merges failing than succeeding — check merge audit log";
   } else if (
     data.budget.dailyLimitUsd > 0 &&
     data.budget.dailyRemaining / data.budget.dailyLimitUsd < 0.1
@@ -423,6 +434,29 @@ export function formatDashboard(data: DashboardData): string {
     );
   }
 
+  // Merge Health section (only when merges have been attempted)
+  if (data.mergeHealth && data.mergeHealth.totalAttempts > 0) {
+    const avgTestSec = Math.round(data.mergeHealth.avgTestDurationMs / 1000);
+    const blockedDetail: string[] = [];
+    if (data.mergeHealth.testFailures > 0) blockedDetail.push(`${data.mergeHealth.testFailures} test failure${data.mergeHealth.testFailures > 1 ? "s" : ""}`);
+    if (data.mergeHealth.rebaseConflicts > 0) blockedDetail.push(`${data.mergeHealth.rebaseConflicts} rebase conflict${data.mergeHealth.rebaseConflicts > 1 ? "s" : ""}`);
+    const blockedStr = blockedDetail.length > 0
+      ? `${data.mergeHealth.blocked} (${blockedDetail.join(", ")})`
+      : `${data.mergeHealth.blocked}`;
+
+    lines.push(
+      "",
+      "## Merge Health",
+      "",
+      "| Metric | Value |",
+      "|--------|-------|",
+      `| Attempts | ${data.mergeHealth.totalAttempts} |`,
+      `| Merged | ${data.mergeHealth.merged} (${data.mergeHealth.successRate.toFixed(1)}%) |`,
+      `| Blocked | ${blockedStr} |`,
+      `| Avg test time | ${avgTestSec}s |`,
+    );
+  }
+
   // Budget section
   const remainingPct =
     data.budget.dailyLimitUsd > 0
@@ -468,6 +502,7 @@ export function buildDashboard(
   globalBudget: GlobalBudget,
   config: DaemonConfig,
   todayStr?: string,
+  mergeAuditEntries?: MergeAuditEntry[],
 ): DashboardData {
   const jobs = aggregateJobStats(state.jobs, todayStr);
   const oracle = aggregateOracleStats(metrics);
@@ -480,16 +515,8 @@ export function buildDashboard(
   // Default to empty until we have a persistence path for enrichment events.
   const bootstrapEnrichment = aggregateBootstrapEnrichmentStats([]);
 
-  // Merge health: default empty until aggregateMergeStats is wired in Step 5
-  const mergeHealth = {
-    totalAttempts: 0,
-    merged: 0,
-    blocked: 0,
-    successRate: 100,
-    avgTestDurationMs: 0,
-    testFailures: 0,
-    rebaseConflicts: 0,
-  };
+  // Merge health from audit log entries
+  const mergeHealth = aggregateMergeStats(mergeAuditEntries ?? [], todayStr);
 
   const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, mergeHealth, instances });
 
@@ -539,7 +566,10 @@ export function generateDashboard(
     ? (safeReadJSON<GlobalBudget>(join(parentDir, "global-budget.json")) ?? defaultGlobalBudget())
     : defaultGlobalBudget();
 
-  const data = buildDashboard(state, metrics, globalBudget, config);
+  // Read merge audit entries from all instance dirs
+  const mergeAuditEntries = parentDir ? readAllMergeAuditEntries(parentDir) : [];
+
+  const data = buildDashboard(state, metrics, globalBudget, config, undefined, mergeAuditEntries);
   const markdown = formatDashboard(data);
 
   // Write to parent dir (unified dashboard) or instance dir
