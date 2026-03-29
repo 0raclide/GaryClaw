@@ -30,8 +30,9 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Decision Batching: COMPLETE** (2026-03-29) — Multi-question batching into single API call, 50-70% latency reduction, per-question escalation, fallback chain parsing
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
-- 36 source modules + CLI, 132 test files, 2376 tests
-- All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
+**Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
+- 36 source modules + CLI, 136 test files, 2446 tests
+- All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
 
@@ -204,6 +205,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Bootstrap quality gate** — After bootstrap in a pipeline, `analyzeBootstrapQuality()` checks score. If < `BOOTSTRAP_QUALITY_THRESHOLD` (50), runs QA pre-scan (maxRelaySessions:1) → `buildEnrichedBootstrapPrompt()` → re-bootstrap. Capped at 1 enrichment retry via `bootstrapEnriched` flag on PipelineState. Fail-open on scoring errors. Opt-out via `bootstrapQualityGate: false`. Dashboard tracks enrichment count + avg score delta.
 - **Sleep-resilient cron poller** — `lastCheckedAt` scan on wake (floored to minute boundary), single-fire cap (latest match only), O(minutes-slept) per tick. Recovery logging: gaps > 2 min produce "Cron recovered after N min, M window(s) missed" detail for daemon log observability. Catches missed cron windows during macOS sleep. No persistence across daemon restarts (catch-up only for windows missed while poller was running). Clock backward jump is safe (empty scan range).
 - **Oracle decision batching** — `askOracleBatch()` sends multiple questions in one API call via `buildBatchOraclePrompt()`. Single questions delegate to `askOracle()` (zero overhead). Batch response parsed as JSON array with fallback chain: array → individual JSON objects → fallback choices. Per-question escalation/taste detection applied post-parse. Ask-handler uses batching when `askOracleBatch` is provided AND `questions.length > 1`; otherwise serial fallback. Decision history snapshot prevents mutable reference bugs.
+- **Oracle session reuse** — `createSdkOracleQueryFn()` is stateful: first call creates a fresh SDK session with full 43K prompt, subsequent calls resume with just the question (~700 tokens via `buildResumePrompt()`). `ORACLE_QUESTION_MARKER` shared constant prevents marker drift. `MAX_REUSE=25` resets session to bound context growth. Batch calls (`ORACLE_BATCH_MARKER`) bypass session reuse. Graceful fallback: resume failure → single cold-start retry. `OracleSessionEvent` callback for observability. Per-skill scope (orchestrator creates fresh queryFn per skill).
 
 ---
 
@@ -241,6 +243,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
 | `test/oracle-prompt-prefix.test.ts` | 11 | buildOraclePromptPrefix: preamble, principles, memory injection, recent decisions, projectContext truncation |
 | `test/oracle-batch.test.ts` | 32 | askOracleBatch: single delegation, multi-question batching, batch prompt, parseBatchOracleResponse, fallback chain, otherProposal |
+| `test/oracle-session-reuse.test.ts` | 16 | buildResumePrompt, ORACLE_QUESTION_MARKER, ORACLE_BATCH_MARKER, MAX_REUSE, OracleSessionEvent, formatEvent oracle_session |
 | `test/oracle-extended.test.ts` | 32 | Extended oracle edge cases, principle matching, response parsing |
 | `test/sdk-wrapper.test.ts` | 17 | env stripping, usage extraction, result parsing |
 | `test/sdk-wrapper-verifyauth.regression-1.test.ts` | 9 | verifyAuth error handling regression |
