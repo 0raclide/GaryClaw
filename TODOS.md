@@ -138,7 +138,9 @@ Implemented in commit 923c08a. Aggregates avg/min/max adaptive turns per job, se
 **Depends on:** Phase 4a (complete)
 **Added by:** /qa Run 6 on 2026-03-26
 
-## P3: Oracle Decision Batching (Latency Optimization)
+## ~~P3: Oracle Decision Batching (Latency Optimization)~~ — COMPLETE (2026-03-29)
+
+Implemented in 2 commits on `garyclaw/worker-5`. `askOracleBatch()` in oracle.ts batches multiple questions into one API call with `buildBatchOraclePrompt()` / `parseBatchOracleResponse()`. Ask-handler uses batching when available + multi-question, serial fallback otherwise. Orchestrator wires `askOracleBatch` into oracle config. 43 new tests (32 oracle-batch + 11 ask-handler-batch). Backward compatible: single questions delegate to `askOracle()`, `askOracleBatch` is optional in config.
 
 **What:** Batch nearby Oracle decisions into a single API call when multiple AskUserQuestions fire within the same segment. Currently each decision is a separate 40K-token API call (~2-5s). Batching could reduce total Oracle latency by 50-70%.
 

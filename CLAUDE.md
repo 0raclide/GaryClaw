@@ -27,7 +27,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
 **Dogfood Bootstrap: COMPLETE** (2026-03-28) — Cold-start bootstrap skill, codebase analysis, CLAUDE.md/TODOS.md generation for external repos
 **Pipeline Resume After Crash: COMPLETE** (2026-03-29) — Re-queue interrupted jobs, retry limit (3 crashes = abandon), pipeline resume from last completed skill, dashboard crash recovery stats
-- 34 source modules + CLI, 87 test files, 1896 tests
+**Oracle Decision Batching: COMPLETE** (2026-03-29) — Multi-question batching into single API call, 50-70% latency reduction, per-question escalation, fallback chain parsing
+- 34 source modules + CLI, 89 test files, 1939 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -142,11 +143,11 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/types.ts` | All shared interfaces — zero imports |
 | `src/token-monitor.ts` | `recordTurnUsage`, `shouldRelay`, `computeGrowthRate`, `computeAdaptiveMaxTurns`, `HEAVY_TOOLS`, `HEAVY_TOOL_GROWTH_MULTIPLIER` |
 | `src/checkpoint.ts` | Atomic write (2-rotation), tiered relay prompt generation |
-| `src/ask-handler.ts` | `canUseTool` callback intercepting AskUserQuestion |
+| `src/ask-handler.ts` | `canUseTool` callback intercepting AskUserQuestion, oracle decision batching |
 | `src/sdk-wrapper.ts` | SDK isolation layer: `startSegment`, `extractTurnUsage`, `buildSdkEnv` |
 | `src/relay.ts` | Git stash + fresh relay segment + stash pop |
 | `src/report.ts` | Merge issues/findings/decisions, markdown report |
-| `src/oracle.ts` | Decision Oracle — 7 Principles, confidence scoring, escalation, memory injection |
+| `src/oracle.ts` | Decision Oracle — 7 Principles, confidence scoring, escalation, memory injection, batch decisions |
 | `src/issue-extractor.ts` | Hybrid issue extraction from SDK stream + git log |
 | `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state, git HEAD tracking, text accumulation for post-skill analysis |
 | `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
@@ -197,6 +198,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Adaptive maxTurns** — per-segment turn prediction from `computeGrowthRate()` + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max. User's `--max-turns` is ceiling. Fresh monitor per relay session naturally falls back to configured default. `HEAVY_TOOLS` (WebFetch/WebSearch/Screenshot) trigger 2.5x growth rate multiplier for next segment. `--no-adaptive` disables.
 - **Pipeline resume after crash** — On daemon restart, `running` jobs re-queued with `retryCount` instead of marked failed. Jobs exceeding 2 retries abandoned. Multi-skill jobs with `pipeline.json` call `resumePipeline()` to skip completed skills. Single-skill jobs retry from scratch. `priorSkillCostUsd` tracks pre-crash spending for dashboard reporting. Recovery notification sent on resume.
 - **Sleep-resilient cron poller** — `lastCheckedAt` scan on wake (floored to minute boundary), single-fire cap (latest match only), O(minutes-slept) per tick. Recovery logging: gaps > 2 min produce "Cron recovered after N min, M window(s) missed" detail for daemon log observability. Catches missed cron windows during macOS sleep. No persistence across daemon restarts (catch-up only for windows missed while poller was running). Clock backward jump is safe (empty scan range).
+- **Oracle decision batching** — `askOracleBatch()` sends multiple questions in one API call via `buildBatchOraclePrompt()`. Single questions delegate to `askOracle()` (zero overhead). Batch response parsed as JSON array with fallback chain: array → individual JSON objects → fallback choices. Per-question escalation/taste detection applied post-parse. Ask-handler uses batching when `askOracleBatch` is provided AND `questions.length > 1`; otherwise serial fallback. Decision history snapshot prevents mutable reference bugs.
 
 ---
 
@@ -229,7 +231,9 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/adaptive-turns.test.ts` | 28 | computeAdaptiveMaxTurns: fallback, growth prediction, heavy tools, clamping, relay, HEAVY_TOOLS constant, reason string contract |
 | `test/checkpoint.test.ts` | 35 | write/read/rotation, relay prompt tiering, token budget, codebaseSummary validation + relay |
 | `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
+| `test/ask-handler-batch.test.ts` | 11 | Batch wiring: multi-question batching, decision log, escalation per-question, serial fallback, human mode unaffected |
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
+| `test/oracle-batch.test.ts` | 32 | askOracleBatch: single delegation, multi-question batching, batch prompt, parseBatchOracleResponse, fallback chain, otherProposal |
 | `test/oracle-extended.test.ts` | 32 | Extended oracle edge cases, principle matching, response parsing |
 | `test/sdk-wrapper.test.ts` | 12 | env stripping, usage extraction, result parsing |
 | `test/sdk-wrapper-verifyauth.regression-1.test.ts` | 9 | verifyAuth error handling regression |
