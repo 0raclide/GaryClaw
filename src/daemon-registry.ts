@@ -263,6 +263,54 @@ export function getClaimedTodoTitles(
   return claimed;
 }
 
+// ── File-level conflict prevention ────────────────────────────────
+
+/**
+ * Scan all daemon instances for files claimed by running/queued jobs.
+ * Returns a Map from instance name to claimed file arrays.
+ *
+ * Used by job-runner pre-assignment to detect file-level conflicts
+ * between parallel instances working on different TODO items.
+ */
+export function getClaimedFiles(
+  checkpointDir: string,
+  excludeInstance?: string,
+): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  const daemonsPath = join(checkpointDir, DAEMONS_DIR);
+  if (!existsSync(daemonsPath)) return result;
+
+  let entries: string[];
+  try {
+    entries = readdirSync(daemonsPath, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return result;
+  }
+
+  for (const name of entries) {
+    if (excludeInstance && name === excludeInstance) continue;
+
+    const statePath = join(daemonsPath, name, STATE_FILE);
+    const state = safeReadJSON<DaemonState>(statePath, validateDaemonState);
+    if (!state) continue;
+
+    const instanceFiles: string[] = [];
+    for (const job of state.jobs) {
+      if (job.status !== "queued" && job.status !== "running") continue;
+      if (!job.claimedFiles || job.claimedFiles.length === 0) continue;
+      instanceFiles.push(...job.claimedFiles);
+    }
+
+    if (instanceFiles.length > 0) {
+      result.set(name, instanceFiles);
+    }
+  }
+
+  return result;
+}
+
 // ── Cross-cycle dedup ─────────────────────────────────────────────
 
 /**

@@ -311,6 +311,7 @@ export interface Job {
   priorSkillCostUsd?: number;    // Cost of already-completed skills (for dashboard "saved" reporting, not budget checks)
   adaptiveTurnsStats?: AdaptiveTurnsJobStats;  // undefined for pre-existing jobs or --no-adaptive
   claimedTodoTitle?: string;  // TODO item title claimed by this job's prioritize skill
+  claimedFiles?: string[];    // Predicted files this job will modify (for conflict prevention)
 }
 
 export interface DaemonState {

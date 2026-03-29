@@ -8,7 +8,7 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { safeWriteJSON } from "./safe-json.js";
+import { safeWriteJSON, safeReadJSON } from "./safe-json.js";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runPipeline, resumePipeline, readPipelineState } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
@@ -20,7 +20,15 @@ import {
   isSkillSetActive,
   getClaimedTodoTitles,
   getCompletedTodoTitles,
+  getClaimedFiles,
 } from "./daemon-registry.js";
+import {
+  extractPredictedFiles,
+  expandWithDependencies,
+  hasFileOverlap,
+  DEFAULT_FILE_DEPS,
+} from "./file-conflict.js";
+import type { FileDependencyMap } from "./file-conflict.js";
 import { mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
 import type { MergeResult } from "./worktree.js";
 import { safeReadText } from "./safe-json.js";
@@ -293,12 +301,72 @@ export function createJobRunner(
           // Sort by priority (P2 > P3 > P4), then file order
           actionable.sort((a, b) => a.priority - b.priority);
 
-          if (actionable.length > 0) {
-            preAssignedTitle = actionable[0].title;
+          // File-level conflict prevention: load dep map + other instances' claimed files
+          let depMap: FileDependencyMap = DEFAULT_FILE_DEPS;
+          let otherClaimedFiles = new Map<string, string[]>();
+          if (parentCheckpointDir) {
+            try {
+              const customMap = safeReadJSON<FileDependencyMap>(
+                join(parentCheckpointDir, "file-deps.json"),
+                validateFileDependencyMap,
+              );
+              if (customMap) depMap = customMap;
+            } catch {
+              // Fall back to default map
+            }
+            otherClaimedFiles = getClaimedFiles(parentCheckpointDir, resolvedInstanceName);
+          }
+          // Build flat set of all files claimed by other instances (for overlap check)
+          const allOtherFiles: string[] = [];
+          const fileToInstances = new Map<string, string[]>();
+          for (const [instName, files] of otherClaimedFiles) {
+            for (const f of files) {
+              allOtherFiles.push(f);
+              const owners = fileToInstances.get(f) ?? [];
+              owners.push(instName);
+              fileToInstances.set(f, owners);
+            }
+          }
+
+          // Iterate through actionable items, pick first without file conflicts
+          let picked = false;
+          for (const item of actionable) {
+            // Extract predicted files from TODO description + optional design doc
+            let designDocContent: string | undefined;
+            const designDocMatch = item.description.match(/\*\*Design doc:\*\*\s*`([^`]+)`/);
+            if (designDocMatch) {
+              try {
+                const docPath = join(jobConfig.worktreePath ?? jobConfig.projectDir, designDocMatch[1]);
+                designDocContent = safeReadText(docPath) ?? undefined;
+              } catch {
+                // Fail-open: if design doc can't be read, just use description
+              }
+            }
+            const predicted = extractPredictedFiles(item.description ?? item.title, designDocContent);
+            const expanded = expandWithDependencies(predicted, depMap);
+
+            // Check file overlap with other instances
+            if (allOtherFiles.length > 0 && expanded.length > 0) {
+              const overlap = hasFileOverlap(expanded, allOtherFiles);
+              if (overlap.overlaps) {
+                const owners = [...new Set(overlap.conflictingFiles.flatMap(f => fileToInstances.get(f) ?? []))];
+                d.log("info", `Skipped TODO "${item.title}": file conflict on [${overlap.conflictingFiles.join(", ")}] with instance(s) [${owners.join(", ")}]`);
+                continue;
+              }
+            }
+
+            // No conflict (or no predicted files = fail-open) — claim it
+            preAssignedTitle = item.title;
             nextJob.claimedTodoTitle = preAssignedTitle;
+            nextJob.claimedFiles = expanded.length > 0 ? expanded : undefined;
             persistState(state, checkpointDir);
-            d.log("info", `Pre-assigned TODO: "${preAssignedTitle}" (${claimedTitles.size} item(s) claimed by others)`);
-          } else {
+            d.log("info", `Pre-assigned TODO: "${preAssignedTitle}" (${claimedTitles.size} claimed, ${expanded.length} file(s) predicted)`);
+            picked = true;
+            break;
+          }
+          if (!picked && actionable.length > 0) {
+            d.log("info", `All ${actionable.length} actionable TODO(s) blocked by file conflicts — idling`);
+          } else if (!picked) {
             d.log("info", `No unclaimed TODO items — prioritize will free-pick or report exhausted`);
           }
         }
@@ -716,4 +784,18 @@ function loadState(checkpointDir: string): DaemonState {
 function persistState(state: DaemonState, checkpointDir: string): void {
   mkdirSync(checkpointDir, { recursive: true });
   safeWriteJSON(join(checkpointDir, STATE_FILE), state);
+}
+
+/**
+ * Validate a FileDependencyMap loaded from .garyclaw/file-deps.json.
+ * Must be an object where every key maps to a string array.
+ */
+function validateFileDependencyMap(data: unknown): data is FileDependencyMap {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return false;
+  const obj = data as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (!Array.isArray(obj[key])) return false;
+    if (!(obj[key] as unknown[]).every((v) => typeof v === "string")) return false;
+  }
+  return true;
 }
