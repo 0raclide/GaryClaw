@@ -30,7 +30,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Decision Batching: COMPLETE** (2026-03-29) — Multi-question batching into single API call, 50-70% latency reduction, per-question escalation, fallback chain parsing
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
-- 36 source modules + CLI, 127 test files, 2333 tests
+- 36 source modules + CLI, 130 test files, 2354 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -330,6 +330,38 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-file-conflict.test.ts` | 8 | File conflict integration: skip conflicting items, fall-through, fail-open, custom dep map, idle on all blocked |
 | `test/todo-state.test.ts` | 58 | slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation truth table, getStartSkill, findNextSkill, skillToTodoState |
 | `test/job-runner-todo-state.test.ts` | 10 | TODO state integration: skip complete, trim pipeline, design doc passthrough, fail-open, single-skill bypass |
+| `test/auto-research.regression-3.test.ts` | 7 | Auto-research regression: extractTopicKeywords numeric-only token filtering |
+| `test/cli.regression-2.test.ts` | 5 | CLI regression: formatEvent missing bootstrap_quality_check/recheck cases |
+| `test/daemon-merge-config.test.ts` | 13 | Daemon merge config validation |
+| `test/daemon-registry-file-conflict.regression-1.test.ts` | 2 | Daemon registry regression: getClaimedFiles duplicate file entries per instance |
+| `test/daemon-registry.regression-1.test.ts` | 8 | Daemon registry regression: getClaimedTodoTitles cross-instance coordination |
+| `test/daemon-registry.regression-2.test.ts` | 7 | Daemon registry regression: getCompletedTodoTitles todo-state/ directory scan |
+| `test/dashboard-merge.test.ts` | 18 | Dashboard merge health: aggregation, health score reweighting |
+| `test/dashboard.regression-3.test.ts` | 4 | Dashboard regression: formatDashboard crash recovery row format |
+| `test/dashboard.regression-4.test.ts` | 4 | Dashboard regression: computeHealthScore/formatDashboard crash on undefined mergeHealth |
+| `test/doctor.regression-1.test.ts` | 10 | Doctor regression: checkOrphanedTodoState coverage |
+| `test/evaluate-claims.test.ts` | 26 | Claim verification: extractClaudeMdClaims, verifyClaudeMdClaims |
+| `test/evaluate-claims.regression-1.test.ts` | 5 | Evaluate claims regression: double-counting, no-claims fallback, P1-P5 mismatch |
+| `test/evaluate.regression-5.test.ts` | 4 | Evaluate regression: stale improvement-candidates.md duplicate TODOs |
+| `test/job-runner-cross-cycle-dedup.test.ts` | 4 | Job runner cross-cycle dedup: pre-assignment skips completed TODOs |
+| `test/job-runner-merge.test.ts` | 10 | Job runner merge integration: auto-merge with validation config |
+| `test/job-runner-resume.regression-1.test.ts` | 2 | Job runner resume regression: abandoned job FailureRecord retryable flag |
+| `test/job-runner.regression-4.test.ts` | 7 | Job runner regression: parsePriorityPickTitle edge cases |
+| `test/job-runner.regression-5.test.ts` | 4 | Job runner regression: backward compat missing config.merge |
+| `test/job-runner.regression-6.test.ts` | 2 | Job runner regression: 'continuous' trigger source validity on Job.triggeredBy |
+| `test/job-runner.regression-7.test.ts` | 2 | Job runner regression: 'daemon-crash' must be valid FailureCategory |
+| `test/merge-audit.test.ts` | 11 | Merge audit log: append, read, truncation, JSONL format |
+| `test/notifier.regression-1.test.ts` | 5 | Notifier regression: notifyJobResumed message format with notifications enabled |
+| `test/notifier.regression-2.test.ts` | 7 | Notifier regression: notifyMergeBlocked formatting, gating, instance labels |
+| `test/oracle.regression-2.test.ts` | 3 | Oracle regression: createSdkOracleQueryFn type cast fix |
+| `test/pipeline-evaluate-wiring.regression-1.test.ts` | 4 | Pipeline evaluate wiring regression: runPostEvaluateAnalysis crash safety |
+| `test/pipeline-todo-state.regression-1.test.ts` | 4 | Pipeline regression: writeTodoState wiring after skill completion |
+| `test/triggers-self-commit.test.ts` | 14 | Self-commit filtering: git poller skips daemon-generated commits |
+| `test/triggers-self-commit.regression-1.test.ts` | 5 | Triggers regression: getCommitEmails >100 cap returns empty |
+| `test/worktree-stash-merge.test.ts` | 7 | Worktree stash-merge: stash/pop around merge for dirty working trees |
+| `test/worktree-validation.test.ts` | 13 | Worktree validation gate: test gate pass/fail/timeout, skip flag |
+| `test/worktree-validation.regression-1.test.ts` | 5 | Worktree validation regression: stdout+stderr capture, dynamic lock timeout |
+| `test/worktree.regression-3.test.ts` | 8 | Worktree regression: merge lock acquire/release edge cases |
 
 ---
 
