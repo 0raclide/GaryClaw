@@ -136,4 +136,42 @@ describe("pipeline writeTodoState wiring", () => {
     // qa runs after implement, so state should be qa-complete
     expect(state!.state).toBe("qa-complete");
   });
+
+  it("uses rootCheckpointDir when set instead of regex-stripped checkpointDir", async () => {
+    // Simulate job-runner layout: checkpointDir is nested under jobs/
+    const rootDir = join(TEST_DIR, ".garyclaw", "daemons", "worker-1");
+    const jobDir = join(rootDir, "jobs", "job-123", "skill-0-qa");
+    mkdirSync(jobDir, { recursive: true });
+
+    const config = createTestConfig({
+      todoTitle: "Use rootCheckpointDir",
+      instanceName: "worker-1",
+      checkpointDir: jobDir,
+      rootCheckpointDir: rootDir,
+    });
+    const callbacks = createMockCallbacks();
+
+    await runPipeline(["qa"], config, callbacks);
+
+    // State should be written to rootCheckpointDir, not the regex-stripped path
+    const state = readTodoState(rootDir, "use-rootcheckpointdir");
+    expect(state).not.toBeNull();
+    expect(state!.state).toBe("qa-complete");
+  });
+
+  it("falls back to regex stripping when rootCheckpointDir not set", async () => {
+    const config = createTestConfig({
+      todoTitle: "Regex fallback test",
+      instanceName: "worker-1",
+      // No rootCheckpointDir — should use regex fallback
+    });
+    const callbacks = createMockCallbacks();
+
+    await runPipeline(["qa"], config, callbacks);
+
+    // Regex strips skill-N-name from checkpointDir, writing to parent
+    const state = readTodoState(join(TEST_DIR, ".garyclaw"), "regex-fallback-test");
+    expect(state).not.toBeNull();
+    expect(state!.state).toBe("qa-complete");
+  });
 });

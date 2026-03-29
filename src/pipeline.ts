@@ -511,8 +511,9 @@ async function executePipelineFrom(
           })();
 
           // Write to parent checkpoint dir (not skill-specific subdir)
-          // so state survives across pipeline runs
-          const stateDir = config.checkpointDir.replace(/\/jobs\/[^/]+$/, "").replace(/\/skill-\d+-[^/]+$/, "");
+          // so state survives across pipeline runs.
+          // rootCheckpointDir is set by job-runner; regex fallback for direct CLI usage.
+          const stateDir = config.rootCheckpointDir ?? config.checkpointDir.replace(/\/jobs\/[^/]+$/, "").replace(/\/skill-\d+-[^/]+$/, "");
           writeTodoState(stateDir, todoSlug, {
             title: config.todoTitle,
             slug: todoSlug,

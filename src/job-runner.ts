@@ -643,7 +643,7 @@ export function createJobRunner(
       }
     }
 
-    const clawConfig = buildGaryClawConfig(jobConfig, nextJob, jobDir, d, claimedItems, preAssignedTitle);
+    const clawConfig = buildGaryClawConfig(jobConfig, nextJob, jobDir, d, claimedItems, preAssignedTitle, parentCheckpointDir ?? checkpointDir);
 
     // Detect if this is a pipeline resume (retry with existing pipeline.json)
     let isPipelineResume = (nextJob.retryCount ?? 0) > 0 && nextJob.skills.length > 1;
@@ -990,6 +990,7 @@ function buildGaryClawConfig(
   deps: JobRunnerDeps,
   claimedTodoItems?: Array<{ title: string; instanceName: string }>,
   preAssignedTodoTitle?: string,
+  rootCheckpointDir?: string,
 ): GaryClawConfig {
   // Named instances use worktree path; default uses main repo
   const projectDir = config.worktreePath ?? config.projectDir;
@@ -1012,6 +1013,7 @@ function buildGaryClawConfig(
     preAssignedTodoTitle,
     todoTitle: job.claimedTodoTitle,
     instanceName: config.name,
+    rootCheckpointDir,
   };
 }
 

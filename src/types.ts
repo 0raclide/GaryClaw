@@ -154,6 +154,8 @@ export interface GaryClawConfig {
   todoTitle?: string;
   /** Daemon instance name, set by job-runner for state tracking attribution. */
   instanceName?: string;
+  /** Root checkpoint directory (e.g., .garyclaw/daemons/worker-1/). Set by job-runner for TODO state persistence. */
+  rootCheckpointDir?: string;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────
