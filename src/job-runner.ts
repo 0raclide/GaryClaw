@@ -37,6 +37,12 @@ import { safeReadText } from "./safe-json.js";
 import { parseTodoItems } from "./prioritize.js";
 import { composePipeline } from "./pipeline-compose.js";
 import {
+  readPipelineOutcomes,
+  appendPipelineOutcome,
+  computeSkipRiskScores,
+  shouldUseOracleComposition,
+} from "./pipeline-history.js";
+import {
   PerJobCostExceededError,
 } from "./types.js";
 import {
@@ -472,6 +478,7 @@ export function createJobRunner(
     }
 
     // ── Adaptive pipeline composition ────────────────────────────
+    let oracleAdjustedComposition = false;
     const todoTitle = nextJob.claimedTodoTitle ?? preAssignedTitle;
     if (todoTitle && nextJob.skills.length > 1) {
       try {
@@ -493,14 +500,21 @@ export function createJobRunner(
             // Fail-open: if scan fails, assume no design doc
           }
         }
+        // Read pipeline outcome history for Oracle-driven composition
+        const historyPath = join(parentCheckpointDir ?? checkpointDir, "pipeline-outcomes.jsonl");
+        const outcomes = readPipelineOutcomes(historyPath);
+        const useOracle = shouldUseOracleComposition(outcomes);
+        const skipRiskScores = useOracle ? computeSkipRiskScores(outcomes) : undefined;
+
         const originalSkills = [...nextJob.skills];
         const composed = composePipeline({
           effort: todoItem?.effort ?? null,
           priority: todoItem?.priority ?? 3,
           hasDesignDoc,
           requestedSkills: nextJob.skills,
+          skipRiskScores,
         });
-        if (composed.skills.length < nextJob.skills.length) {
+        if (composed.skills.length < nextJob.skills.length || composed.oracleRestoredSkills?.length) {
           d.log("info", `Adaptive composition: [${originalSkills.join(", ")}] -> [${composed.skills.join(", ")}] (${composed.reason}, saves ${composed.savings})`);
           nextJob.composedFrom = originalSkills;
           nextJob.skills = composed.skills;
@@ -510,6 +524,19 @@ export function createJobRunner(
             composedSkills: composed.skills,
             reason: composed.reason,
           });
+
+          // Emit per-skill Oracle adjustment events
+          if (composed.oracleRestoredSkills?.length) {
+            oracleAdjustedComposition = true;
+            for (const skill of composed.oracleRestoredSkills) {
+              callbacks.onEvent({
+                type: "pipeline_oracle_adjustment",
+                skill,
+                skipRisk: skipRiskScores?.get(skill) ?? 0,
+                action: "restored",
+              });
+            }
+          }
         }
       } catch (err) {
         d.log("warn", `Pipeline composition failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -770,6 +797,51 @@ export function createJobRunner(
         generateDashboard(checkpointDir, parentCheckpointDir, currentConfig);
       } catch (err) {
         d.log("warn", `Dashboard generation failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      // Record pipeline outcome for Oracle-driven composition learning
+      if (nextJob.status === "complete" || nextJob.status === "failed") {
+        try {
+          const outcomeHistoryPath = join(parentCheckpointDir ?? checkpointDir, "pipeline-outcomes.jsonl");
+          const allSkills = nextJob.composedFrom ?? nextJob.skills;
+          const skippedSkills = allSkills.filter(s => !nextJob.skills.includes(s));
+          // Count critical/high issues from job report (best-effort parse)
+          let qaFailureCount = 0;
+          let reopenedCount = 0;
+          try {
+            if (nextJob.reportPath && existsSync(nextJob.reportPath)) {
+              const reportContent = readFileSync(nextJob.reportPath, "utf-8");
+              // Count critical/high severity markers in report
+              qaFailureCount = (reportContent.match(/\*\*critical\*\*/gi) ?? []).length
+                + (reportContent.match(/\*\*high\*\*/gi) ?? []).length;
+              reopenedCount = (reportContent.match(/reopened/gi) ?? []).length;
+            }
+          } catch {
+            // Best-effort — don't block outcome recording
+          }
+
+          const outcome: "success" | "partial" | "failure" =
+            qaFailureCount > 0 || reopenedCount > 0 ? "failure"
+            : nextJob.status === "failed" ? "failure"
+            : "success";
+
+          appendPipelineOutcome(outcomeHistoryPath, {
+            jobId: nextJob.id,
+            timestamp: new Date().toISOString(),
+            todoTitle: nextJob.claimedTodoTitle ?? "unknown",
+            effort: null, // TODO: could read from todo-state
+            priority: 3,  // default; could be enriched
+            skills: nextJob.skills,
+            skippedSkills,
+            composedFrom: nextJob.composedFrom,
+            qaFailureCount,
+            reopenedCount,
+            outcome,
+            oracleAdjusted: oracleAdjustedComposition,
+          });
+        } catch (err) {
+          d.log("warn", `Pipeline outcome recording failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
 
       // Auto-research trigger: analyze low-confidence decisions and enqueue research
