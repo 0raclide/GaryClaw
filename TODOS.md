@@ -180,26 +180,43 @@ Implemented in commit 923c08a. Aggregates avg/min/max adaptive turns per job, se
 **Depends on:** Nothing
 **Added by:** Session 3 retrospective on 2026-03-29
 
-## P2: Adaptive Pipeline Composition — Skill Sequence Based on Task
+## P2: Adaptive Pipeline Composition — Oracle-Driven Skill Selection
 
-**What:** Choose which pipeline skills to run based on the TODO's priority, effort, and current state. Currently every item runs the full 5-skill pipeline (`prioritize → office-hours → implement → eng-review → qa`) regardless of whether it's a 4-line P5 fix or a multi-file P2 feature. This wastes $3-4 and 30 minutes on tasks that need 2 minutes.
+**What:** Let the Oracle decide which pipeline skills each TODO needs, instead of running the same 5-skill pipeline for everything. Currently a 4-line P5 fix gets the same 30-minute treatment as a multi-file P2 feature.
 
-**Skill sequence rules:**
-- **P2/P3 + S/M effort** → full pipeline (prioritize → office-hours → implement → eng-review → qa)
-- **P4/P5 + XS effort** → fast path (implement → qa only, skip design and review)
-- **Multiple XS items from same priority** → batch into one implement session ("fix these 4 things")
-- **Already designed (state: "designed")** → skip prioritize + office-hours, start at implement
-- **Already reviewed (state: "reviewed")** → skip to QA only
+**Approach: Bundle skill selection into prioritize.** Prioritize already evaluates each TODO's priority, effort, risk, and context. Extend its output in `priority.md` to include a "Recommended Pipeline" section:
 
-Also includes: configurable skill sequences in daemon.json per trigger type, runtime skill selection in job-runner based on pre-assigned item metadata.
+```markdown
+## Top Pick: Code Quality Sweep
 
-**Why:** 4 P5 items currently in the backlog each take a full 30-min cycle when they need 2 minutes. That's $12-16 and 2 hours for work that should cost $1 and take 10 minutes. As the daemon matures, most remaining items will be small fixes — the pipeline overhead becomes the bottleneck.
+### Recommended Pipeline
+implement → qa
 
-**Files:** `src/job-runner.ts` (skill selection logic in processNext), `src/pipeline.ts` (support dynamic skill lists), `src/types.ts` (pipeline composition config)
+### Pipeline Reasoning
+Five independent XS fixes with no architectural risk. No design needed
+(items are fully specified). No eng-review needed (no shared interfaces).
+```
+
+The Oracle chooses the skill sequence by reasoning about:
+- **Risk:** Does this touch core infrastructure (oracle.ts, types.ts, job-runner.ts)? → eng-review needed
+- **Novelty:** Is this a new capability or a known-pattern fix? → office-hours needed for novel work
+- **Scope:** How many files/modules affected? → single-file changes skip design
+- **Existing artifacts:** Design doc already exists? → skip office-hours
+- **History:** Oracle memory of past decisions ("last time we skipped review on worktree.ts, QA found 4 issues") → adjust sequence
+
+**Why not rule-based:** A P3/S item touching `types.ts` (central interface file) needs full review. A P3/S item adding a dashboard widget doesn't. Size and priority don't capture risk — the Oracle understands context and learns from outcomes.
+
+**Implementation:**
+- Extend the prioritize prompt (`PRIORITIZE_RULES` in `src/prioritize.ts`) with a "Recommended Pipeline" output section. Add the available skills list and guidance on when each is needed.
+- Parse the recommended pipeline from priority.md in `src/job-runner.ts` (new `parseRecommendedPipeline()` function alongside existing `parsePriorityPickTitle()`).
+- In `processNext()`: if recommended pipeline is parsed, use it instead of the default skill list. Fall back to full pipeline if parsing fails.
+- The Oracle's pipeline choices feed into reflection — if a skipped eng-review leads to QA finding architecture issues, that outcome trains future decisions.
+
+**Files:** `src/prioritize.ts` (prompt + output format), `src/job-runner.ts` (parse + use recommended pipeline), `src/reflection.ts` (track pipeline choice outcomes)
 
 **Effort:** S (human: ~3 days / CC: ~25 min)
 **Depends on:** Nothing
-**Added by:** Session 3 retrospective on 2026-03-29
+**Added by:** Session 3 retrospective on 2026-03-29, refined with human input
 
 ## P3: Daemon Fleet Command — Parallel Launch + Auto-Cleanup + Live Status
 
