@@ -630,11 +630,11 @@ describe("doctor", () => {
       mkdirSync(GARYCLAW_DIR, { recursive: true });
       const report = await runDoctor(defaultOptions());
 
-      // 5 checks (auth skipped)
-      expect(report.checks.length).toBe(5);
+      // 6 checks (auth skipped)
+      expect(report.checks.length).toBe(6);
       expect(report.timestamp).toBeTruthy();
       expect(report.durationMs).toBeGreaterThanOrEqual(0);
-      expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.info).toBe(5);
+      expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.info).toBe(6);
     });
 
     it("includes auth check when skipAuth is false", async () => {

@@ -76,6 +76,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   checks.push(checkOrphanedWorktrees(options));
   checks.push(checkReflectionLocks(options));
   checks.push(checkBudgetStatus(options));
+  checks.push(checkOrphanedTodoState(options));
 
   // Auth check: async, with timeout
   if (!options.skipAuth) {
@@ -798,6 +799,106 @@ export function worktreeHasUnmergedCommits(repoDir: string, instanceName: string
     // Can't check — assume unmerged for safety
     return true;
   }
+}
+
+// ── Check 7: Orphaned TODO State Files ──────────────────────────
+
+export function checkOrphanedTodoState(options: DoctorOptions): CheckResult {
+  const checkpointDir = join(options.projectDir, ".garyclaw");
+  const todoStateDir = join(checkpointDir, "todo-state");
+  const details: string[] = [];
+  let orphanCount = 0;
+  let fixedCount = 0;
+
+  if (!existsSync(todoStateDir)) {
+    return {
+      name: "Orphaned TODO State",
+      status: "PASS",
+      message: "No todo-state directory found",
+      fixable: false,
+    };
+  }
+
+  let stateFiles: string[];
+  try {
+    stateFiles = readdirSync(todoStateDir).filter(f => f.endsWith(".json"));
+  } catch {
+    return {
+      name: "Orphaned TODO State",
+      status: "PASS",
+      message: "Could not read todo-state directory",
+      fixable: false,
+    };
+  }
+
+  if (stateFiles.length === 0) {
+    return {
+      name: "Orphaned TODO State",
+      status: "PASS",
+      message: "No TODO state files found",
+      fixable: false,
+    };
+  }
+
+  // Load TODOS.md titles for matching
+  const todosPath = join(options.projectDir, "TODOS.md");
+  let todoTitles: string[] = [];
+  if (existsSync(todosPath)) {
+    try {
+      const content = readFileSync(todosPath, "utf-8");
+      // Simple extraction: lines starting with "- [ ]" or "- [x]"
+      todoTitles = content
+        .split("\n")
+        .filter(l => /^-\s*\[[ x]\]/.test(l))
+        .map(l => l.replace(/^-\s*\[[ x]\]\s*/, "").replace(/\s*\[P\d\].*$/, "").trim());
+    } catch { /* ignore */ }
+  }
+
+  for (const file of stateFiles) {
+    const filePath = join(todoStateDir, file);
+    const state = safeReadJSON<{ title?: string; state?: string }>(filePath);
+    if (!state?.title) continue;
+
+    // Check if title exists in TODOS.md (simple substring/includes match)
+    const titleLower = state.title.toLowerCase();
+    const found = todoTitles.some(t => {
+      const tLower = t.toLowerCase();
+      return tLower === titleLower || tLower.includes(titleLower) || titleLower.includes(tLower);
+    });
+
+    if (!found && todoTitles.length > 0) {
+      orphanCount++;
+      details.push(`Orphaned: ${file} (title: "${state.title}", state: ${state.state ?? "unknown"})`);
+
+      if (options.fix) {
+        try {
+          unlinkSync(filePath);
+          fixedCount++;
+          details.push(`  Fixed: removed ${file}`);
+        } catch (err) {
+          details.push(`  Fix failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+  }
+
+  if (orphanCount === 0) {
+    return {
+      name: "Orphaned TODO State",
+      status: "PASS",
+      message: `${stateFiles.length} TODO state file(s) verified`,
+      fixable: false,
+    };
+  }
+
+  return {
+    name: "Orphaned TODO State",
+    status: "WARN",
+    message: `${orphanCount} orphaned TODO state file(s) — title not found in TODOS.md${options.fix ? ` (${fixedCount} fixed)` : ""}`,
+    details,
+    fixable: true,
+    fixed: options.fix && fixedCount === orphanCount,
+  };
 }
 
 function loadDaemonBudgetConfig(checkpointDir: string): { dailyCostLimitUsd: number | null; maxJobsPerDay: number | null } {
