@@ -293,7 +293,7 @@ export interface BudgetConfig {
   maxJobsPerDay: number;
 }
 
-export type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelled";
+export type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelled" | "rate_limited";
 
 export interface Job {
   id: string;
@@ -323,6 +323,7 @@ export interface DaemonState {
   version: 1;
   jobs: Job[];
   dailyCost: { date: string; totalUsd: number; jobCount: number };
+  rateLimitResetAt?: string;  // ISO timestamp — hold all jobs until this time
 }
 
 // ── IPC protocol ────────────────────────────────────────────────
@@ -346,6 +347,7 @@ export interface GlobalBudget {
   totalUsd: number;
   jobCount: number;
   byInstance: Record<string, { totalUsd: number; jobCount: number }>;
+  rateLimitResetAt?: string;  // Shared rate limit hold across all instances
 }
 
 export interface InstanceInfo {
