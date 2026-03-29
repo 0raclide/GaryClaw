@@ -5,7 +5,7 @@
  * Core scoring functions are pure — no I/O, fully testable with synthetic data.
  */
 
-import { existsSync, readFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, appendFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { PipelineOutcomeRecord } from "./types.js";
 
@@ -41,16 +41,43 @@ export function readPipelineOutcomes(path: string): PipelineOutcomeRecord[] {
   return records;
 }
 
+/** Maximum entries to keep in pipeline-outcomes.jsonl.
+ *  Covers 5x the decay half-life (20), so records older than 100
+ *  contribute < 3% weight and aren't worth the I/O. */
+export const MAX_PIPELINE_OUTCOMES = 100;
+
 /**
  * Append a single pipeline outcome record to a JSONL file.
- * Creates parent directories if needed. Best-effort — never throws.
+ * Creates parent directories if needed. Truncates oldest entries
+ * when the file exceeds MAX_PIPELINE_OUTCOMES. Best-effort — never throws.
  */
 export function appendPipelineOutcome(path: string, record: PipelineOutcomeRecord): void {
   try {
     mkdirSync(dirname(path), { recursive: true });
     appendFileSync(path, JSON.stringify(record) + "\n", "utf-8");
+
+    // Truncate oldest entries when file exceeds cap
+    truncatePipelineOutcomes(path, MAX_PIPELINE_OUTCOMES);
   } catch {
     // Best-effort — don't crash the job runner if JSONL write fails
+  }
+}
+
+/**
+ * Truncate a JSONL file to keep only the most recent `maxEntries` lines.
+ * No-op if file has fewer entries or doesn't exist. Best-effort.
+ */
+export function truncatePipelineOutcomes(path: string, maxEntries: number): void {
+  try {
+    if (!existsSync(path)) return;
+    const raw = readFileSync(path, "utf-8");
+    const lines = raw.trim().split("\n").filter(Boolean);
+    if (lines.length <= maxEntries) return;
+
+    const kept = lines.slice(lines.length - maxEntries);
+    writeFileSync(path, kept.join("\n") + "\n", "utf-8");
+  } catch {
+    // Best-effort — never crash
   }
 }
 

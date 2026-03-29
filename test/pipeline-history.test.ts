@@ -4,6 +4,8 @@ import { join } from "node:path";
 import {
   readPipelineOutcomes,
   appendPipelineOutcome,
+  truncatePipelineOutcomes,
+  MAX_PIPELINE_OUTCOMES,
   computeSkipRiskScores,
   shouldUseOracleComposition,
   computeFailureRates,
@@ -123,6 +125,64 @@ describe("appendPipelineOutcome", () => {
     writeFileSync(path, "");
     // Try to write inside the file-as-directory — should not throw
     expect(() => appendPipelineOutcome(join(path, "sub", "out.jsonl"), makeRecord())).not.toThrow();
+  });
+
+  it("truncates to MAX_PIPELINE_OUTCOMES when file exceeds cap", () => {
+    const path = join(TMP_DIR, "outcomes-trunc.jsonl");
+    // Write MAX_PIPELINE_OUTCOMES + 5 records
+    const totalRecords = MAX_PIPELINE_OUTCOMES + 5;
+    const lines: string[] = [];
+    for (let i = 0; i < totalRecords - 1; i++) {
+      lines.push(JSON.stringify(makeRecord({ jobId: `j-${i}` })));
+    }
+    writeFileSync(path, lines.join("\n") + "\n");
+
+    // Append one more — triggers truncation
+    appendPipelineOutcome(path, makeRecord({ jobId: `j-last` }));
+
+    const result = readPipelineOutcomes(path);
+    expect(result).toHaveLength(MAX_PIPELINE_OUTCOMES);
+    // Oldest records should be dropped, newest kept
+    expect(result[result.length - 1].jobId).toBe("j-last");
+    // First kept record should be the 6th original (index 5)
+    expect(result[0].jobId).toBe("j-5");
+  });
+});
+
+// ── truncatePipelineOutcomes ─────────────────────────────────────
+
+describe("truncatePipelineOutcomes", () => {
+  it("is a no-op when file has fewer entries than max", () => {
+    const path = join(TMP_DIR, "small.jsonl");
+    const lines = Array.from({ length: 5 }, (_, i) =>
+      JSON.stringify(makeRecord({ jobId: `j-${i}` })),
+    );
+    writeFileSync(path, lines.join("\n") + "\n");
+
+    truncatePipelineOutcomes(path, 100);
+    expect(readPipelineOutcomes(path)).toHaveLength(5);
+  });
+
+  it("truncates to exactly maxEntries, keeping newest", () => {
+    const path = join(TMP_DIR, "big.jsonl");
+    const lines = Array.from({ length: 15 }, (_, i) =>
+      JSON.stringify(makeRecord({ jobId: `j-${i}` })),
+    );
+    writeFileSync(path, lines.join("\n") + "\n");
+
+    truncatePipelineOutcomes(path, 10);
+    const result = readPipelineOutcomes(path);
+    expect(result).toHaveLength(10);
+    expect(result[0].jobId).toBe("j-5");
+    expect(result[9].jobId).toBe("j-14");
+  });
+
+  it("is a no-op for missing file", () => {
+    expect(() => truncatePipelineOutcomes(join(TMP_DIR, "nope.jsonl"), 10)).not.toThrow();
+  });
+
+  it("MAX_PIPELINE_OUTCOMES is 100", () => {
+    expect(MAX_PIPELINE_OUTCOMES).toBe(100);
   });
 });
 
