@@ -12,7 +12,7 @@
  */
 
 import { join } from "node:path";
-import { readdirSync, existsSync } from "node:fs";
+import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { normalizedLevenshtein } from "./reflection.js";
 import { execFileSync } from "node:child_process";
 import { safeReadJSON, safeWriteJSON, safeReadText, safeWriteText } from "./safe-json.js";
@@ -229,10 +229,8 @@ export function detectArtifacts(
         for (const file of files) {
           try {
             const filePath = join(designDir, file);
-            const content = execFileSync("head", ["-5", filePath], {
-              encoding: "utf-8",
-              timeout: 5000,
-            }).toLowerCase();
+            const raw = readFileSync(filePath, "utf-8");
+            const content = raw.split("\n").slice(0, 5).join("\n").toLowerCase();
             const matchCount = keywords.filter(kw => content.includes(kw)).length;
             if (matchCount >= 2) {
               result.designDoc = join("docs", "designs", file);
