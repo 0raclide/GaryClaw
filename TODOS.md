@@ -219,37 +219,21 @@ Also includes: configurable skill sequences in daemon.json per trigger type, run
 **Depends on:** Nothing
 **Added by:** Session 3 retrospective on 2026-03-29
 
-## P3: Oracle Intelligence — Session Reuse + Memory-Informed Scheduling
+## P3: Oracle Intelligence — Session Reuse + Adaptive Scheduling + Resilience
 
-**What:** The Oracle learns optimal trigger patterns from job outcomes — e.g., "QA finds 3x more bugs after large commits, so trigger QA after commits touching 5+ files, not on every push." Replaces static cron rules with learned patterns.
+**What:** Three capabilities that make the Oracle smarter, faster, and more robust:
 
-**Why:** Static cron triggers fire on fixed schedules regardless of what changed. Adaptive scheduling fires based on what the Oracle learned actually matters — commit size, file types changed, time of day. More efficient use of compute budget.
+**1. Session reuse (50% latency reduction).** Persistent Oracle conversation per job. First decision sends full 43K context, subsequent resume with ~1K. Oracle sees its full decision thread for consistency. Auto-reset after 25 decisions. Fallback to full prompt on session errors. Requires spike to verify SDK resume with maxTurns:1.
 
-**Pros:** Smarter resource allocation. Fewer unnecessary jobs. Better bug detection timing.
+**2. Memory-informed adaptive scheduling.** Oracle learns trigger patterns from job outcomes: "QA finds 3x more bugs after large commits, trigger QA on 5+ file changes." Replaces static cron with learned patterns. Needs 50+ jobs of history (currently ~40+).
 
-**Cons:** Cold-start problem — requires 50+ jobs of history to learn from. Needs quality metrics (Phase 5b) to measure what "better" means. Risk of over-fitting to recent patterns.
+**3. Graceful shutdown + observability.** AbortSignal propagation for clean daemon shutdown (replaces 60s polling timeout). Route parseBatchOracleResponse console.warn through event callbacks for daemon log visibility. Both are small fixes rolled into the larger Oracle work.
 
-**Context:** Identified during CEO review cherry-pick ceremony (2026-03-26, SELECTIVE EXPANSION). Deferred because it requires enough job history data to learn from. Ship static cron (Phase 4b) first, layer adaptive triggers when data exists.
+**Why:** Oracle latency is ~3-5% of job time at 20 decisions × 2-5s each. Session reuse halves this. Adaptive scheduling eliminates unnecessary jobs entirely. Graceful shutdown prevents orphaned SDK queries on SIGTERM.
 
 **Effort:** M (human: ~1 week / CC: ~1 hour)
-**Depends on:** Phase 5b (quality metrics, DONE), Phase 4b (cron baseline, DONE), 50+ jobs of history (NOT YET — currently ~16 jobs)
-**Added by:** /plan-ceo-review on 2026-03-26
-
-## P4: Daemon Shutdown AbortSignal Improvement
-
-**What:** Improve daemon shutdown handler to use AbortSignal propagation instead of polling with setTimeout, so running jobs can be cleanly cancelled rather than waiting 60s for the timeout cap.
-
-**Why:** Current shutdown polls `runner.isRunning()` every 1s for up to 60s. If a job is truly stuck, the daemon exits mid-job. AbortSignal threading (already partially implemented in orchestrator) could enable clean cancellation.
-
-**Pros:** Cleaner shutdown. No orphaned SDK queries. Faster daemon stop.
-
-**Cons:** Low urgency — 60s timeout works in practice for non-stuck jobs.
-
-**Context:** Found by /qa Run 6 on main, 2026-03-26 (ISSUE-004). Already in Phase 4c roadmap.
-
-**Effort:** XS (human: ~1 day / CC: ~15 min)
-**Depends on:** Phase 4a (complete)
-**Added by:** /qa Run 6 on 2026-03-26
+**Depends on:** Oracle batching (COMPLETE), 50+ jobs of history for scheduling (nearly met)
+**Added by:** /plan-ceo-review 2026-03-26, consolidated in Session 3 retrospective
 
 ## ~~P3: Oracle Decision Batching (Latency Optimization)~~ — COMPLETE (2026-03-29)
 
@@ -379,77 +363,24 @@ Implemented by worker-1 daemon instance. lastCheckedAt scan on wake, single-fire
 
 Shipped in 5 commits on `garyclaw/overnight-3`: retry logic in `job-runner.ts` (re-queue with `retryCount`, abandon after 3 crashes), `resumePipeline` wiring for multi-skill jobs with `pipeline.json`, `priorSkillCostUsd` for dashboard cost tracking, crash recovery stats in `formatDashboard`, and `notifyJobResumed` for recovery notifications. 27 tests in `job-runner-resume.test.ts` + 11 regression tests from QA review.
 
-## P3: Oracle Session Reuse (Latency Optimization — Approach A)
+## ~~P3: Oracle Session Reuse~~ — Absorbed into "Oracle Intelligence" above
 
-**What:** Maintain a persistent Oracle conversation per ask-handler instance. First decision sends full 43K context (principles + memory + history), subsequent decisions resume with just ~1K (the new question). Expected 50% latency reduction across ALL Oracle calls, not just multi-question batches.
+## ~~P5: Route parseBatchOracleResponse console.warn Through Callbacks~~ — COMPLETE (2026-03-29)
 
-**Why:** Oracle batching (COMPLETE) only helps when multiple questions arrive in the same AskUserQuestion call. In practice, most questions arrive individually (1 per tool call). Session reuse would give 50% reduction on ALL Oracle calls by amortizing the 43K prompt across the session.
+## ~~P4: Extract Shared Oracle Prompt Prefix (DRY Fix)~~ — COMPLETE (2026-03-29)
 
-**Approach:** SDK resume with `maxTurns:1` Oracle-style queries. First call builds full prompt, subsequent calls resume the same conversation with just the new question. Requires a spike to verify SDK resume works with single-turn Oracle queries.
+## P3: Code Quality Sweep — Observability + Platform Safety + DRY
 
-**Pros:** 50% latency reduction on every Oracle call. Compounds with batching (batching helps multi-question, session reuse helps single-question).
+**What:** Batch of 5 code quality fixes that are individually XS but together form a meaningful improvement to daemon observability and cross-platform safety:
 
-**Cons:** Requires spike to verify SDK resume behavior. Session state management adds complexity. If the session context grows unbounded, may need periodic reset.
+1. **Route remaining 8 console.warn calls through callbacks** — ask-handler (2), reflection (4), worktree (2) all use console.warn which is invisible in daemon mode. Apply the proven onWarn callback pattern.
+2. **Replace `head -5` shell-out in detectArtifacts with native Node I/O** — platform dependency (no `head` on Windows), unnecessary subprocess spawn per design doc scan.
+3. **Pass rootCheckpointDir explicitly through GaryClawConfig** — replace fragile regex path stripping (`replace(/\/jobs\/[^/]+$/, "")`) with an explicit field set by job-runner.
+4. **Cache resolveBaseBranchSafe() in detectArtifacts** — called twice per invocation, each spawning a subprocess. Call once, pass result.
+5. **Harden todo-state slugify for edge cases** — test with Unicode titles, very long titles, titles with only special characters.
 
-**Context:** Recommended by /plan-eng-review on 2026-03-29 as the primary optimization. Batching was the secondary optimization (now COMPLETE). Session reuse is the bigger win because it applies to all calls.
+**Why:** Each fix is 5-15 minutes individually but together they make the daemon more observable (warn routing), more portable (native I/O), more robust (explicit paths), and faster (cached git calls). Worth one pipeline cycle as a batch.
 
-**Effort:** S (human: ~3 days / CC: ~30 min)
-**Depends on:** Oracle batching (COMPLETE), spike to verify SDK resume with maxTurns:1
-**Added by:** /plan-eng-review on 2026-03-29
-
-## ~~P5: Route parseBatchOracleResponse console.warn Through Callbacks~~ — COMPLETE
-
-**Completed:** 2026-03-29. Commit c8282bd added `onWarn?: (msg: string) => void` to `parseBatchOracleResponse` and `askOracleBatch`. All 4 `console.warn` calls now route through the callback, with `console.warn` as the default fallback. Threading wired through ask-handler → orchestrator → event system. 11 tests in `oracle-batch-warn.test.ts`, 3 tests in `ask-handler-batch.regression-2.test.ts`.
-
-**Added by:** /plan-eng-review recommendation on 2026-03-29, completed by daemon on 2026-03-29
-
-## P5: Route Remaining 8 console.warn Calls Through Callbacks
-
-**What:** 8 `console.warn` calls remain across 3 modules, all invisible in daemon mode:
-- `ask-handler.ts` (2): decision log write failure, escalated log write failure
-- `reflection.ts` (4): lock timeout, outcome write failure, metrics write failure, corrupt JSONL skip
-- `worktree.ts` (2): stash pop failure, worktree list failure
-
-**Why:** The onWarn pattern is now proven (parseBatchOracleResponse). These 8 calls represent the same observability gap. In daemon mode, operators can't see any of these warnings.
-
-**Implementation:** Apply the same `onWarn?: (msg: string) => void` pattern to each module. Thread from orchestrator config → ask-handler/reflection/worktree. Existing `oracle-batch-warn.test.ts` serves as the test template.
-
-**Effort:** S (human: ~1 hr / CC: ~10 min)
-**Depends on:** P5 onWarn pattern (COMPLETE)
-**Added by:** /plan-eng-review recommendation on 2026-03-29, written by /qa on 2026-03-29
-
-## ~~P4: Extract Shared Oracle Prompt Prefix (DRY Fix)~~ — COMPLETE
-
-**Completed:** 2026-03-29. Prompt prefix extracted in commit e878ab4 (`buildOraclePromptPrefix`). Field extraction helper extracted in commit 314ee5d (`extractOracleFields`). Both `buildOraclePrompt`/`buildBatchOraclePrompt` and `parseOracleResponse`/`parseBatchOracleResponse` now share single implementations.
-
-**Added by:** /plan-eng-review on 2026-03-29
-
-## P5: Replace `head -5` Shell-Out in detectArtifacts With Native Node I/O
-
-**What:** `detectArtifacts()` in `todo-state.ts:232` uses `execFileSync("head", ["-5", filePath])` to read the first 5 lines of design doc files for keyword matching. Replace with `readFileSync(filePath, "utf-8").split("\n").slice(0, 5).join("\n")`.
-
-**Why:** Platform dependency (no `head` on Windows) and slower than native Node fs. The current approach spawns a subprocess per candidate design doc file, which adds unnecessary overhead. Native Node I/O is cross-platform and avoids process spawn.
-
-**Effort:** XS (human: ~15 min / CC: ~3 min)
+**Effort:** S (human: ~2 days / CC: ~20 min as batch)
 **Depends on:** Nothing
-**Added by:** /plan-eng-review on 2026-03-29
-
-## P5: Pass rootCheckpointDir Explicitly Through GaryClawConfig
-
-**What:** `pipeline.ts:515` uses regex string manipulation (`config.checkpointDir.replace(/\/jobs\/[^/]+$/, "").replace(/\/skill-\d+-[^/]+$/, "")`) to derive the root `.garyclaw` dir from the skill-specific checkpoint path. Replace with an explicit `rootCheckpointDir` field on `GaryClawConfig`, set by `job-runner.ts` before calling `runPipeline()`.
-
-**Why:** Regex path stripping is fragile. If the directory nesting structure changes (e.g., adding a nesting level for parallel pipelines), the regex silently writes state files to the wrong directory. Explicit over clever, per project preferences.
-
-**Effort:** XS (human: ~30 min / CC: ~5 min)
-**Depends on:** Nothing
-**Added by:** /plan-eng-review on 2026-03-29
-
-## P5: Cache resolveBaseBranchSafe() in detectArtifacts
-
-**What:** `detectArtifacts()` in `todo-state.ts` calls `resolveBaseBranchSafe()` twice per invocation (line 262 for branch commit counting, line 275 for main log scan). Each spawns a `git symbolic-ref` subprocess. Call it once at the top and pass the result to both consumers.
-
-**Why:** Saves ~20ms and one process spawn per detectArtifacts() call. The result is deterministic within a single call. Simple DRY fix.
-
-**Effort:** XS (human: ~10 min / CC: ~2 min)
-**Depends on:** Nothing
-**Added by:** /plan-eng-review on 2026-03-29
+**Added by:** /plan-eng-review on 2026-03-29, consolidated in Session 3 retrospective
