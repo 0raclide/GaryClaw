@@ -426,9 +426,9 @@ npm start
 
     const result = analyzeBootstrapQuality(TEST_DIR);
 
-    // No claims to verify → full marks
+    // No claims to verify → neutral score (vagueness is not rewarded)
     if (result.claimsTotal === 0) {
-      expect(result.claimVerificationScore).toBe(20);
+      expect(result.claimVerificationScore).toBe(10);
     }
   });
 
@@ -450,12 +450,12 @@ ${"x ".repeat(1000)}
     const result = analyzeBootstrapQuality(TEST_DIR);
 
     // Structural: 4/4 sections = 30 pts
-    // Claims: no extractable claims = 20 pts
+    // Claims: no extractable claims = 10 pts (neutral, vagueness not rewarded)
     // Coverage: no package.json = 1.0 ratio = 20 pts
     // Viability: no TODOS = 0 pts
     // Efficiency: check token range
-    // Total should be around 70-80 (depending on token count)
-    expect(result.qualityScore).toBeGreaterThanOrEqual(70);
+    // Total should be around 60-70 (depending on token count)
+    expect(result.qualityScore).toBeGreaterThanOrEqual(60);
   });
 
   it("adds quality note for failed claims", () => {
