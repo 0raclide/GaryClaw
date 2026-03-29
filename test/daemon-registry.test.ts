@@ -14,6 +14,7 @@ import {
   readGlobalBudget,
   updateGlobalBudget,
   isSkillSetActive,
+  getCompletedTodoTitles,
   migrateToInstanceDir,
 } from "../src/daemon-registry.js";
 
@@ -399,6 +400,65 @@ describe("Daemon Registry", () => {
       writeFileSync(join(dir, "daemon-state.json"), "not-json", "utf-8");
 
       expect(isSkillSetActive(TEST_DIR, ["qa"])).toBe(false);
+    });
+  });
+
+  // ── getCompletedTodoTitles ──────────────────────────────────
+
+  describe("getCompletedTodoTitles", () => {
+    it("finds completed jobs with claimedTodoTitle across instances", () => {
+      writeInstanceState("worker-1", makeState([
+        makeJob({ status: "complete", claimedTodoTitle: "Fix auto-merge" }),
+      ]));
+      writeInstanceState("worker-2", makeState([
+        makeJob({ status: "complete", claimedTodoTitle: "Add dashboard stats" }),
+      ]));
+
+      const titles = getCompletedTodoTitles(TEST_DIR);
+      expect(titles.size).toBe(2);
+      expect(titles.has("Fix auto-merge")).toBe(true);
+      expect(titles.has("Add dashboard stats")).toBe(true);
+    });
+
+    it("excludes the requesting instance", () => {
+      writeInstanceState("worker-1", makeState([
+        makeJob({ status: "complete", claimedTodoTitle: "Fix auto-merge" }),
+      ]));
+      writeInstanceState("worker-2", makeState([
+        makeJob({ status: "complete", claimedTodoTitle: "Add dashboard stats" }),
+      ]));
+
+      const titles = getCompletedTodoTitles(TEST_DIR, "worker-1");
+      expect(titles.size).toBe(1);
+      expect(titles.has("Fix auto-merge")).toBe(false);
+      expect(titles.has("Add dashboard stats")).toBe(true);
+    });
+
+    it("skips jobs without claimedTodoTitle", () => {
+      writeInstanceState("worker-1", makeState([
+        makeJob({ status: "complete" }), // no claimedTodoTitle
+        makeJob({ id: "job-002", status: "complete", claimedTodoTitle: "Has title" }),
+      ]));
+
+      const titles = getCompletedTodoTitles(TEST_DIR);
+      expect(titles.size).toBe(1);
+      expect(titles.has("Has title")).toBe(true);
+    });
+
+    it("skips non-completed jobs", () => {
+      writeInstanceState("worker-1", makeState([
+        makeJob({ status: "queued", claimedTodoTitle: "Queued item" }),
+        makeJob({ id: "job-002", status: "running", claimedTodoTitle: "Running item" }),
+        makeJob({ id: "job-003", status: "failed", claimedTodoTitle: "Failed item" }),
+      ]));
+
+      const titles = getCompletedTodoTitles(TEST_DIR);
+      expect(titles.size).toBe(0);
+    });
+
+    it("returns empty set when no instances exist", () => {
+      const titles = getCompletedTodoTitles(TEST_DIR);
+      expect(titles.size).toBe(0);
     });
   });
 

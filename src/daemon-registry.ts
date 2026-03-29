@@ -263,6 +263,49 @@ export function getClaimedTodoTitles(
   return claimed;
 }
 
+// ── Cross-cycle dedup ─────────────────────────────────────────────
+
+/**
+ * Scan all daemon instances for TODO titles that were completed by past jobs.
+ * Used by job-runner pre-assignment to avoid rebuilding features that were
+ * already implemented (even if the auto-merge failed).
+ *
+ * Returns a Set of completed claimedTodoTitle values across all instances.
+ */
+export function getCompletedTodoTitles(
+  checkpointDir: string,
+  excludeInstance?: string,
+): Set<string> {
+  const titles = new Set<string>();
+  const daemonsPath = join(checkpointDir, DAEMONS_DIR);
+  if (!existsSync(daemonsPath)) return titles;
+
+  let entries: string[];
+  try {
+    entries = readdirSync(daemonsPath, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return titles;
+  }
+
+  for (const name of entries) {
+    if (excludeInstance && name === excludeInstance) continue;
+
+    const statePath = join(daemonsPath, name, STATE_FILE);
+    const state = safeReadJSON<DaemonState>(statePath, validateDaemonState);
+    if (!state?.jobs) continue;
+
+    for (const job of state.jobs) {
+      if (job.status === "complete" && job.claimedTodoTitle) {
+        titles.add(job.claimedTodoTitle);
+      }
+    }
+  }
+
+  return titles;
+}
+
 // ── Migration helper ─────────────────────────────────────────────
 
 /**
