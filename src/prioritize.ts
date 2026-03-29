@@ -394,7 +394,8 @@ Recommended Pipeline:
 - Do NOT pick items larger than M effort (suggest splitting in priority.md, write the split to TODOS.md)
 - Do NOT pick P4 items when P2/P3 items exist
 - Do NOT modify any source code — you are read-only except for .garyclaw/priority.md (and TODOS.md for splits)
-- Do NOT invent backlog items — only score what's in TODOS.md or Unresolved Review Findings
+- When actionable items exist: Do NOT invent — only score what's in TODOS.md or Unresolved Review Findings
+- When ALL items score below 5.0 (backlog exhausted): You MUST invent 2-3 new P3 items guided by the Product Vision above. Write them to TODOS.md in standard format (## P{N}: Title + What/Why/Effort/Depends on), then score and pick the best one. The daemon's value comes from continuous self-improvement — an empty backlog is a signal to think bigger, not to stop.
 - DO give a +2 scoring bonus to unresolved review findings — they are pre-reviewed and pre-approved, zero design work needed`;
 
 const WORKED_EXAMPLE = `## Worked Example
