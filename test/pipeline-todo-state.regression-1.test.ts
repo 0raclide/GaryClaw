@@ -106,14 +106,15 @@ describe("pipeline writeTodoState wiring", () => {
     expect(existsSync(todoStateDir)).toBe(false);
   });
 
-  it("does NOT write TODO state for skills without lifecycle mapping (e.g., prioritize)", async () => {
+  it("does NOT write TODO state for skills without lifecycle mapping", async () => {
     const config = createTestConfig({
       todoTitle: "Some task",
     });
     const callbacks = createMockCallbacks();
 
-    // prioritize has no SKILL_TO_STATE mapping (it returns null)
-    await runPipeline(["prioritize"], config, callbacks);
+    // "design-review" has no SKILL_TO_STATE mapping (skillToTodoState returns null)
+    // It also has no special dispatch path, so runSkill is called directly
+    await runPipeline(["design-review"], config, callbacks);
 
     const state = readTodoState(join(TEST_DIR, ".garyclaw"), "some-task");
     expect(state).toBeNull();
