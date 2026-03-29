@@ -428,17 +428,21 @@ export function mergeWorktreeBranch(
           });
         } catch (testErr: unknown) {
           const testDurationMs = Date.now() - testStart;
-          const stderr = testErr instanceof Error && "stderr" in testErr
-            ? String((testErr as { stderr?: unknown }).stderr).slice(0, 2000)
-            : testErr instanceof Error
-              ? testErr.message.slice(0, 2000)
-              : "";
+          let output = "";
+          if (testErr instanceof Error && ("stdout" in testErr || "stderr" in testErr)) {
+            const errObj = testErr as { stdout?: unknown; stderr?: unknown };
+            const stdout = errObj.stdout ? String(errObj.stdout) : "";
+            const stderr = errObj.stderr ? String(errObj.stderr) : "";
+            output = (stdout + (stdout && stderr ? "\n" : "") + stderr).slice(0, 2000);
+          } else if (testErr instanceof Error) {
+            output = testErr.message.slice(0, 2000);
+          }
           restoreBranch(repoDir, originalBranch, baseBranch);
           const result: MergeResult = {
             merged: false,
             reason: "Pre-merge tests failed",
             testsPassed: false,
-            testOutput: stderr,
+            testOutput: output,
             testDurationMs,
             commitCount,
           };
