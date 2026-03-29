@@ -74,11 +74,12 @@ import type {
   RelayPoint,
   SegmentResult,
 } from "./types.js";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 /**
  * Extract assistant text content from an SDK message for live progress.
  */
-export function extractAssistantText(msg: any): string | null {
+export function extractAssistantText(msg: SDKMessage): string | null {
   if (!msg || msg.type !== "assistant") return null;
   const content = msg.message?.content;
   if (!Array.isArray(content)) return null;
@@ -94,7 +95,7 @@ export function extractAssistantText(msg: any): string | null {
 /**
  * Extract tool use info from an SDK message for live progress.
  */
-export function extractToolUse(msg: any): { toolName: string; inputSummary: string } | null {
+export function extractToolUse(msg: SDKMessage): { toolName: string; inputSummary: string } | null {
   if (!msg || msg.type !== "assistant") return null;
   const content = msg.message?.content;
   if (!Array.isArray(content)) return null;

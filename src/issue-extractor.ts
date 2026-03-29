@@ -9,6 +9,7 @@
 
 import { execFileSync } from "node:child_process";
 import type { Issue, IssueSeverity } from "./types.js";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 /**
  * Validate that a string looks like a git ref (hex SHA or branch name).
@@ -214,7 +215,7 @@ export interface ToolUseBlock {
  * Extract ALL tool_use blocks from an SDK assistant message.
  * Returns full input objects (not truncated summaries).
  */
-export function extractAllToolUse(msg: any): ToolUseBlock[] {
+export function extractAllToolUse(msg: SDKMessage): ToolUseBlock[] {
   if (msg.type !== "assistant") return [];
   const content = msg.message?.content;
   if (!Array.isArray(content)) return [];
