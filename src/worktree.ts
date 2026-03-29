@@ -12,6 +12,8 @@
 import { execFileSync, execSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { resolveWarnFn } from "./types.js";
+import type { WarnFn } from "./types.js";
 
 export interface WorktreeInfo {
   path: string;           // Absolute path to worktree directory
@@ -41,6 +43,7 @@ export interface MergeOptions {
   validation?: MergeValidationConfig;
   jobId?: string;          // For audit log attribution
   auditDir?: string;       // Override audit log directory
+  onWarn?: WarnFn;         // Route warnings through event system in daemon mode
 }
 
 export interface MergeAuditEntry {
@@ -482,7 +485,8 @@ export function mergeWorktreeBranch(
       } catch {
         // Pop conflict — leave stash in place for manual resolution.
         // User can inspect with `git stash list` and resolve with `git stash drop`.
-        console.warn("[worktree] Stash pop failed after merge — stash left in place for manual resolution");
+        const mergeWarn = resolveWarnFn(options?.onWarn);
+        mergeWarn("[worktree] Stash pop failed after merge — stash left in place for manual resolution");
       }
     }
     releaseMergeLock(repoDir);
@@ -501,7 +505,7 @@ function restoreBranch(repoDir: string, originalBranch: string | null, baseBranc
 /**
  * List all active GaryClaw worktrees for this repo.
  */
-export function listWorktrees(repoDir: string): WorktreeInfo[] {
+export function listWorktrees(repoDir: string, onWarn?: WarnFn): WorktreeInfo[] {
   const result: WorktreeInfo[] = [];
 
   try {
@@ -538,7 +542,8 @@ export function listWorktrees(repoDir: string): WorktreeInfo[] {
     }
   } catch (err) {
     // Log warning so silent failures are diagnosable
-    console.warn(`[worktree] Failed to list worktrees: ${err instanceof Error ? err.message : String(err)}`);
+    const listWarn = resolveWarnFn(onWarn);
+    listWarn(`[worktree] Failed to list worktrees: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return result;

@@ -517,7 +517,9 @@ export async function startDaemon(checkpointDir: string, instanceName?: string):
     // Attempt to merge worktree branch for named instances
     if (name !== "default" && baseBranch) {
       try {
-        const mergeResult = mergeWorktreeBranch(config.projectDir, name, baseBranch);
+        const mergeResult = mergeWorktreeBranch(config.projectDir, name, baseBranch, {
+          onWarn: (msg) => configLog("warn", msg),
+        });
         if (mergeResult.merged) {
           if (mergeResult.commitCount && mergeResult.commitCount > 0) {
             configLog("info", `Merged ${mergeResult.commitCount} commit(s) from garyclaw/${name} to ${baseBranch}`);

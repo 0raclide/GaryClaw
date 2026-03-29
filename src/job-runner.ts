@@ -721,6 +721,7 @@ export function createJobRunner(
                     }
                 : undefined,
               jobId: nextJob.id,
+              onWarn: (msg) => d.log("warn", msg),
             },
           );
 
