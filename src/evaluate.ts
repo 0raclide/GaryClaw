@@ -328,7 +328,8 @@ export function extractClaudeMdClaims(claudeMdContent: string): ClaudeMdClaim[] 
   let pathMatch: RegExpExecArray | null;
 
   while ((pathMatch = pathPattern.exec(claudeMdContent)) !== null) {
-    const claimedPath = pathMatch[1];
+    // Strip trailing punctuation (periods, commas, colons, semicolons)
+    const claimedPath = pathMatch[1].replace(/[.,;:]+$/, "");
     // Skip if inside tree listing block
     if (isInsideFencedBlock(pathMatch.index, installOrTreeBlocks)) continue;
 
