@@ -9,6 +9,12 @@ import { join } from "node:path";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { safeReadJSON, safeWriteText } from "./safe-json.js";
 import { readMetrics, defaultMemoryConfig } from "./oracle-memory.js";
+import {
+  readPipelineOutcomes,
+  computeSkipRiskScores,
+  shouldUseOracleComposition,
+  computeFailureRates,
+} from "./pipeline-history.js";
 import type { MergeAuditEntry } from "./worktree.js";
 import type {
   DashboardData,
@@ -19,6 +25,7 @@ import type {
   GlobalBudget,
   BudgetConfig,
   AdaptiveTurnsJobStats,
+  PipelineOutcomeRecord,
 } from "./types.js";
 
 // ── Pure aggregation functions ──────────────────────────────────
@@ -318,6 +325,33 @@ export function aggregateCompositionStats(
 }
 
 /**
+ * Aggregate composition intelligence statistics from pipeline outcome history.
+ * Pure function — takes parsed outcome records as input.
+ */
+export function aggregateCompositionIntelligence(
+  outcomes: PipelineOutcomeRecord[],
+): DashboardData["compositionIntelligence"] {
+  const oracleActive = shouldUseOracleComposition(outcomes);
+  const skipRiskScoresMap = computeSkipRiskScores(outcomes);
+  const rates = computeFailureRates(outcomes);
+
+  // Convert Map to plain object for dashboard serialization
+  const skipRiskScores: Record<string, number> = {};
+  for (const [skill, score] of skipRiskScoresMap) {
+    if (score > 0) skipRiskScores[skill] = score;
+  }
+
+  return {
+    oracleActive,
+    oracleAdjustedJobs: rates.oracleAdjustedCount,
+    oracleFailureRate: rates.oracleFailureRate,
+    staticFailureRate: rates.staticFailureRate,
+    skipRiskScores,
+    circuitBreaker: oracleActive ? "ok" : "tripped",
+  };
+}
+
+/**
  * Compute health score (0-100) and top concern.
  *
  * Weights:
@@ -368,6 +402,8 @@ export function computeHealthScore(
   } else if ((data.jobs.failureBreakdown["garyclaw-bug"] ?? 0) > 0) {
     const n = data.jobs.failureBreakdown["garyclaw-bug"];
     topConcern = `GaryClaw bug detected in ${n} job(s) — check logs`;
+  } else if (data.compositionIntelligence?.circuitBreaker === "tripped") {
+    topConcern = "Composition circuit breaker tripped — Oracle adjustments disabled";
   } else if (data.jobs.successRate < 80) {
     const n = data.jobs.failed;
     topConcern = `${n} job(s) failed today — review failure categories`;
@@ -514,6 +550,30 @@ export function formatDashboard(data: DashboardData): string {
     );
   }
 
+  // Composition Intelligence section (only when there's history data)
+  if (data.compositionIntelligence && data.compositionIntelligence.oracleAdjustedJobs > 0) {
+    const ci = data.compositionIntelligence;
+    const skipRiskEntries = Object.entries(ci.skipRiskScores)
+      .sort((a, b) => b[1] - a[1]);
+    const skipRiskStr = skipRiskEntries.length > 0
+      ? skipRiskEntries.map(([s, v]) => `${s}: ${(v * 100).toFixed(0)}%`).join(", ")
+      : "none";
+
+    lines.push(
+      "",
+      "## Pipeline Composition Intelligence",
+      "",
+      "| Metric | Value |",
+      "|--------|-------|",
+      `| Oracle adjustments active | ${ci.oracleActive ? "Yes" : "No"} |`,
+      `| Jobs with Oracle adjustments | ${ci.oracleAdjustedJobs} |`,
+      `| Oracle-adjusted failure rate | ${ci.oracleFailureRate.toFixed(1)}% |`,
+      `| Static-only failure rate | ${ci.staticFailureRate.toFixed(1)}% |`,
+      `| Skip-risk scores | ${skipRiskStr} |`,
+      `| Circuit breaker | ${ci.circuitBreaker.toUpperCase()} |`,
+    );
+  }
+
   // Budget section
   const remainingPct =
     data.budget.dailyLimitUsd > 0
@@ -560,6 +620,7 @@ export function buildDashboard(
   config: DaemonConfig,
   todayStr?: string,
   mergeAuditEntries?: MergeAuditEntry[],
+  pipelineOutcomes?: PipelineOutcomeRecord[],
 ): DashboardData {
   const jobs = aggregateJobStats(state.jobs, todayStr);
   const oracle = aggregateOracleStats(metrics);
@@ -578,7 +639,10 @@ export function buildDashboard(
   // Pipeline composition stats
   const composition = aggregateCompositionStats(state.jobs, todayStr);
 
-  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, mergeHealth, composition, instances });
+  // Pipeline composition intelligence from outcome history
+  const compositionIntelligence = aggregateCompositionIntelligence(pipelineOutcomes ?? []);
+
+  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, mergeHealth, composition, compositionIntelligence, instances });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -591,6 +655,7 @@ export function buildDashboard(
     bootstrapEnrichment,
     mergeHealth,
     composition,
+    compositionIntelligence,
     instances,
   };
 }
@@ -630,7 +695,11 @@ export function generateDashboard(
   // Read merge audit entries from all instance dirs
   const mergeAuditEntries = parentDir ? readAllMergeAuditEntries(parentDir) : [];
 
-  const data = buildDashboard(state, metrics, globalBudget, config, undefined, mergeAuditEntries);
+  // Read pipeline outcome history for composition intelligence
+  const outcomesPath = join(parentDir ?? instanceDir, "pipeline-outcomes.jsonl");
+  const pipelineOutcomes = readPipelineOutcomes(outcomesPath);
+
+  const data = buildDashboard(state, metrics, globalBudget, config, undefined, mergeAuditEntries, pipelineOutcomes);
   const markdown = formatDashboard(data);
 
   // Write to parent dir (unified dashboard) or instance dir
