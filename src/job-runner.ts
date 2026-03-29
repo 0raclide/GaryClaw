@@ -117,9 +117,12 @@ export function createJobRunner(
         job.retryable = false;
 
         // Append failure record for observability
+        // Override retryable: classifyError matches "daemon restarted" as retryable,
+        // but this job exhausted all retries — the audit trail should reflect reality.
         const record = buildFailureRecord(
           new Error(job.error), job.id, job.skills, resolvedInstanceName,
         );
+        record.retryable = false;
         appendFailureRecord(record, checkpointDir);
         d.log("error", `Job ${job.id} failed after ${retryCount} crash retries`);
       } else {
