@@ -30,7 +30,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Decision Batching: COMPLETE** (2026-03-29) — Multi-question batching into single API call, 50-70% latency reduction, per-question escalation, fallback chain parsing
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
-- 36 source modules + CLI, 128 test files, 2333 tests
+- 36 source modules + CLI, 127 test files, 2333 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -273,8 +273,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner.regression-2.test.ts` | 3 | Job runner regression: dedup with completed jobs |
 | `test/job-runner.regression-3.test.ts` | 3 | Job runner regression: "adaptive disabled" reason classification |
 | `test/job-runner-resume.test.ts` | 27 | Crash recovery: re-queue on restart, retry limit, pipeline resume wiring, single-skill retry, priorSkillCostUsd, notification, failure taxonomy, dashboard stats |
-| `test/triggers.test.ts` | 54 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns, log on null HEAD |
-| `test/daemon.test.ts` | 51 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request, autoResearch validation |
+| `test/triggers.test.ts` | 66 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns, log on null HEAD, self-commit filtering |
+| `test/daemon.test.ts` | 55 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request, autoResearch validation, merge config |
 | `test/daemon-extended.test.ts` | 46 | Extended daemon: shutdown, poller lifecycle, IPC edge cases |
 | `test/daemon-lifecycle.test.ts` | 14 | Daemon start/stop lifecycle, signal handling |
 | `test/daemon-registry.test.ts` | 42 | Instance discovery, global budget, cross-instance dedup, migration |
@@ -287,14 +287,14 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
 | `test/prioritize.test.ts` | 42 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
-| `test/worktree.test.ts` | 27 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch |
+| `test/worktree.test.ts` | 41 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
 | `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
 | `test/auto-research.test.ts` | 33 | extractTopicKeywords, groupDecisionsByTopic, getResearchTopics, defaults |
 | `test/codebase-summary.test.ts` | 51 | extractObservations, extractFailedApproaches, deduplicateObservations, truncateToTokenBudget, buildCodebaseSummary, formatCodebaseSummaryForRelay |
 | `test/auto-research.regression-1.test.ts` | 19 | isTopicGroupFresh direct tests, seed-keyword clustering, 3-char acronym preservation |
 | `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
 | `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
-| `test/doctor.test.ts` | 52 | 6 subsystem checks, --fix/--json flags, stale PID detection, lock recovery |
+| `test/doctor.test.ts` | 52 | 7 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state |
 | `test/failure-taxonomy.test.ts` | 71 | 8 failure categories, table-driven classification, failures.jsonl, notification integration |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
 | `test/orchestrator.test.ts` | 47 | auth, success, maxTurns, errors, abort, relay, adaptive turns, heavy tool tracking, --no-adaptive config, codebase summary extraction |
