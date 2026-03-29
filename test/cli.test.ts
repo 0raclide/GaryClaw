@@ -625,4 +625,18 @@ describe("formatEvent", () => {
     expect(result).toContain("Adaptive turns: 7");
     expect(result).toContain("growth rate");
   });
+
+  it("formats pipeline_oracle_adjustment event", () => {
+    const result = formatEvent({
+      type: "pipeline_oracle_adjustment",
+      skill: "plan-eng-review",
+      skipRisk: 0.45,
+      action: "restored",
+    } as any);
+    expect(result).toBeDefined();
+    expect(result).toContain("Oracle Composition");
+    expect(result).toContain("plan-eng-review");
+    expect(result).toContain("45%");
+    expect(result).toContain("Restored");
+  });
 });
