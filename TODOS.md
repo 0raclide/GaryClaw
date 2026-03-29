@@ -314,18 +314,8 @@ Shipped in 5 commits on `garyclaw/overnight-3`: retry logic in `job-runner.ts` (
 **Depends on:** Oracle batching (COMPLETE), spike to verify SDK resume with maxTurns:1
 **Added by:** /plan-eng-review on 2026-03-29
 
-## P4: Extract Shared Oracle Prompt Prefix (DRY Fix)
+## ~~P4: Extract Shared Oracle Prompt Prefix (DRY Fix)~~ — COMPLETE
 
-**What:** `buildOraclePrompt()` and `buildBatchOraclePrompt()` share ~40 lines of identical code: system header, memory injection, decision history. Also, `parseBatchOracleResponse`'s happy path duplicates field extraction from `parseOracleResponse`. Extract `buildOraclePromptPrefix()` and a shared field extractor.
+**Completed:** 2026-03-29. Prompt prefix extracted in commit e878ab4 (`buildOraclePromptPrefix`). Field extraction helper extracted in commit 314ee5d (`extractOracleFields`). Both `buildOraclePrompt`/`buildBatchOraclePrompt` and `parseOracleResponse`/`parseBatchOracleResponse` now share single implementations.
 
-**Why:** Two copies of the same prompt-building logic. When memory injection changes (e.g., adding a new memory section), both functions must be updated in sync. DRY violation, small blast radius but guaranteed to cause a bug eventually.
-
-**Pros:** Single source of truth for Oracle prompt structure. Easier to add new memory sections. Reduces test surface (test prefix once, not twice).
-
-**Cons:** Minor refactor, no functional change. Low urgency.
-
-**Context:** Accepted by /plan-eng-review on 2026-03-29 during architecture review of Oracle batching implementation.
-
-**Effort:** XS (human: ~30 min / CC: ~5 min)
-**Depends on:** Nothing
 **Added by:** /plan-eng-review on 2026-03-29
