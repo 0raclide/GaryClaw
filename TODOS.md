@@ -316,6 +316,18 @@ Shipped in 5 commits on `garyclaw/overnight-3`: retry logic in `job-runner.ts` (
 **Depends on:** Oracle batching (COMPLETE), spike to verify SDK resume with maxTurns:1
 **Added by:** /plan-eng-review on 2026-03-29
 
+## P5: Route parseBatchOracleResponse console.warn Through Callbacks
+
+**What:** 4 `console.warn` calls in `parseBatchOracleResponse` (oracle.ts:468-490) use stderr for fallback path observability. The rest of GaryClaw routes diagnostics through event callbacks. In daemon mode, stderr warnings are invisible... they don't appear in the daemon log, decision audit trail, or dashboard.
+
+**Why:** When batch parsing falls back (array length mismatch, JSON parse failure, individual object fallback), operators have zero visibility. These are exactly the situations you'd want to know about.
+
+**Implementation:** Add an optional `onWarn?: (msg: string) => void` callback to `parseBatchOracleResponse`, or return warnings alongside results for the caller to emit via the existing event system. The 4 `console.warn` calls become `onWarn?.()` calls.
+
+**Effort:** XS (human: ~30 min / CC: ~5 min)
+**Depends on:** Nothing
+**Added by:** /plan-eng-review recommendation on 2026-03-29, written by /qa on 2026-03-29
+
 ## ~~P4: Extract Shared Oracle Prompt Prefix (DRY Fix)~~ — COMPLETE
 
 **Completed:** 2026-03-29. Prompt prefix extracted in commit e878ab4 (`buildOraclePromptPrefix`). Field extraction helper extracted in commit 314ee5d (`extractOracleFields`). Both `buildOraclePrompt`/`buildBatchOraclePrompt` and `parseOracleResponse`/`parseBatchOracleResponse` now share single implementations.
