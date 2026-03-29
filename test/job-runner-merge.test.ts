@@ -132,7 +132,7 @@ describe("Job Runner auto-merge with validation", () => {
     );
   });
 
-  it("no merge config → empty validation (backward compat, no tests)", async () => {
+  it("no merge config → no validation (backward compat, no tests)", async () => {
     const config = createTestConfig({
       worktreePath: "/tmp/project/.garyclaw/worktrees/builder",
       // no merge field
@@ -148,10 +148,7 @@ describe("Job Runner auto-merge with validation", () => {
       "builder",
       "main",
       expect.objectContaining({
-        validation: {
-          testCommand: undefined,
-          testTimeout: undefined,
-        },
+        validation: undefined,
       }),
     );
   });
