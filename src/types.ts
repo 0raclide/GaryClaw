@@ -169,7 +169,8 @@ export type OrchestratorEvent =
   | { type: "adaptive_turns"; maxTurns: number; reason: string; sessionIndex: number; segmentIndex: number }
   | { type: "bootstrap_quality_check"; qualityScore: number; missingSections: string[]; notes: string[] }
   | { type: "bootstrap_quality_recheck"; qualityScore: number; previousScore: number }
-  | { type: "oracle_session"; event: OracleSessionEvent };
+  | { type: "oracle_session"; event: OracleSessionEvent }
+  | { type: "pipeline_composed"; originalSkills: string[]; composedSkills: string[]; reason: string };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;
@@ -317,6 +318,7 @@ export interface Job {
   adaptiveTurnsStats?: AdaptiveTurnsJobStats;  // undefined for pre-existing jobs or --no-adaptive
   claimedTodoTitle?: string;  // TODO item title claimed by this job's prioritize skill
   claimedFiles?: string[];    // Predicted files this job will modify (for conflict prevention)
+  composedFrom?: string[];    // Original skills before adaptive composition (undefined if no composition happened)
 }
 
 export interface DaemonState {
@@ -530,6 +532,12 @@ export interface DashboardData {
     avgTestDurationMs: number;
     testFailures: number;         // subset of blocked where testsPassed === false
     rebaseConflicts: number;      // subset of blocked where reason contains "conflicts"
+  };
+  composition: {
+    composedJobs: number;           // Jobs where composition changed skill list
+    avgSkillsBefore: number;        // Average skill count before composition
+    avgSkillsAfter: number;         // Average skill count after composition
+    estimatedSavingsUsd: number;    // Estimated cost savings from fewer skills
   };
   instances: string[];           // Active instance names
 }
