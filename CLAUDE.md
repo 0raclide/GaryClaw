@@ -31,7 +31,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
-- 36 source modules + CLI, 136 test files, 2446 tests
+- 36 source modules + CLI, 136 test files, 2449 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -240,9 +240,11 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
 | `test/ask-handler-batch.test.ts` | 11 | Batch wiring: multi-question batching, decision log, escalation per-question, serial fallback, human mode unaffected |
 | `test/ask-handler-batch.regression-1.test.ts` | 4 | Guard clause: batchResults length mismatch, fallback low-confidence escalation, empty array, escalated log |
+| `test/ask-handler-batch.regression-2.test.ts` | 3 | onWarn threading: config.onWarn passed to askOracleBatch, undefined when absent, single-question bypass |
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
 | `test/oracle-prompt-prefix.test.ts` | 11 | buildOraclePromptPrefix: preamble, principles, memory injection, recent decisions, projectContext truncation |
 | `test/oracle-batch.test.ts` | 32 | askOracleBatch: single delegation, multi-question batching, batch prompt, parseBatchOracleResponse, fallback chain, otherProposal |
+| `test/oracle-batch-warn.test.ts` | 11 | parseBatchOracleResponse onWarn callback: happy path, 4 fallback paths, console.warn default, askOracleBatch threading |
 | `test/oracle-session-reuse.test.ts` | 16 | buildResumePrompt, ORACLE_QUESTION_MARKER, ORACLE_BATCH_MARKER, MAX_REUSE, OracleSessionEvent, formatEvent oracle_session |
 | `test/oracle-extended.test.ts` | 32 | Extended oracle edge cases, principle matching, response parsing |
 | `test/sdk-wrapper.test.ts` | 17 | env stripping, usage extraction, result parsing |
@@ -347,6 +349,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/doctor-injection.test.ts` | 11 | Doctor injection: hasInjectionPatterns via checkOracleMemory, all 8 patterns, false positives, corrupt metrics, circuit breaker, --fix |
 | `test/evaluate-claims.test.ts` | 26 | Claim verification: extractClaudeMdClaims, verifyClaudeMdClaims |
 | `test/evaluate-claims.regression-1.test.ts` | 5 | Evaluate claims regression: double-counting, no-claims fallback, P1-P5 mismatch |
+| `test/evaluate-semantic-validation.test.ts` | 43 | Semantic bootstrap validation: extractCommandClaims, extractTestDirectoryClaims, command + test_directory claim verification |
 | `test/evaluate.regression-5.test.ts` | 4 | Evaluate regression: stale improvement-candidates.md duplicate TODOs |
 | `test/job-runner-cross-cycle-dedup.test.ts` | 4 | Job runner cross-cycle dedup: pre-assignment skips completed TODOs |
 | `test/job-runner-merge.test.ts` | 10 | Job runner merge integration: auto-merge with validation config |
