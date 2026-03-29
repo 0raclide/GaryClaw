@@ -33,7 +33,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
-- 38 source modules + CLI, 157 test files, 2717 tests
+- 38 source modules + CLI, 160 test files, 2745 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -349,9 +349,11 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-file-conflict.test.ts` | 8 | File conflict integration: skip conflicting items, fall-through, fail-open, custom dep map, idle on all blocked |
 | `test/todo-state.test.ts` | 58 | slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation truth table, getStartSkill, findNextSkill, skillToTodoState |
 | `test/todo-state-automark.test.ts` | 10 | markTodoCompleteInFile: heading match, strikethrough, case sensitivity, no-match safety |
+| `test/types-warn.test.ts` | 3 | resolveWarnFn: callback passthrough, console.warn fallback, undefined handling |
 | `test/job-runner-todo-state.test.ts` | 10 | TODO state integration: skip complete, trim pipeline, design doc passthrough, fail-open, single-skill bypass |
 | `test/auto-research.regression-3.test.ts` | 7 | Auto-research regression: extractTopicKeywords numeric-only token filtering |
 | `test/cli.regression-2.test.ts` | 5 | CLI regression: formatEvent missing bootstrap_quality_check/recheck cases |
+| `test/cli.regression-3.test.ts` | 3 | CLI regression: formatEvent pipeline_oracle_adjustment kept_skipped variant |
 | `test/daemon-merge-config.test.ts` | 13 | Daemon merge config validation |
 | `test/daemon-registry-file-conflict.regression-1.test.ts` | 2 | Daemon registry regression: getClaimedFiles duplicate file entries per instance |
 | `test/daemon-registry.regression-1.test.ts` | 8 | Daemon registry regression: getClaimedTodoTitles cross-instance coordination |
@@ -361,6 +363,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/dashboard-merge.test.ts` | 18 | Dashboard merge health: aggregation, health score reweighting |
 | `test/dashboard.regression-3.test.ts` | 4 | Dashboard regression: formatDashboard crash recovery row format |
 | `test/dashboard.regression-4.test.ts` | 4 | Dashboard regression: computeHealthScore/formatDashboard crash on undefined mergeHealth |
+| `test/dashboard-composition.test.ts` | 10 | aggregateCompositionStats: zero jobs, single composed, multiple composed, avg calculation, savings math |
 | `test/dashboard-composition-intelligence.test.ts` | 9 | aggregateCompositionIntelligence: oracle active/tripped, skip-risk scores, failure rates, empty outcomes |
 | `test/dashboard-rate-limit.test.ts` | 5 | Dashboard rate limit display: rate_limited job aggregation, formatting |
 | `test/doctor.regression-1.test.ts` | 10 | Doctor regression: checkOrphanedTodoState coverage |
@@ -395,6 +398,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/worktree-stash-merge.test.ts` | 7 | Worktree stash-merge: stash/pop around merge for dirty working trees |
 | `test/worktree-validation.test.ts` | 13 | Worktree validation gate: test gate pass/fail/timeout, skip flag |
 | `test/worktree-validation.regression-1.test.ts` | 5 | Worktree validation regression: stdout+stderr capture, dynamic lock timeout |
+| `test/worktree-warn.test.ts` | 5 | Worktree warn routing: listWorktrees onWarn, mergeWorktreeBranch stash pop onWarn |
 | `test/worktree.regression-3.test.ts` | 8 | Worktree regression: merge lock acquire/release edge cases |
 
 ---
