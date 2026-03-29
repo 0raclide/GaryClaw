@@ -597,16 +597,44 @@ export function analyzeBootstrapQuality(projectDir: string): BootstrapEvaluation
     result.qualityNotes.push(`Missing sections: ${missing.join(", ")}`);
   }
 
-  // Framework coverage
+  // Extract and verify claims
+  let deps: string[] = [];
   let coverageRatio = 1;
+
   if (existsSync(packageJsonPath)) {
     const pkgContent = safeReadText(packageJsonPath) ?? "";
-    const deps = extractDependencies(pkgContent);
+    deps = extractDependencies(pkgContent);
+
+    // Framework coverage (forward-direction only, for coverage sub-score)
     const coverage = computeFrameworkCoverage(deps, claudeMdContent);
     coverageRatio = coverage.coverage;
     if (coverage.total > 0 && coverage.mentioned < coverage.total) {
       result.qualityNotes.push(
         `Tech stack coverage: ${coverage.mentioned}/${coverage.total} known frameworks mentioned`,
+      );
+    }
+  }
+
+  // Extract forward claims from CLAUDE.md content
+  const forwardClaims = extractClaudeMdClaims(claudeMdContent);
+  // Verify forward claims against filesystem
+  const verifiedForward = verifyClaudeMdClaims(forwardClaims, projectDir, deps);
+  // Generate reverse coverage claims (deps in repo but not in doc)
+  const reverseClaims = existsSync(packageJsonPath)
+    ? generateReverseCoverageClaims(deps, claudeMdContent)
+    : [];
+
+  // Combine all claims
+  const allClaims = [...verifiedForward, ...reverseClaims];
+  result.claims = allClaims;
+  result.claimsTotal = allClaims.length;
+  result.claimsVerified = allClaims.filter((c) => c.verified).length;
+
+  if (allClaims.length > 0) {
+    const failedClaims = allClaims.filter((c) => !c.verified);
+    if (failedClaims.length > 0) {
+      result.qualityNotes.push(
+        `Claim verification: ${result.claimsVerified}/${result.claimsTotal} claims verified (${failedClaims.length} failed)`,
       );
     }
   }
@@ -633,23 +661,33 @@ export function analyzeBootstrapQuality(projectDir: string): BootstrapEvaluation
     result.qualityNotes.push("No artifacts found — TODOS.md missing");
   }
 
-  // Compute quality score (0-100)
-  // Structural completeness: 40 pts (10 per expected section)
-  const structuralScore = (found.length / EXPECTED_SECTIONS.length) * 40;
+  // Compute quality score (0-100) — rebalanced weights
+  // Structural completeness: 30 pts (reduced from 40)
+  const structuralScore = (found.length / EXPECTED_SECTIONS.length) * 30;
 
-  // Factual accuracy: 30 pts (coverage ratio * 30)
-  const accuracyScore = coverageRatio * 30;
+  // Claim verification: 20 pts (NEW — % of claims verified, forward + reverse)
+  let claimScore = 0;
+  if (allClaims.length > 0) {
+    claimScore = (result.claimsVerified / result.claimsTotal) * 20;
+  } else {
+    // No claims extracted — give full marks (nothing to verify)
+    claimScore = 20;
+  }
+  result.claimVerificationScore = Math.round(claimScore * 100) / 100;
 
-  // TODOS.md viability: 20 pts
+  // Framework coverage: 20 pts (reduced from 30, forward-direction only)
+  const accuracyScore = coverageRatio * 20;
+
+  // TODOS.md viability: 20 pts (unchanged)
   let viabilityScore = 0;
   if (result.todosMdExists && result.todosMdItemCount > 0) {
     viabilityScore = (result.todosMdItemsAboveThreshold / result.todosMdItemCount) * 20;
   }
 
-  // Token efficiency: 10 pts
+  // Token efficiency: 10 pts (unchanged)
   const efficiencyScore = scoreTokenEfficiency(result.claudeMdSizeTokens);
 
-  result.qualityScore = Math.round(structuralScore + accuracyScore + viabilityScore + efficiencyScore);
+  result.qualityScore = Math.round(structuralScore + claimScore + accuracyScore + viabilityScore + efficiencyScore);
 
   return result;
 }
