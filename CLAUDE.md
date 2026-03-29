@@ -32,7 +32,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
-- 37 source modules + CLI, 151 test files, 2598 tests
+**Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
+- 37 source modules + CLI, 153 test files, 2748 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -209,6 +210,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Oracle decision batching** — `askOracleBatch()` sends multiple questions in one API call via `buildBatchOraclePrompt()`. Single questions delegate to `askOracle()` (zero overhead). Batch response parsed as JSON array with fallback chain: array → individual JSON objects → fallback choices. Per-question escalation/taste detection applied post-parse. Ask-handler uses batching when `askOracleBatch` is provided AND `questions.length > 1`; otherwise serial fallback. Decision history snapshot prevents mutable reference bugs.
 - **Oracle session reuse** — `createSdkOracleQueryFn()` is stateful: first call creates a fresh SDK session with full 43K prompt, subsequent calls resume with just the question (~700 tokens via `buildResumePrompt()`). `ORACLE_QUESTION_MARKER` shared constant prevents marker drift. `MAX_REUSE=25` resets session to bound context growth. Batch calls (`ORACLE_BATCH_MARKER`) bypass session reuse. Graceful fallback: resume failure → single cold-start retry. `OracleSessionEvent` callback for observability. Per-skill scope (orchestrator creates fresh queryFn per skill).
 - **Adaptive pipeline composition** — `composePipeline()` in `pipeline-compose.ts` maps `(effort, priority, hasDesignDoc)` to minimal skill sequences via static lookup table. XS items → `implement + qa` ($0.50 vs $3-4). Intersection with `requestedSkills` ensures composition can only remove skills, never add. Wired into job-runner between pre-assignment and todo-state trimming. `pipeline_composed` event for observability. `composedFrom` on Job for dashboard tracking. Fail-open on errors.
+- **Oracle-driven pipeline composition** — Prioritize prompt outputs `### Recommended Pipeline` section. `parsePipelineRecommendation()` in job-runner parses it. Cold-start gate: `countPipelineOutcomes()` requires 10+ pipeline outcome entries in decision-outcomes.md before oracle overrides static table. `buildPipelineOutcome()` in reflection writes human-readable outcome lines (success/acceptable/failure based on QA issue count). `compositionMethod` on Job tracks "static" vs "oracle". Learning loop: composition → QA outcome → reflection → decision-outcomes.md → next prioritize reads outcomes.
 
 ---
 
@@ -261,6 +263,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-extended.test.ts` | 10 | pipeline edge cases, resume, error propagation |
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
 | `test/pipeline-compose.test.ts` | 44 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
+| `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
 | `test/bootstrap.test.ts` | 52 | walkFileTree, detectTechStack, filePriority, safeReadFile, findCiConfig, findTestDir, buildFileTreeString, truncateToTokenBudget, analyzeCodebase, buildBootstrapPrompt |
 | `test/pipeline-bootstrap.test.ts` | 4 | bootstrap skill dispatch, idempotency, pipeline chaining |
@@ -295,6 +298,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/safe-json.regression-1.test.ts` | 5 | ENOENT retry on rename during parallel cold-start I/O |
 | `test/oracle-memory.test.ts` | 47 | Two-layer resolution, sanitization, metrics, circuit breaker, outcomes |
 | `test/reflection.test.ts` | 42 | Levenshtein, reopened detection, outcome mapping, reflection runner, sandboxing |
+| `test/reflection-pipeline-outcome.test.ts` | 19 | buildPipelineOutcome: success/acceptable/failure, skipped skills, compositionMethod; countPipelineOutcomes: null/empty/positive/mixed |
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
 | `test/prioritize.test.ts` | 42 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
