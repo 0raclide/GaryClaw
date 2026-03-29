@@ -28,7 +28,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Dogfood Bootstrap: COMPLETE** (2026-03-28) — Cold-start bootstrap skill, codebase analysis, CLAUDE.md/TODOS.md generation for external repos
 **Pipeline Resume After Crash: COMPLETE** (2026-03-29) — Re-queue interrupted jobs, retry limit (3 crashes = abandon), pipeline resume from last completed skill, dashboard crash recovery stats
 **Oracle Decision Batching: COMPLETE** (2026-03-29) — Multi-question batching into single API call, 50-70% latency reduction, per-question escalation, fallback chain parsing
-- 34 source modules + CLI, 89 test files, 1939 tests
+- 34 source modules + CLI, 100 test files, 2026 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -232,6 +232,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/checkpoint.test.ts` | 35 | write/read/rotation, relay prompt tiering, token budget, codebaseSummary validation + relay |
 | `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
 | `test/ask-handler-batch.test.ts` | 11 | Batch wiring: multi-question batching, decision log, escalation per-question, serial fallback, human mode unaffected |
+| `test/ask-handler-batch.regression-1.test.ts` | 4 | Guard clause: batchResults length mismatch, fallback low-confidence escalation, empty array, escalated log |
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
 | `test/oracle-batch.test.ts` | 32 | askOracleBatch: single delegation, multi-question batching, batch prompt, parseBatchOracleResponse, fallback chain, otherProposal |
 | `test/oracle-extended.test.ts` | 32 | Extended oracle edge cases, principle matching, response parsing |
