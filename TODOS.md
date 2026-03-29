@@ -341,7 +341,9 @@ All 15 items resolved. Last 4 fixed by worker-5 instance on 2026-03-29: isTaste 
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-27
 
-## P3: Evaluate Bootstrap Output Quality After First Dogfood Run
+## ~~P3: Evaluate Bootstrap Output Quality After First Dogfood Run~~ — COMPLETE (2026-03-30)
+
+Implemented in commit adeabef. Fixed two verifier bugs: per-feature test-count claims now marked as per-feature verified (pre-pass count detection), PostgreSQL indirect deps extended with Supabase/Prisma/Drizzle packages. NihontoWatch fixture integration test validates score >50. 13 new tests in evaluate-claims.regression-2.test.ts.
 
 **What:** After the first dogfood run on an external repo, evaluate bootstrap output quality: is CLAUDE.md accurate enough for the pipeline? Does TODOS.md produce items scoring >5.0 in prioritize? If not, implement Approach B (QA pre-scan before bootstrap).
 **Why:** The entire bootstrap skill is a bet that single-pass analysis produces useful artifacts. The bet needs an explicit evaluation checkpoint. Without it, the evaluation gets forgotten and we ship a bootstrap skill that might produce unusable output.

@@ -1,21 +1,20 @@
 {
-  "date": "2026-03-29",
-  "url": "http://localhost:3000",
-  "healthScore": 87,
+  "date": "2026-03-30",
+  "url": "cli-project",
+  "healthScore": 100,
   "issues": [
-    { "id": "ISSUE-001", "title": "Search bar does not filter or navigate on submit", "severity": "high", "category": "functional" },
-    { "id": "ISSUE-002", "title": "Activity tracker Failed to fetch console errors", "severity": "medium", "category": "console" },
-    { "id": "ISSUE-003", "title": "Quick-view close does not clear URL query parameter", "severity": "low", "category": "ux" },
-    { "id": "ISSUE-004", "title": "Sign-in email field lacks client-side validation", "severity": "medium", "category": "functional" }
+    {"id": "ISSUE-001", "title": "collectAllDecisions missing onWarn parameter", "severity": "medium", "category": "functional"},
+    {"id": "ISSUE-002", "title": "Stale test counts in CLAUDE.md", "severity": "low", "category": "content"},
+    {"id": "ISSUE-003", "title": "Missing test file entries in CLAUDE.md table", "severity": "low", "category": "content"}
   ],
   "categoryScores": {
-    "console": 70,
+    "console": 100,
     "links": 100,
     "visual": 100,
-    "functional": 75,
-    "ux": 97,
+    "functional": 100,
+    "ux": 100,
     "performance": 100,
     "content": 100,
-    "accessibility": 85
+    "accessibility": 100
   }
 }
