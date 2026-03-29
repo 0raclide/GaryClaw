@@ -46,22 +46,9 @@
 
 Implemented by default daemon. Pre-merge test gate + merge audit log in worktree.ts, validation config wiring in job-runner, merge-failed failure taxonomy rule, dashboard merge health stats, DaemonConfig.merge validation. QA'd with regression tests.
 
-## P2: File-Level Conflict Prevention for Parallel Instances
+## ~~P2: File-Level Conflict Prevention for Parallel Instances~~ — COMPLETE (2026-03-29)
 
-**What:** When parallel daemon instances claim TODO items, also analyze which source files each item is likely to modify (from the design doc or TODO description). Prevent two instances from claiming items that touch the same files. Currently, parallel workers all branch from the same commit and independently modify the same core files (oracle.ts, types.ts, evaluate.ts, dashboard.ts), making only the first-to-merge succeed. The rest conflict.
-
-**Why:** On 2026-03-29, 5 parallel workers built 5 features overnight ($49.60). Only 2 could be merged cleanly — the other 3 conflicted because they all modified oracle.ts and types.ts independently. That's ~$30 of work that needed reimplementation.
-
-**Implementation notes:**
-- In `processNext()` pre-assignment: after picking a TODO, scan its description/design-doc for file paths mentioned
-- Build a `claimedFiles` set (union of all files claimed by running instances)
-- Skip TODO items whose likely-modified files overlap with `claimedFiles`
-- Heuristic: extract paths from `**Implementation notes:**` and `**Files:**` sections in TODO descriptions
-- Fallback: if no files detectable, allow the claim (don't block work over missing metadata)
-
-**Effort:** S (human: ~2 days / CC: ~20 min)
-**Depends on:** Nothing
-**Added by:** human observation on 2026-03-29
+Implemented by default daemon. Extracts predicted file paths from TODO descriptions and design docs, builds claimedFiles set across instances, skips items with overlapping files. Fail-open when no files detected.
 
 ## P3: Semantic Validation for Bootstrap (Reimplement from Design Doc)
 
