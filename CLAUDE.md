@@ -33,7 +33,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
-- 38 source modules + CLI, 157 test files, 2711 tests
+- 38 source modules + CLI, 157 test files, 2717 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -265,7 +265,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
 | `test/pipeline-compose.test.ts` | 44 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
 | `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
-| `test/pipeline-history.test.ts` | 37 | readPipelineOutcomes, appendPipelineOutcome, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker |
+| `test/pipeline-history.test.ts` | 41 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker |
 | `test/pipeline-compose-oracle.regression-1.test.ts` | 4 | Oracle override same-length different-skills: set-membership check, identical no-op, length diff, empty |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
 | `test/bootstrap.test.ts` | 52 | walkFileTree, detectTechStack, filePriority, safeReadFile, findCiConfig, findTestDir, buildFileTreeString, truncateToTokenBudget, analyzeCodebase, buildBootstrapPrompt |
@@ -320,7 +320,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/orchestrator-helpers.test.ts` | 38 | orchestrator helper functions, prompt building |
 | `test/orchestrator-helpers.regression-1.test.ts` | 6 | orchestrator helpers regression |
 | `test/orchestrator.regression-1.test.ts` | 4 | Multi-tool heavy detection: non-first block, middle position, no false positive |
-| `test/cli.test.ts` | 87 | CLI arg parsing, subcommands, daemon commands, --name/--all, --no-adaptive, adaptive_turns event |
+| `test/cli.test.ts` | 88 | CLI arg parsing, subcommands, daemon commands, --name/--all, --no-adaptive, adaptive_turns event, pipeline_oracle_adjustment event |
 | `test/cli-main.test.ts` | 25 | CLI main entry point, error handling |
 | `test/cli.regression-1.test.ts` | 2 | CLI regression: edge cases in arg parsing |
 | `test/cli-evaluate-hook.regression-1.test.ts` | 7 | CLI evaluate hook: append candidates, skip same project, skip missing, error handling |
