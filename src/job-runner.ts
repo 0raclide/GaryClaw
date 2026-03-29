@@ -19,6 +19,7 @@ import {
   updateGlobalBudget,
   isSkillSetActive,
   getClaimedTodoTitles,
+  getCompletedTodoTitles,
 } from "./daemon-registry.js";
 import { mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
 import type { MergeResult } from "./worktree.js";
@@ -266,15 +267,25 @@ export function createJobRunner(
         }
         const claimedTitles = new Set((claimedItems ?? []).map(c => c.title));
 
+        // Cross-cycle dedup: skip TODOs already completed by any instance
+        let completedTitles = new Set<string>();
+        if (parentCheckpointDir) {
+          completedTitles = getCompletedTodoTitles(parentCheckpointDir, resolvedInstanceName);
+        }
+        if (completedTitles.size > 0) {
+          d.log("info", `Cross-cycle dedup: ${completedTitles.size} already-completed TODO(s) excluded`);
+        }
+
         // Parse TODOS.md and pick top unclaimed item
         const todosPath = join(jobConfig.worktreePath ?? jobConfig.projectDir, "TODOS.md");
         const todosContent = safeReadText(todosPath);
         if (todosContent) {
           const items = parseTodoItems(todosContent);
-          // Filter: not completed (~~), not claimed, has effort ≤ M, deps met
+          // Filter: not completed (~~), not claimed, not already done by another cycle, has effort ≤ M, deps met
           const actionable = items.filter(item =>
             !item.title.startsWith("~~") &&
             !claimedTitles.has(item.title) &&
+            !completedTitles.has(item.title) &&
             item.effort && ["XS", "S", "M"].includes(item.effort.toUpperCase()) &&
             (item.dependencies.length === 0 ||
              item.dependencies.every(dep => dep.toLowerCase() === "nothing"))
