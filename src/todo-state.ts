@@ -307,7 +307,7 @@ function resolveBaseBranchSafe(projectDir: string): string {
   try {
     const result = execFileSync(
       "git", ["symbolic-ref", "refs/remotes/origin/HEAD"],
-      { cwd: projectDir, encoding: "utf-8", timeout: 5000 },
+      { cwd: projectDir, encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] },
     ).trim();
     return result.replace("refs/remotes/origin/", "");
   } catch {
