@@ -344,6 +344,12 @@ export function formatEvent(event: OrchestratorEvent): string {
 
     case "adaptive_turns":
       return `${DIM}  Adaptive turns: ${event.maxTurns} (${event.reason})${RESET}`;
+
+    case "bootstrap_quality_check":
+      return `\n${YELLOW}[Quality Gate]${RESET} Bootstrap score: ${event.qualityScore}/100${event.missingSections.length > 0 ? ` ${DIM}(missing: ${event.missingSections.join(", ")})${RESET}` : ""}`;
+
+    case "bootstrap_quality_recheck":
+      return `${GREEN}[Quality Gate]${RESET} Re-check: ${event.previousScore} → ${event.qualityScore}/100`;
   }
 }
 
