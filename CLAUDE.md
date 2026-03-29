@@ -28,7 +28,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Dogfood Bootstrap: COMPLETE** (2026-03-28) — Cold-start bootstrap skill, codebase analysis, CLAUDE.md/TODOS.md generation for external repos
 **Pipeline Resume After Crash: COMPLETE** (2026-03-29) — Re-queue interrupted jobs, retry limit (3 crashes = abandon), pipeline resume from last completed skill, dashboard crash recovery stats
 **Oracle Decision Batching: COMPLETE** (2026-03-29) — Multi-question batching into single API call, 50-70% latency reduction, per-question escalation, fallback chain parsing
-- 34 source modules + CLI, 100 test files, 2026 tests
+- 34 source modules + CLI, 102 test files, 2044 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -299,6 +299,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/cli-evaluate-hook.regression-1.test.ts` | 7 | CLI evaluate hook: append candidates, skip same project, skip missing, error handling |
 | `test/checkpoint.regression-1.test.ts` | 5 | Checkpoint regression: edge cases in relay prompt generation |
 | `test/oracle.regression-1.test.ts` | 9 | Oracle regression: edge cases in decision parsing |
+| `test/oracle.regression-3.test.ts` | 7 | Oracle regression: extractOracleFields DRY helper |
 | `test/oracle-memory.regression-1.test.ts` | 8 | Oracle memory regression: layer resolution edge cases |
 | `test/oracle-memory.regression-2.test.ts` | 4 | Oracle memory regression: sanitization edge cases |
 | `test/oracle-memory.regression-3.test.ts` | 6 | Oracle memory regression: metrics edge cases |
