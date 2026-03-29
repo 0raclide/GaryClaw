@@ -85,9 +85,15 @@ describe("rate-limit re-queue costUsd reset", () => {
     // Wait a tick for the sync portion to complete
     await new Promise((r) => setTimeout(r, 10));
 
-    // Verify rate limit was cleared
+    // Verify rate limit was cleared — the job was re-queued either by startup
+    // recovery (ISSUE-002 fix) or by processNext's expiry handler.
     expect(logs.some((l) => l.includes("Rate limit hold expired"))).toBe(true);
-    expect(logs.some((l) => l.includes("Re-queued rate-limited job"))).toBe(true);
+    // Startup recovery re-queues rate_limited jobs before processNext runs,
+    // so the processNext handler may find no rate_limited jobs left. Check either path.
+    expect(
+      logs.some((l) => l.includes("Re-queued rate-limited job")) ||
+      logs.some((l) => l.includes("rate_limited") && l.includes("re-queued"))
+    ).toBe(true);
 
     // Now let the job finish so processNext completes
     resolveJob!();
