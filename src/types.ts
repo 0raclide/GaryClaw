@@ -489,6 +489,7 @@ export interface DashboardData {
     avgCostPerJob: number;
     avgDurationSec: number;
     failureBreakdown: Record<string, number>;  // FailureCategory → count
+    rateLimited: number;            // Jobs currently in rate_limited hold
     crashRecoveries: number;       // Jobs that completed after crash retry
     crashRecoverySavedUsd: number; // Cost of prior skills not re-run ($saved)
   };

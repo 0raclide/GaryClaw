@@ -36,6 +36,7 @@ export function aggregateJobStats(jobs: Job[], todayStr?: string): DashboardData
   const failed = todayJobs.filter((j) => j.status === "failed").length;
   const queued = todayJobs.filter((j) => j.status === "queued").length;
   const running = todayJobs.filter((j) => j.status === "running").length;
+  const rateLimited = todayJobs.filter((j) => j.status === "rate_limited").length;
 
   const successRate = total > 0 ? (complete / total) * 100 : 100;
   const totalCostUsd = todayJobs.reduce((sum, j) => sum + j.costUsd, 0);
@@ -69,6 +70,7 @@ export function aggregateJobStats(jobs: Job[], todayStr?: string): DashboardData
     failed,
     queued,
     running,
+    rateLimited,
     successRate,
     totalCostUsd,
     avgCostPerJob,
@@ -368,6 +370,11 @@ export function formatDashboard(data: DashboardData): string {
     `| Avg Cost/Job | $${data.jobs.avgCostPerJob.toFixed(2)} |`,
     `| Avg Duration | ${formatDuration(data.jobs.avgDurationSec)} |`,
   ];
+
+  // Rate limited (only if there are held jobs)
+  if (data.jobs.rateLimited > 0) {
+    lines.push(`| Rate Limited | ${data.jobs.rateLimited} (held) |`);
+  }
 
   // Crash recovery stats (only if there are recoveries)
   if (data.jobs.crashRecoveries > 0) {
