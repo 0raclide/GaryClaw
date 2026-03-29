@@ -58,6 +58,14 @@ export interface OracleOutput {
   confidence: number;
   rationale: string;
   principle: string;
+  /**
+   * True when `confidence < escalateThreshold` (default threshold: 6).
+   * Indicates a low-confidence "taste" decision — the Oracle isn't sure
+   * which option is best, as opposed to a security/destructive escalation.
+   * Used to classify escalation reasons in audit logs:
+   *   `true`  → "taste_decision"
+   *   `false` → "security_concern"
+   */
   isTaste: boolean;
   escalate: boolean;
   otherProposal?: string;
