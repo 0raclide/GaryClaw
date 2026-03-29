@@ -6,8 +6,10 @@
  */
 
 import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { safeReadJSON, safeWriteText } from "./safe-json.js";
 import { readMetrics, defaultMemoryConfig } from "./oracle-memory.js";
+import type { MergeAuditEntry } from "./worktree.js";
 import type {
   DashboardData,
   DaemonState,
@@ -202,13 +204,91 @@ export function aggregateBootstrapEnrichmentStats(
 }
 
 /**
+ * Aggregate merge health statistics from merge-audit.jsonl files.
+ * Scans all instance dirs under .garyclaw/daemons/ for merge-audit.jsonl.
+ * Filters to today's entries (same pattern as aggregateJobStats).
+ *
+ * Pure function — takes parsed audit entries as input.
+ */
+export function aggregateMergeStats(
+  entries: MergeAuditEntry[],
+  todayStr?: string,
+): DashboardData["mergeHealth"] {
+  const today = todayStr ?? new Date().toISOString().slice(0, 10);
+  const todayEntries = entries.filter((e) => e.timestamp.startsWith(today));
+
+  const totalAttempts = todayEntries.length;
+  const merged = todayEntries.filter((e) => e.merged).length;
+  const blocked = totalAttempts - merged;
+  const successRate = totalAttempts > 0 ? (merged / totalAttempts) * 100 : 100;
+
+  // Avg test duration (only entries where tests ran)
+  const withDuration = todayEntries.filter((e) => e.testDurationMs !== undefined && e.testDurationMs !== null);
+  const avgTestDurationMs = withDuration.length > 0
+    ? withDuration.reduce((sum, e) => sum + e.testDurationMs!, 0) / withDuration.length
+    : 0;
+
+  // Breakdown: test failures vs rebase conflicts
+  const testFailures = todayEntries.filter((e) => e.testsPassed === false).length;
+  const rebaseConflicts = todayEntries.filter(
+    (e) => !e.merged && e.reason !== undefined && e.reason.toLowerCase().includes("conflicts"),
+  ).length;
+
+  return {
+    totalAttempts,
+    merged,
+    blocked,
+    successRate,
+    avgTestDurationMs,
+    testFailures,
+    rebaseConflicts,
+  };
+}
+
+/**
+ * Read merge-audit.jsonl entries from all instance dirs.
+ * Best-effort: silently skips unreadable files.
+ */
+export function readAllMergeAuditEntries(parentDir: string): MergeAuditEntry[] {
+  const entries: MergeAuditEntry[] = [];
+  const daemonsDir = join(parentDir, "daemons");
+  if (!existsSync(daemonsDir)) return entries;
+
+  try {
+    const instanceDirs = readdirSync(daemonsDir, { withFileTypes: true });
+    for (const dirent of instanceDirs) {
+      if (!dirent.isDirectory()) continue;
+      const auditPath = join(daemonsDir, dirent.name, "merge-audit.jsonl");
+      if (!existsSync(auditPath)) continue;
+      try {
+        const lines = readFileSync(auditPath, "utf-8").trim().split("\n").filter(Boolean);
+        for (const line of lines) {
+          try {
+            entries.push(JSON.parse(line) as MergeAuditEntry);
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  } catch {
+    // daemonsDir not readable
+  }
+
+  return entries;
+}
+
+/**
  * Compute health score (0-100) and top concern.
  *
  * Weights:
- * - Job success rate: 40%
- * - Oracle accuracy: 25% (100 if no decisions)
+ * - Job success rate: 35%
+ * - Oracle accuracy: 20% (100 if no decisions)
  * - Budget headroom: 20%
- * - No circuit breaker: 15%
+ * - No circuit breaker: 10%
+ * - Merge health: 15% (100 if no merges attempted)
  */
 export function computeHealthScore(
   data: Omit<DashboardData, "healthScore" | "topConcern" | "generatedAt">,
