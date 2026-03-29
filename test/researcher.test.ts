@@ -163,6 +163,72 @@ describe("researcher", () => {
       const sections = parseDomainSections(content);
       expect(sections).toEqual([]);
     });
+
+    it("handles adjacent sections without body text", () => {
+      // Two frontmatter blocks back-to-back with no body content between them.
+      // The parser must detect that the "body" chunk is actually the next
+      // section's frontmatter and assign empty content to the first section.
+      const content = [
+        "# Domain Expertise",
+        "",
+        "---",
+        "topic: WebSockets",
+        "last_researched: 2026-03-20T10:00:00Z",
+        "search_count: 3",
+        "partial: false",
+        "---",
+        "---",
+        "topic: OAuth 2.1",
+        "last_researched: 2026-03-21T10:00:00Z",
+        "search_count: 5",
+        "partial: false",
+        "---",
+        "",
+        "## OAuth Body",
+        "OAuth 2.1 content here.",
+      ].join("\n");
+
+      const sections = parseDomainSections(content);
+      expect(sections).toHaveLength(2);
+      expect(sections[0].topic).toBe("WebSockets");
+      expect(sections[0].content).toBe(""); // No body — adjacent frontmatter
+      expect(sections[1].topic).toBe("OAuth 2.1");
+      expect(sections[1].content).toContain("OAuth 2.1 content here.");
+    });
+
+    it("handles all sections without body text", () => {
+      // Three frontmatter blocks, none with body text.
+      const content = [
+        "---",
+        "topic: Topic A",
+        "last_researched: 2026-03-20T10:00:00Z",
+        "search_count: 1",
+        "partial: true",
+        "---",
+        "---",
+        "topic: Topic B",
+        "last_researched: 2026-03-21T10:00:00Z",
+        "search_count: 2",
+        "partial: true",
+        "---",
+        "---",
+        "topic: Topic C",
+        "last_researched: 2026-03-22T10:00:00Z",
+        "search_count: 3",
+        "partial: true",
+        "---",
+      ].join("\n");
+
+      const sections = parseDomainSections(content);
+      expect(sections).toHaveLength(3);
+      expect(sections.map((s) => s.topic)).toEqual(["Topic A", "Topic B", "Topic C"]);
+      // All should have empty content since they're all adjacent frontmatter
+      expect(sections[0].content).toBe("");
+      expect(sections[1].content).toBe("");
+      expect(sections[2].content).toBe("");
+      // All should be marked partial
+      expect(sections.every((s) => s.partial)).toBe(true);
+    });
   });
 
   // ── mergeDomainSections ────────────────────────────────────────
