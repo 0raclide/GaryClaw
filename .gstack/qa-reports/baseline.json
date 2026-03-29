@@ -1,12 +1,19 @@
 {
   "date": "2026-03-29",
   "url": "cli-test-suite",
-  "healthScore": 100,
+  "healthScore": 95,
   "issues": [
     {
       "id": "ISSUE-001",
-      "title": "Cross-cycle dedup test skill collision",
+      "title": "CLAUDE.md stale counts and missing file-conflict.ts module entry",
       "severity": "medium",
+      "category": "content",
+      "status": "fixed"
+    },
+    {
+      "id": "ISSUE-002",
+      "title": "getClaimedFiles duplicate per-instance file entries",
+      "severity": "low",
       "category": "functional",
       "status": "fixed"
     }
@@ -14,14 +21,14 @@
   "categoryScores": {
     "console": 100,
     "links": 100,
-    "functional": 100,
+    "functional": 92,
     "visual": 100,
     "ux": 100,
     "performance": 100,
-    "content": 100,
+    "content": 85,
     "accessibility": 100
   },
-  "testFiles": 119,
-  "testsRun": 2214,
-  "testsPassed": 2214
+  "testFiles": 123,
+  "testsRun": 2261,
+  "testsPassed": 2261
 }

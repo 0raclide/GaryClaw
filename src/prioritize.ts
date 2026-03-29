@@ -458,6 +458,21 @@ export async function buildPrioritizePrompt(
     lines.push("");
   }
 
+  // Product vision from CLAUDE.md (guides invention when backlog is exhausted)
+  const claudeMdPath = join(projectDir, "CLAUDE.md");
+  const claudeMdContent = safeReadText(claudeMdPath);
+  if (claudeMdContent) {
+    // Extract the description section (everything before the first ---)
+    const descriptionEnd = claudeMdContent.indexOf("\n---");
+    const vision = descriptionEnd > 0 ? claudeMdContent.slice(0, descriptionEnd).trim() : claudeMdContent.slice(0, 2000);
+    lines.push("### Product Vision (from CLAUDE.md)");
+    lines.push("");
+    lines.push(vision);
+    lines.push("");
+    lines.push("When the backlog is exhausted, use this vision to invent new features that move the product forward. Write invented items to TODOS.md before scoring them.");
+    lines.push("");
+  }
+
   // Overnight goal
   const goal = loadOvernightGoal(projectDir);
   if (goal) {
