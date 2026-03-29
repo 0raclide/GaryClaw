@@ -41,13 +41,26 @@
 **Depends on:** Nothing
 **Added by:** Session 3 overnight parallel run — worker-4 built it but branch conflicted (2026-03-29)
 
-## P3: Fix Auto-Merge Dirty Working Tree Detection
+## P2: Fix Auto-Merge Dirty Working Tree + Cross-Cycle Dedup
 
-**What:** The auto-merge function in `mergeWorktreeBranch()` checks `git diff --quiet` on the main repo before merging. This fails when any daemon-generated files (`.garyclaw/` artifacts, uncommitted session changes) are present. The fix: either stash before merge, or scope the dirty check to tracked files only (ignoring `.garyclaw/`).
+**What:** Two related fixes that prevented overnight auto-merges from landing and caused duplicate rebuilds:
 
-**Why:** Every overnight auto-merge failed with "Working tree has uncommitted changes." The worktrees themselves were clean — the main repo had uncommitted changes from our session or from daemon artifacts.
+**Fix 1 — Dirty working tree blocks merge:** `mergeWorktreeBranch()` checks `git diff --quiet` on the main repo (not the worktree) before merging. This fails when `.garyclaw/` artifacts, daemon state files, or uncommitted session changes exist on main. Three-part fix:
+- Add `.garyclaw/` to `.gitignore` in each worktree on creation (prevents daemon artifacts from showing as dirty)
+- Before merge: `git stash --include-untracked` in repoDir, merge, then `git stash pop`
+- Scope the dirty check to `git diff --quiet -- ':!.garyclaw'` (exclude .garyclaw dir from the check entirely)
 
-**Effort:** XS (human: ~30 min / CC: ~5 min)
+**Fix 2 — Cross-cycle dedup (don't rebuild completed work):** When a feature builds successfully but merge fails, the next cron cycle re-assigns the same TODO and rebuilds from scratch. On 2026-03-29, workers rebuilt the same features 2-3 times each ($30 wasted). Fix: before pre-assigning a TODO, scan for existing `garyclaw/*` branches that match the claimed title (fuzzy match via normalized Levenshtein < 0.3). If a branch exists with commits ahead of main, skip the TODO — the work exists but just needs merge conflict resolution, not reimplementation.
+
+**Implementation notes:**
+- Fix 1 in `src/worktree.ts` `mergeWorktreeBranch()`: add stash/pop around the rebase+merge block, or exclude `.garyclaw` from the diff check
+- Fix 1 in `src/worktree.ts` `createWorktree()`: ensure `.garyclaw/` is in the worktree's `.gitignore`
+- Fix 2 in `src/job-runner.ts` `processNext()` pre-assignment: call `listWorktrees()` or scan `git branch --list 'garyclaw/*'`, check each branch for commits ahead of main, fuzzy-match branch name against TODO title
+- Fix 2 alternative: scan `daemon-state.json` across all instances for completed jobs with `claimedTodoTitle` matching — if found and branch exists, skip
+
+**Why:** On 2026-03-29 overnight, every auto-merge failed (dirty working tree) and every cron cycle rebuilt the same features (no cross-cycle dedup). Combined: 5 workers × 4 cycles × $3-4/run = $49 spent, but $30 was duplicate work on already-built features that couldn't merge.
+
+**Effort:** S (human: ~2 days / CC: ~15 min)
 **Depends on:** Nothing
 **Added by:** human observation on 2026-03-29
 
