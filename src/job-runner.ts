@@ -44,6 +44,14 @@ import {
 import { readDecisionsFromLog } from "./reflection.js";
 import { getResearchTopics } from "./auto-research.js";
 import { readOracleMemory, defaultMemoryConfig } from "./oracle-memory.js";
+import {
+  slugify,
+  findTodoState,
+  detectArtifacts,
+  reconcileState,
+  getStartSkill,
+  findNextSkill,
+} from "./todo-state.js";
 import type {
   BudgetConfig,
   DaemonConfig,
@@ -375,6 +383,62 @@ export function createJobRunner(
       }
     }
 
+    // ── TODO state tracking: skip already-completed stages ────────
+    if (preAssignedTitle && nextJob.skills.length > 1) {
+      try {
+        const slug = slugify(preAssignedTitle);
+        const storedState = findTodoState(
+          parentCheckpointDir ?? checkpointDir,
+          preAssignedTitle,
+        );
+        const artifacts = detectArtifacts(
+          jobConfig.worktreePath ?? jobConfig.projectDir,
+          preAssignedTitle,
+          slug,
+        );
+        const reconciledState = reconcileState(
+          storedState,
+          artifacts,
+          parentCheckpointDir ?? checkpointDir,
+        );
+
+        const startSkill = getStartSkill(reconciledState);
+        if (startSkill === "skip") {
+          d.log("info", `TODO "${preAssignedTitle}" already complete (${reconciledState.state}) — skipping`);
+          nextJob.status = "complete";
+          nextJob.completedAt = new Date().toISOString();
+          running = false;
+          persistState(state, checkpointDir);
+          processNext();
+          return;
+        }
+
+        // Trim pipeline skills to start from the right point
+        const startIndex = findNextSkill(nextJob.skills, startSkill);
+        if (startIndex > 0 && startIndex < nextJob.skills.length) {
+          const skippedSkills = nextJob.skills.slice(0, startIndex);
+          nextJob.skills = nextJob.skills.slice(startIndex);
+          d.log("info", `TODO "${preAssignedTitle}" at state "${reconciledState.state}" — skipping [${skippedSkills.join(", ")}]`);
+        } else if (startIndex >= nextJob.skills.length) {
+          d.log("info", `TODO "${preAssignedTitle}" at state "${reconciledState.state}" — all pipeline skills already complete`);
+          nextJob.status = "complete";
+          nextJob.completedAt = new Date().toISOString();
+          running = false;
+          persistState(state, checkpointDir);
+          processNext();
+          return;
+        }
+
+        // Pass design doc path to implement if available
+        if (reconciledState.designDocPath && !nextJob.designDoc) {
+          nextJob.designDoc = reconciledState.designDocPath;
+        }
+      } catch (err) {
+        // Fail-open: if state tracking fails, run full pipeline
+        d.log("warn", `TODO state tracking failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     const clawConfig = buildGaryClawConfig(jobConfig, nextJob, jobDir, d, claimedItems, preAssignedTitle);
 
     // Detect if this is a pipeline resume (retry with existing pipeline.json)
@@ -639,6 +703,8 @@ function buildGaryClawConfig(
     mainRepoDir: config.worktreePath ? config.projectDir : undefined,
     claimedTodoItems,
     preAssignedTodoTitle,
+    todoTitle: job.claimedTodoTitle,
+    instanceName: config.name,
   };
 }
 

@@ -140,6 +140,10 @@ export interface GaryClawConfig {
   preAssignedTodoTitle?: string;
   /** Enable quality gate after bootstrap skill (default: undefined = enabled). */
   bootstrapQualityGate?: boolean;
+  /** Claimed TODO title, set by job-runner for pipeline state tracking. */
+  todoTitle?: string;
+  /** Daemon instance name, set by job-runner for state tracking attribution. */
+  instanceName?: string;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────
