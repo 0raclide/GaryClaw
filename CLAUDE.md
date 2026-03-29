@@ -31,7 +31,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
-- 36 source modules + CLI, 150 test files, 2554 tests
+**Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
+- 37 source modules + CLI, 151 test files, 2598 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -177,6 +178,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/failure-taxonomy.ts` | 10-category failure classification, failures.jsonl persistence, notification integration |
 | `src/pid-utils.ts` | PID liveness check, process-name verification, stale PID detection |
 | `src/file-conflict.ts` | File-level conflict prevention: predicted file extraction, dependency expansion, overlap detection for parallel instances |
+| `src/pipeline-compose.ts` | Adaptive pipeline composition: static lookup table mapping (effort, priority, hasDesignDoc) to minimal skill sequences, intersection with requestedSkills |
 | `src/todo-state.ts` | TODO lifecycle state tracking: slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation, pipeline skill trimming |
 | `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon/dashboard`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
 
@@ -206,6 +208,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Sleep-resilient cron poller** — `lastCheckedAt` scan on wake (floored to minute boundary), single-fire cap (latest match only), O(minutes-slept) per tick. Recovery logging: gaps > 2 min produce "Cron recovered after N min, M window(s) missed" detail for daemon log observability. Catches missed cron windows during macOS sleep. No persistence across daemon restarts (catch-up only for windows missed while poller was running). Clock backward jump is safe (empty scan range).
 - **Oracle decision batching** — `askOracleBatch()` sends multiple questions in one API call via `buildBatchOraclePrompt()`. Single questions delegate to `askOracle()` (zero overhead). Batch response parsed as JSON array with fallback chain: array → individual JSON objects → fallback choices. Per-question escalation/taste detection applied post-parse. Ask-handler uses batching when `askOracleBatch` is provided AND `questions.length > 1`; otherwise serial fallback. Decision history snapshot prevents mutable reference bugs.
 - **Oracle session reuse** — `createSdkOracleQueryFn()` is stateful: first call creates a fresh SDK session with full 43K prompt, subsequent calls resume with just the question (~700 tokens via `buildResumePrompt()`). `ORACLE_QUESTION_MARKER` shared constant prevents marker drift. `MAX_REUSE=25` resets session to bound context growth. Batch calls (`ORACLE_BATCH_MARKER`) bypass session reuse. Graceful fallback: resume failure → single cold-start retry. `OracleSessionEvent` callback for observability. Per-skill scope (orchestrator creates fresh queryFn per skill).
+- **Adaptive pipeline composition** — `composePipeline()` in `pipeline-compose.ts` maps `(effort, priority, hasDesignDoc)` to minimal skill sequences via static lookup table. XS items → `implement + qa` ($0.50 vs $3-4). Intersection with `requestedSkills` ensures composition can only remove skills, never add. Wired into job-runner between pre-assignment and todo-state trimming. `pipeline_composed` event for observability. `composedFrom` on Job for dashboard tracking. Fail-open on errors.
 
 ---
 
@@ -257,6 +260,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline.test.ts` | 27 | state persistence, context handoff, pipeline report, validation |
 | `test/pipeline-extended.test.ts` | 10 | pipeline edge cases, resume, error propagation |
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
+| `test/pipeline-compose.test.ts` | 44 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
 | `test/bootstrap.test.ts` | 52 | walkFileTree, detectTechStack, filePriority, safeReadFile, findCiConfig, findTestDir, buildFileTreeString, truncateToTokenBudget, analyzeCodebase, buildBootstrapPrompt |
 | `test/pipeline-bootstrap.test.ts` | 4 | bootstrap skill dispatch, idempotency, pipeline chaining |
