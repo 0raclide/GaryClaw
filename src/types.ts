@@ -3,6 +3,16 @@
  * Every other module imports from here.
  */
 
+// ── Shared warn utility ─────────────────────────────────────────
+
+/** Warn function signature — routes to callback if provided, else console.warn. */
+export type WarnFn = (msg: string) => void;
+
+/** Resolve a warn function — routes to callback if provided, else console.warn. */
+export function resolveWarnFn(onWarn?: WarnFn): WarnFn {
+  return onWarn ?? console.warn;
+}
+
 // ── Errors ──────────────────────────────────────────────────────
 
 export class PerJobCostExceededError extends Error {

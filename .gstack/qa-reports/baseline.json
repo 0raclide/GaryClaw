@@ -1,24 +1,18 @@
 {
   "date": "2026-03-29",
-  "url": "cli://garyclaw",
+  "project": "GaryClaw",
   "healthScore": 100,
+  "testFiles": 157,
+  "testsRun": 2717,
+  "testsPassed": 2717,
+  "testsFailed": 0,
+  "duration": "9.36s",
   "issues": [],
   "categoryScores": {
-    "console": 100,
-    "links": 100,
-    "visual": 100,
     "functional": 100,
-    "ux": 100,
-    "performance": 100,
+    "console": 100,
     "content": 100,
-    "accessibility": 100
-  },
-  "testResults": {
-    "files": 157,
-    "total": 2711,
-    "passed": 2711,
-    "failed": 0,
-    "skipped": 0,
-    "duration": "8.42s"
+    "ux": 100,
+    "performance": 100
   }
 }
