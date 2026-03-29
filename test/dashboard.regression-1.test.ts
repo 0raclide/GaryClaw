@@ -146,6 +146,7 @@ describe("computeHealthScore edge cases", () => {
         jobCount: 5, maxJobsPerDay: 100, byInstance: {},
       },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     };
     const { score } = computeHealthScore(data);
@@ -170,6 +171,7 @@ describe("computeHealthScore edge cases", () => {
         jobCount: 10, maxJobsPerDay: 100, byInstance: {},
       },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     };
     const { topConcern } = computeHealthScore(data);
@@ -200,6 +202,7 @@ describe("formatDashboard edge cases", () => {
         jobCount: 5, maxJobsPerDay: 100, byInstance: {},
       },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     };
     const result = formatDashboard(data);
@@ -225,6 +228,7 @@ describe("formatDashboard edge cases", () => {
         jobCount: 0, maxJobsPerDay: 100, byInstance: {},
       },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     };
     const result = formatDashboard(data);

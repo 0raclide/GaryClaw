@@ -13,7 +13,8 @@
 import { readdirSync, readFileSync, statSync, existsSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { join, relative, extname, basename } from "node:path";
 
-import { estimateTokens } from "./checkpoint.js";
+import { estimateTokens, readCheckpoint, generateRelayPrompt } from "./checkpoint.js";
+import { analyzeBootstrapQuality } from "./evaluate.js";
 import type { GaryClawConfig, PipelineSkillEntry } from "./types.js";
 
 // ── Constants ────────────────────────────────────────────────────
@@ -757,4 +758,96 @@ export async function buildBootstrapPrompt(
   lines.push("");
 
   return lines.join("\n");
+}
+
+// ── Enriched bootstrap prompt (quality gate re-bootstrap) ────────
+
+/** Max tokens for existing CLAUDE.md content in enriched prompt. */
+const ENRICHED_CLAUDE_MD_BUDGET = 5_000;
+
+/**
+ * Build an enriched bootstrap prompt for re-bootstrap after quality gate failure.
+ *
+ * Combines:
+ * 1. Fresh codebase analysis (via analyzeCodebase)
+ * 2. The existing (failed) CLAUDE.md content
+ * 3. QA pre-scan findings from checkpoint
+ *
+ * All helper functions used already exist in bootstrap.ts and checkpoint.ts.
+ */
+export async function buildEnrichedBootstrapPrompt(
+  config: GaryClawConfig,
+  qaCheckpointDir: string,
+  projectDir: string,
+): Promise<string> {
+  const analysis = await analyzeCodebase(projectDir);
+
+  // Read existing CLAUDE.md (the one that failed the quality gate)
+  let existingClaudeMd = "";
+  try {
+    existingClaudeMd = readFileSync(join(projectDir, "CLAUDE.md"), "utf-8");
+  } catch { /* missing file is fine */ }
+
+  // Truncate to budget if large
+  if (existingClaudeMd && estimateTokens(existingClaudeMd) > ENRICHED_CLAUDE_MD_BUDGET) {
+    existingClaudeMd = truncateToTokenBudget(existingClaudeMd, ENRICHED_CLAUDE_MD_BUDGET);
+  }
+
+  // Read QA findings from checkpoint (issues, findings from the pre-scan)
+  const qaCheckpoint = readCheckpoint(qaCheckpointDir);
+  const qaFindings = qaCheckpoint
+    ? generateRelayPrompt(qaCheckpoint, { maxTokens: 5_000 })
+    : "No QA findings captured.";
+
+  // Format codebase analysis
+  const fileTree = analysis.fileTree;
+
+  // Run claim verification to surface factual errors for the enrichment prompt
+  let failedClaimsSection = "";
+  try {
+    const evaluation = analyzeBootstrapQuality(projectDir);
+    const failedClaims = (evaluation.claims ?? []).filter((c) => !c.verified);
+    if (failedClaims.length > 0) {
+      const claimLines = failedClaims.map((c) => {
+        switch (c.type) {
+          case "tech_stack":
+            return `- Claimed "${c.claimed}" but ${c.evidence}`;
+          case "file_path":
+            return `- Referenced "${c.claimed}" but ${c.evidence}`;
+          case "test_framework":
+            return `- Claimed test framework "${c.claimed}" but ${c.evidence}`;
+          case "entry_point":
+            return `- Claimed entry point "${c.claimed}" but ${c.evidence}`;
+        }
+      });
+      failedClaimsSection = `\n## Factual Errors Found\nThe previous CLAUDE.md contained these factual errors:\n${claimLines.join("\n")}\nPlease correct these in the new version.\n`;
+    }
+  } catch {
+    // Claim verification failure should not block enrichment
+  }
+
+  return `You are improving a CLAUDE.md that scored below the quality threshold.
+
+## Current CLAUDE.md (needs improvement)
+${existingClaudeMd || "(empty — bootstrap produced no output)"}
+${failedClaimsSection}
+## QA Pre-Scan Findings
+${qaFindings}
+
+## File Tree
+${fileTree}
+
+## Package Dependencies
+${analysis.packageJson ?? "No package.json found."}
+
+## Instructions
+Rewrite CLAUDE.md to address the quality gaps. Include:
+- All 4 required sections: Architecture, Tech Stack, Test Strategy, Usage
+- Every framework/library found in package.json
+- Specific file paths and module descriptions
+- Any issues found by the QA pre-scan${failedClaimsSection ? "\n- Correct all factual errors listed above" : ""}
+
+Also update TODOS.md to include QA findings as backlog items with proper P1-P4 priorities.
+
+Write the updated files now.`;
 }

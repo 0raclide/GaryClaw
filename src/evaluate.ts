@@ -33,12 +33,16 @@ import type {
   ImprovementEffort,
   ImprovementCategory,
   TokenMonitorState,
+  ClaudeMdClaim,
 } from "./types.js";
 
 // ── Constants ────────────────────────────────────────────────────
 
 /** Expected sections in a well-formed CLAUDE.md */
 export const EXPECTED_SECTIONS = ["Architecture", "Tech Stack", "Test Strategy", "Usage"];
+
+/** Minimum bootstrap quality score (0-100) to proceed without enrichment */
+export const BOOTSTRAP_QUALITY_THRESHOLD = 50;
 
 /** Canonical framework names → dependency package names (case-insensitive match) */
 export const KNOWN_FRAMEWORKS: ReadonlyMap<string, readonly string[]> = new Map([
@@ -178,6 +182,379 @@ export function detectSections(
   return { found, missing };
 }
 
+// ── Claim extraction ──────────────────────────────────────────────
+
+/** Words near a tech name that indicate comparison/negation context (not a usage claim). */
+const NEGATION_CONTEXT_WORDS = ["considered", "alternative", "instead of", "not using", "replaced", "migrated from"];
+
+/** Patterns that indicate an install instruction code block (skip these). */
+const INSTALL_BLOCK_PREFIXES = ["npm install", "pip install", "brew install", "cargo add", "yarn add", "pnpm add"];
+
+/** Test runner names and their verification signals. */
+const TEST_RUNNERS: ReadonlyMap<string, { packages: string[]; configFiles: string[] }> = new Map([
+  ["vitest", { packages: ["vitest"], configFiles: ["vitest.config.ts", "vitest.config.js", "vitest.config.mts"] }],
+  ["jest", { packages: ["jest", "ts-jest"], configFiles: ["jest.config.ts", "jest.config.js", "jest.config.mjs"] }],
+  ["mocha", { packages: ["mocha"], configFiles: [".mocharc.yml", ".mocharc.json"] }],
+  ["pytest", { packages: ["pytest"], configFiles: ["pytest.ini", "pyproject.toml", "setup.cfg"] }],
+  ["go test", { packages: [], configFiles: ["go.mod"] }],
+]);
+
+/**
+ * Check if a line is inside a fenced code block that looks like a tree listing.
+ * A fenced block is a tree listing if >50% of its non-empty lines match
+ * tree drawing characters or indented filenames.
+ */
+function isTreeListingBlock(block: string): boolean {
+  const lines = block.split("\n").filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return false;
+
+  const treePattern = /^\s*[├└│─┬┼╠╚║╟╞]\s/;
+  const indentedFilePattern = /^\s{2,}\S+\.\w+$/;
+  const treeLines = lines.filter((l) => treePattern.test(l) || indentedFilePattern.test(l));
+
+  return treeLines.length / lines.length > 0.5;
+}
+
+/**
+ * Extract fenced code blocks from markdown content.
+ * Returns array of { start, end, content, isInstall, isTreeListing }.
+ */
+function extractFencedBlocks(content: string): Array<{
+  start: number;
+  end: number;
+  content: string;
+  isInstall: boolean;
+  isTreeListing: boolean;
+}> {
+  const blocks: Array<{ start: number; end: number; content: string; isInstall: boolean; isTreeListing: boolean }> = [];
+  const fenceRegex = /^(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^\1/gm;
+
+  let match: RegExpExecArray | null;
+  while ((match = fenceRegex.exec(content)) !== null) {
+    const blockContent = match[2] ?? "";
+    const firstLine = blockContent.trim().split("\n")[0] ?? "";
+    const isInstall = INSTALL_BLOCK_PREFIXES.some((p) => firstLine.toLowerCase().startsWith(p));
+    const isTreeListing = isTreeListingBlock(blockContent);
+
+    blocks.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      content: blockContent,
+      isInstall,
+      isTreeListing,
+    });
+  }
+
+  return blocks;
+}
+
+/**
+ * Check if a position in the content falls inside any fenced code block.
+ */
+function isInsideFencedBlock(
+  position: number,
+  blocks: Array<{ start: number; end: number }>,
+): boolean {
+  return blocks.some((b) => position >= b.start && position < b.end);
+}
+
+/**
+ * Check if a tech name appears near negation context words.
+ * Looks within ~20 words before and after the match.
+ */
+function isNegationContext(content: string, matchIndex: number, matchLength: number): boolean {
+  // Get ~100 chars before and after (approx 20 words)
+  const windowStart = Math.max(0, matchIndex - 100);
+  const windowEnd = Math.min(content.length, matchIndex + matchLength + 100);
+  const window = content.slice(windowStart, windowEnd).toLowerCase();
+
+  return NEGATION_CONTEXT_WORDS.some((word) => window.includes(word));
+}
+
+/**
+ * Extract factual claims from CLAUDE.md content.
+ *
+ * Extracts four types of claims:
+ * - tech_stack: Framework/library names from KNOWN_FRAMEWORKS
+ * - file_path: File paths matching src/..., lib/..., test/..., app/... patterns
+ * - test_framework: Test runner mentions (vitest, jest, mocha, pytest, go test)
+ * - entry_point: File paths near "entry point", "main file", "starts at" patterns
+ *
+ * Skips claims inside install instruction code blocks, tree listings,
+ * and negation/comparison contexts.
+ */
+export function extractClaudeMdClaims(claudeMdContent: string): ClaudeMdClaim[] {
+  const claims: ClaudeMdClaim[] = [];
+  const seenClaims = new Set<string>(); // dedup key: `${type}:${claimed}`
+
+  if (!claudeMdContent.trim()) return claims;
+
+  const fencedBlocks = extractFencedBlocks(claudeMdContent);
+  const installOrTreeBlocks = fencedBlocks.filter((b) => b.isInstall || b.isTreeListing);
+
+  // Helper to add a claim if not already seen
+  function addClaim(claim: ClaudeMdClaim): void {
+    const key = `${claim.type}:${claim.claimed.toLowerCase()}`;
+    if (!seenClaims.has(key)) {
+      seenClaims.add(key);
+      claims.push(claim);
+    }
+  }
+
+  // 1. Tech stack claims — scan for KNOWN_FRAMEWORKS names in prose
+  for (const [frameworkName] of KNOWN_FRAMEWORKS) {
+    const escapedName = frameworkName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`\\b${escapedName}\\b`, "gi");
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(claudeMdContent)) !== null) {
+      // Skip if inside install or tree listing code block
+      if (isInsideFencedBlock(match.index, installOrTreeBlocks)) continue;
+      // Skip if in negation/comparison context
+      if (isNegationContext(claudeMdContent, match.index, match[0].length)) continue;
+
+      addClaim({
+        type: "tech_stack",
+        claimed: frameworkName,
+        evidence: "", // filled by verifyClaudeMdClaims
+        verified: false,
+      });
+      break; // Only need one mention per framework
+    }
+  }
+
+  // 2. File path claims — look for paths in prose (not in tree listings)
+  const pathPattern = /(?:^|\s|`)((?:src|lib|test|tests|app|pages|components|utils|hooks|api|server|public|config)\/[\w./-]+)/gm;
+  let pathMatch: RegExpExecArray | null;
+
+  while ((pathMatch = pathPattern.exec(claudeMdContent)) !== null) {
+    // Strip trailing punctuation (periods, commas, colons, semicolons)
+    const claimedPath = pathMatch[1].replace(/[.,;:]+$/, "");
+    // Skip if inside tree listing block
+    if (isInsideFencedBlock(pathMatch.index, installOrTreeBlocks)) continue;
+
+    addClaim({
+      type: "file_path",
+      claimed: claimedPath,
+      evidence: "",
+      verified: false,
+    });
+  }
+
+  // 3. Extract file paths from tree listing blocks (sample first 5 leaf nodes)
+  for (const block of fencedBlocks.filter((b) => b.isTreeListing)) {
+    const lines = block.content.split("\n").filter((l) => l.trim().length > 0);
+    // Extract leaf-node paths: lines that look like they end with a file extension
+    const leafPaths: string[] = [];
+    for (const line of lines) {
+      // Remove tree drawing chars and extract the filename
+      const cleaned = line.replace(/[├└│─┬┼╠╚║╟╞\s]/g, "").trim();
+      if (cleaned.includes(".") && !cleaned.startsWith(".")) {
+        leafPaths.push(cleaned);
+      }
+      if (leafPaths.length >= 5) break;
+    }
+
+    if (leafPaths.length > 0) {
+      addClaim({
+        type: "file_path",
+        claimed: `tree:[${leafPaths.join(",")}]`,
+        evidence: "",
+        verified: false,
+      });
+    }
+  }
+
+  // 4. Test framework claims
+  for (const [runner] of TEST_RUNNERS) {
+    const escapedRunner = runner.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`\\b${escapedRunner}\\b`, "gi");
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(claudeMdContent)) !== null) {
+      if (isInsideFencedBlock(match.index, installOrTreeBlocks)) continue;
+      if (isNegationContext(claudeMdContent, match.index, match[0].length)) continue;
+
+      addClaim({
+        type: "test_framework",
+        claimed: runner,
+        evidence: "",
+        verified: false,
+      });
+      break;
+    }
+  }
+
+  // 5. Entry point claims — look for "entry point", "main file", "starts at" near file paths
+  const entryPointPattern = /(?:entry\s*point|main\s*file|starts?\s*at|runs?\s*from)\s*(?:is\s*|:?\s*)?[`"]?([^\s`"]+\.\w+)[`"]?/gi;
+  let epMatch: RegExpExecArray | null;
+
+  while ((epMatch = entryPointPattern.exec(claudeMdContent)) !== null) {
+    if (isInsideFencedBlock(epMatch.index, fencedBlocks.filter((b) => b.isInstall))) continue;
+
+    addClaim({
+      type: "entry_point",
+      claimed: epMatch[1],
+      evidence: "",
+      verified: false,
+    });
+  }
+
+  return claims;
+}
+
+// ── Claim verification ───────────────────────────────────────────
+
+/**
+ * Verify extracted claims against the filesystem and package.json.
+ *
+ * For tech_stack claims: checks if the framework's packages exist in deps.
+ * For file_path claims: checks existsSync relative to projectDir.
+ * For test_framework claims: checks devDeps or config file presence.
+ * For entry_point claims: checks existsSync relative to projectDir.
+ *
+ * V1 scope: tech stack verification is Node-only (package.json).
+ * Non-Node repos get claims marked verified with deferred evidence.
+ */
+export function verifyClaudeMdClaims(
+  claims: ClaudeMdClaim[],
+  projectDir: string,
+  deps: string[],
+): ClaudeMdClaim[] {
+  const depSet = new Set(deps.map((d) => d.toLowerCase()));
+  const hasPackageJson = existsSync(join(projectDir, "package.json"));
+
+  return claims.map((claim) => {
+    const verified = { ...claim };
+
+    switch (claim.type) {
+      case "tech_stack": {
+        if (!hasPackageJson) {
+          // Non-Node repo — defer verification
+          verified.verified = true;
+          verified.evidence = "non-Node repo, verification deferred";
+          break;
+        }
+
+        const frameworkPackages = KNOWN_FRAMEWORKS.get(claim.claimed);
+        if (!frameworkPackages) {
+          verified.evidence = `unknown framework "${claim.claimed}"`;
+          verified.verified = false;
+          break;
+        }
+
+        const found = frameworkPackages.filter((pkg) => depSet.has(pkg.toLowerCase()));
+        if (found.length > 0) {
+          verified.verified = true;
+          verified.evidence = `found in deps: ${found.join(", ")}`;
+        } else {
+          verified.verified = false;
+          verified.evidence = `not found in any dependency field (checked: ${frameworkPackages.join(", ")})`;
+        }
+        break;
+      }
+
+      case "file_path": {
+        // Handle tree listing claims: "tree:[path1,path2,...]"
+        if (claim.claimed.startsWith("tree:[")) {
+          const inner = claim.claimed.slice(6, -1); // strip "tree:[" and "]"
+          const paths = inner.split(",").map((p) => p.trim()).filter(Boolean);
+          const existing = paths.filter((p) => existsSync(join(projectDir, p)));
+
+          // 80% threshold: pass if >= 4/5 sampled paths exist
+          const threshold = Math.ceil(paths.length * 0.8);
+          verified.verified = existing.length >= threshold;
+          verified.evidence = `${existing.length}/${paths.length} tree paths exist (threshold: ${threshold})`;
+          break;
+        }
+
+        // Regular file path
+        if (existsSync(join(projectDir, claim.claimed))) {
+          verified.verified = true;
+          verified.evidence = "file exists";
+        } else {
+          verified.verified = false;
+          verified.evidence = "file does not exist";
+        }
+        break;
+      }
+
+      case "test_framework": {
+        const runner = TEST_RUNNERS.get(claim.claimed.toLowerCase());
+        if (!runner) {
+          verified.verified = false;
+          verified.evidence = `unknown test runner "${claim.claimed}"`;
+          break;
+        }
+
+        // Check packages in deps
+        const foundPkg = runner.packages.filter((pkg) => depSet.has(pkg.toLowerCase()));
+        if (foundPkg.length > 0) {
+          verified.verified = true;
+          verified.evidence = `found in deps: ${foundPkg.join(", ")}`;
+          break;
+        }
+
+        // Check config file presence
+        const foundConfig = runner.configFiles.filter((cf) => existsSync(join(projectDir, cf)));
+        if (foundConfig.length > 0) {
+          verified.verified = true;
+          verified.evidence = `config file found: ${foundConfig.join(", ")}`;
+          break;
+        }
+
+        verified.verified = false;
+        verified.evidence = `no packages (${runner.packages.join(", ")}) or config files (${runner.configFiles.join(", ")}) found`;
+        break;
+      }
+
+      case "entry_point": {
+        if (existsSync(join(projectDir, claim.claimed))) {
+          verified.verified = true;
+          verified.evidence = "file exists";
+        } else {
+          verified.verified = false;
+          verified.evidence = "file does not exist";
+        }
+        break;
+      }
+    }
+
+    return verified;
+  });
+}
+
+/**
+ * Generate reverse coverage claims: major frameworks in deps that CLAUDE.md never mentions.
+ * These feed into the claim verification sub-score, not the framework coverage sub-score.
+ */
+export function generateReverseCoverageClaims(
+  deps: string[],
+  claudeMdContent: string,
+): ClaudeMdClaim[] {
+  const lowerContent = claudeMdContent.toLowerCase();
+  const depSet = new Set(deps.map((d) => d.toLowerCase()));
+  const claims: ClaudeMdClaim[] = [];
+
+  for (const [frameworkName, packageNames] of KNOWN_FRAMEWORKS) {
+    // Check if any of the framework's packages are in deps
+    const inDeps = packageNames.some((pkg) => depSet.has(pkg.toLowerCase()));
+    if (!inDeps) continue;
+
+    // Check if the framework name is mentioned in CLAUDE.md (case-insensitive)
+    if (!lowerContent.includes(frameworkName.toLowerCase())) {
+      claims.push({
+        type: "tech_stack",
+        claimed: frameworkName,
+        evidence: `present in deps but not mentioned in CLAUDE.md`,
+        verified: false,
+      });
+    }
+  }
+
+  return claims;
+}
+
 // ── Bootstrap evaluation ─────────────────────────────────────────
 
 /**
@@ -221,16 +598,47 @@ export function analyzeBootstrapQuality(projectDir: string): BootstrapEvaluation
     result.qualityNotes.push(`Missing sections: ${missing.join(", ")}`);
   }
 
-  // Framework coverage
+  // Extract and verify claims
+  let deps: string[] = [];
   let coverageRatio = 1;
+
   if (existsSync(packageJsonPath)) {
     const pkgContent = safeReadText(packageJsonPath) ?? "";
-    const deps = extractDependencies(pkgContent);
+    deps = extractDependencies(pkgContent);
+
+    // Framework coverage (forward-direction only, for coverage sub-score)
     const coverage = computeFrameworkCoverage(deps, claudeMdContent);
     coverageRatio = coverage.coverage;
     if (coverage.total > 0 && coverage.mentioned < coverage.total) {
       result.qualityNotes.push(
         `Tech stack coverage: ${coverage.mentioned}/${coverage.total} known frameworks mentioned`,
+      );
+    }
+  }
+
+  // Extract forward claims from CLAUDE.md content
+  const forwardClaims = extractClaudeMdClaims(claudeMdContent);
+  // Verify forward claims against filesystem
+  const verifiedForward = verifyClaudeMdClaims(forwardClaims, projectDir, deps);
+  // Generate reverse coverage claims (deps in repo but not in doc)
+  const reverseClaims = existsSync(packageJsonPath)
+    ? generateReverseCoverageClaims(deps, claudeMdContent)
+    : [];
+
+  // Store all claims for reporting, but only score forward claims.
+  // Reverse claims (deps in repo but not in doc) are already penalized
+  // by the framework coverage sub-score — including them here would
+  // double-count the same omission.
+  const allClaims = [...verifiedForward, ...reverseClaims];
+  result.claims = allClaims;
+  result.claimsTotal = verifiedForward.length;
+  result.claimsVerified = verifiedForward.filter((c) => c.verified).length;
+
+  if (verifiedForward.length > 0) {
+    const failedClaims = verifiedForward.filter((c) => !c.verified);
+    if (failedClaims.length > 0) {
+      result.qualityNotes.push(
+        `Claim verification: ${result.claimsVerified}/${result.claimsTotal} claims verified (${failedClaims.length} failed)`,
       );
     }
   }
@@ -257,23 +665,35 @@ export function analyzeBootstrapQuality(projectDir: string): BootstrapEvaluation
     result.qualityNotes.push("No artifacts found — TODOS.md missing");
   }
 
-  // Compute quality score (0-100)
-  // Structural completeness: 40 pts (10 per expected section)
-  const structuralScore = (found.length / EXPECTED_SECTIONS.length) * 40;
+  // Compute quality score (0-100) — rebalanced weights
+  // Structural completeness: 30 pts (reduced from 40)
+  const structuralScore = (found.length / EXPECTED_SECTIONS.length) * 30;
 
-  // Factual accuracy: 30 pts (coverage ratio * 30)
-  const accuracyScore = coverageRatio * 30;
+  // Claim verification: 20 pts (forward claims only — reverse claims are
+  // already penalized by framework coverage, so we exclude them to avoid
+  // double-counting the same omission)
+  let claimScore = 0;
+  if (verifiedForward.length > 0) {
+    claimScore = (result.claimsVerified / result.claimsTotal) * 20;
+  } else {
+    // No claims extracted — neutral score (vagueness is not rewarded)
+    claimScore = 10;
+  }
+  result.claimVerificationScore = Math.round(claimScore * 100) / 100;
 
-  // TODOS.md viability: 20 pts
+  // Framework coverage: 20 pts (reduced from 30, forward-direction only)
+  const accuracyScore = coverageRatio * 20;
+
+  // TODOS.md viability: 20 pts (unchanged)
   let viabilityScore = 0;
   if (result.todosMdExists && result.todosMdItemCount > 0) {
     viabilityScore = (result.todosMdItemsAboveThreshold / result.todosMdItemCount) * 20;
   }
 
-  // Token efficiency: 10 pts
+  // Token efficiency: 10 pts (unchanged)
   const efficiencyScore = scoreTokenEfficiency(result.claudeMdSizeTokens);
 
-  result.qualityScore = Math.round(structuralScore + accuracyScore + viabilityScore + efficiencyScore);
+  result.qualityScore = Math.round(structuralScore + claimScore + accuracyScore + viabilityScore + efficiencyScore);
 
   return result;
 }
@@ -512,7 +932,7 @@ export function extractObviousImprovements(report: EvaluationReport): Improvemen
   }
 
   // Low bootstrap quality → P2
-  if (report.bootstrap.claudeMdExists && report.bootstrap.qualityScore < 50) {
+  if (report.bootstrap.claudeMdExists && report.bootstrap.qualityScore < BOOTSTRAP_QUALITY_THRESHOLD) {
     candidates.push({
       title: "Bootstrap quality below threshold",
       priority: "P2",

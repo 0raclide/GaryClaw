@@ -23,6 +23,23 @@ vi.mock("../src/checkpoint.js", async (importOriginal) => {
   };
 });
 
+// Mock evaluate — quality gate returns high score so enrichment doesn't trigger,
+// plus buildEvaluatePrompt and runPostEvaluateAnalysis for the evaluate skill.
+vi.mock("../src/evaluate.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/evaluate.js")>();
+  return {
+    ...actual,
+    analyzeBootstrapQuality: vi.fn().mockReturnValue({
+      claudeMdExists: true, claudeMdSizeTokens: 3000,
+      claudeMdHasSections: ["Architecture", "Tech Stack", "Test Strategy", "Usage"],
+      claudeMdMissingSections: [], todosMdExists: true,
+      todosMdItemCount: 5, todosMdItemsAboveThreshold: 3,
+      qualityScore: 80, qualityNotes: [],
+    }),
+    BOOTSTRAP_QUALITY_THRESHOLD: 50,
+  };
+});
+
 // Mock report builder
 vi.mock("../src/report.js", () => ({
   buildReport: vi.fn().mockReturnValue({

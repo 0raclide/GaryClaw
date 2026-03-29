@@ -283,6 +283,7 @@ describe("computeHealthScore", () => {
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 0, dailyRemaining: 25, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     });
     expect(score).toBe(100);
@@ -295,6 +296,7 @@ describe("computeHealthScore", () => {
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     });
     expect(score).toBeLessThan(70);
@@ -307,6 +309,7 @@ describe("computeHealthScore", () => {
       oracle: { totalDecisions: 50, accuracyPercent: 50, confidenceAvg: 5, circuitBreakerTripped: true },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     });
     // Circuit breaker: 0 * 0.15 = -15, plus low accuracy
@@ -319,6 +322,7 @@ describe("computeHealthScore", () => {
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 24.5, dailyRemaining: 0.5, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     });
     expect(score).toBeLessThan(100);
@@ -331,6 +335,7 @@ describe("computeHealthScore", () => {
       oracle: { totalDecisions: 0, accuracyPercent: 100, confidenceAvg: 0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 0, dailyRemaining: 25, jobCount: 0, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     });
     expect(score).toBe(100);
@@ -343,6 +348,7 @@ describe("computeHealthScore", () => {
       oracle: { totalDecisions: 50, accuracyPercent: 55, confidenceAvg: 5, circuitBreakerTripped: true },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     });
     expect(topConcern).toBe("Oracle memory disabled — accuracy below 60%");
@@ -354,6 +360,7 @@ describe("computeHealthScore", () => {
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 10, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     });
     expect(topConcern).toBe("GaryClaw bug detected in 2 job(s) — check logs");
@@ -365,6 +372,7 @@ describe("computeHealthScore", () => {
       oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 10, dailyRemaining: 15, jobCount: 10, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     });
     expect(topConcern).toBe("3 job(s) failed today — review failure categories");
@@ -376,6 +384,7 @@ describe("computeHealthScore", () => {
       oracle: { totalDecisions: 0, accuracyPercent: 100, confidenceAvg: 0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 0, dailySpentUsd: 0, dailyRemaining: 0, jobCount: 5, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     });
     expect(score).toBe(100); // budgetHeadroom defaults to 100 when limit is 0
@@ -394,6 +403,7 @@ describe("formatDashboard", () => {
       oracle: { totalDecisions: 122, accuracyPercent: 100, confidenceAvg: 9.0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 16.53, dailyRemaining: 8.47, jobCount: 7, maxJobsPerDay: 20, byInstance: { default: { totalUsd: 13.0, jobCount: 6 }, reviewer: { totalUsd: 3.53, jobCount: 1 } } },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: ["default", "reviewer"],
     };
   }
@@ -449,6 +459,7 @@ describe("formatDashboard", () => {
       oracle: { totalDecisions: 0, accuracyPercent: 100, confidenceAvg: 0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 0, dailyRemaining: 25, jobCount: 0, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     };
     const md = formatDashboard(data);
@@ -708,6 +719,7 @@ describe("formatDashboard adaptive turns", () => {
       oracle: { totalDecisions: 122, accuracyPercent: 100, confidenceAvg: 9.0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 16.53, dailyRemaining: 8.47, jobCount: 7, maxJobsPerDay: 20, byInstance: {} },
       adaptiveTurns: { totalSegments: 24, adaptiveSegments: 16, fallbackSegments: 6, clampedSegments: 2, heavyToolActivations: 4, avgTurns: 8.3, minTurns: 3, maxTurns: 15, adaptiveRate: 66.7 },
+      bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
       instances: [],
     };
   }

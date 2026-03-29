@@ -329,6 +329,67 @@ async function executePipelineFrom(
         const prevSkills = state.skills.slice(0, i);
         const bootstrapPrompt = await buildBootstrapPrompt(config, prevSkills, config.projectDir);
         await runSkillWithPrompt(skillConfig, callbacks, bootstrapPrompt);
+
+        // ── Bootstrap Quality Gate ────────────────────────────────
+        if (config.bootstrapQualityGate !== false) {
+          const { analyzeBootstrapQuality, BOOTSTRAP_QUALITY_THRESHOLD } = await import("./evaluate.js");
+
+          try {
+            const bootstrapEval = analyzeBootstrapQuality(config.projectDir);
+
+            callbacks.onEvent({
+              type: "bootstrap_quality_check" as OrchestratorEvent["type"],
+              qualityScore: bootstrapEval.qualityScore,
+              missingSections: bootstrapEval.claudeMdMissingSections,
+              notes: bootstrapEval.qualityNotes,
+            } as OrchestratorEvent);
+
+            if (bootstrapEval.qualityScore < BOOTSTRAP_QUALITY_THRESHOLD && !state.bootstrapEnriched) {
+              callbacks.onEvent({
+                type: "assistant_text",
+                text: `\n[Quality Gate] Bootstrap scored ${bootstrapEval.qualityScore}/100 (threshold: ${BOOTSTRAP_QUALITY_THRESHOLD}). Running QA pre-scan for enrichment...\n`,
+              });
+
+              state.bootstrapEnriched = true;
+              writePipelineState(state, config.checkpointDir);
+
+              // Run QA pre-scan (capped at 1 relay session to limit cost)
+              const qaCheckpointDir = join(config.checkpointDir, "skill-enrichment-qa");
+              const qaConfig: GaryClawConfig = {
+                ...config,
+                skillName: "qa",
+                checkpointDir: qaCheckpointDir,
+                maxRelaySessions: 1,
+              };
+              await runSkillWithPrompt(qaConfig, callbacks,
+                "Run the /qa skill on this repo. Focus on: test failures, broken builds, missing dependencies, and obvious code issues. This is a pre-scan for bootstrap enrichment.");
+
+              // Re-run bootstrap with QA findings injected
+              const { buildEnrichedBootstrapPrompt } = await import("./bootstrap.js");
+              const enrichedPrompt = await buildEnrichedBootstrapPrompt(config, qaCheckpointDir, config.projectDir);
+              const rebootstrapConfig: GaryClawConfig = {
+                ...config,
+                skillName: "bootstrap",
+                checkpointDir: join(config.checkpointDir, "skill-enrichment-bootstrap"),
+              };
+              await runSkillWithPrompt(rebootstrapConfig, callbacks, enrichedPrompt);
+
+              // Re-check quality (informational only, fail-open regardless)
+              const enrichedEval = analyzeBootstrapQuality(config.projectDir);
+              callbacks.onEvent({
+                type: "bootstrap_quality_recheck" as OrchestratorEvent["type"],
+                qualityScore: enrichedEval.qualityScore,
+                previousScore: bootstrapEval.qualityScore,
+              } as OrchestratorEvent);
+            }
+          } catch (gateErr) {
+            // Fail-open: if the quality gate itself crashes, continue the pipeline
+            callbacks.onEvent({
+              type: "assistant_text",
+              text: `\n[Quality Gate] Scoring failed: ${gateErr instanceof Error ? gateErr.message : String(gateErr)}. Continuing pipeline.\n`,
+            });
+          }
+        }
       } else if (skillName === "prioritize") {
         const { buildPrioritizePrompt } = await import("./prioritize.js");
         const prevSkills = state.skills.slice(0, i);
