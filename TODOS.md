@@ -1,16 +1,8 @@
 # TODOS
 
-## P2: Pre-Merge Validation Gate (Reimplement from Design Doc)
+## ~~P2: Pre-Merge Validation Gate~~ — COMPLETE (2026-03-29)
 
-**What:** Run tests in the worktree after rebase but before ff-only merge. Test failure blocks merge (retryable error). Merge audit JSONL log tracks all attempts. Dashboard merge health as 5th signal. Previously built by worker-2 overnight but could not be merged due to conflicts with Workers 5+1 on main. Design doc preserved.
-
-**Why:** Every auto-merge overnight failed with "Working tree has uncommitted changes." This is the #1 reliability blocker for parallel daemon operation. Without a test gate, broken code lands on main and triggers $30-60 of wasted QA cascades.
-
-**Design doc:** `docs/designs/pre-merge-validation-gate.md` (complete architecture, interfaces, test strategy)
-
-**Effort:** S (human: ~2 days / CC: ~20 min — reimplementation from existing design, not greenfield)
-**Depends on:** Nothing
-**Added by:** Session 3 overnight parallel run — worker-2 built it but branch conflicted on merge (2026-03-29)
+Implemented by default daemon. Pre-merge test gate + merge audit log in worktree.ts, validation config wiring in job-runner, merge-failed failure taxonomy rule, dashboard merge health stats, DaemonConfig.merge validation. QA'd with regression tests.
 
 ## P2: File-Level Conflict Prevention for Parallel Instances
 
@@ -41,28 +33,9 @@
 **Depends on:** Nothing
 **Added by:** Session 3 overnight parallel run — worker-4 built it but branch conflicted (2026-03-29)
 
-## P2: Fix Auto-Merge Dirty Working Tree + Cross-Cycle Dedup
+## ~~P2: Fix Auto-Merge Dirty Working Tree + Cross-Cycle Dedup~~ — COMPLETE (2026-03-29)
 
-**What:** Two related fixes that prevented overnight auto-merges from landing and caused duplicate rebuilds:
-
-**Fix 1 — Dirty working tree blocks merge:** `mergeWorktreeBranch()` checks `git diff --quiet` on the main repo (not the worktree) before merging. This fails when `.garyclaw/` artifacts, daemon state files, or uncommitted session changes exist on main. Three-part fix:
-- Add `.garyclaw/` to `.gitignore` in each worktree on creation (prevents daemon artifacts from showing as dirty)
-- Before merge: `git stash --include-untracked` in repoDir, merge, then `git stash pop`
-- Scope the dirty check to `git diff --quiet -- ':!.garyclaw'` (exclude .garyclaw dir from the check entirely)
-
-**Fix 2 — Cross-cycle dedup (don't rebuild completed work):** When a feature builds successfully but merge fails, the next cron cycle re-assigns the same TODO and rebuilds from scratch. On 2026-03-29, workers rebuilt the same features 2-3 times each ($30 wasted). Fix: before pre-assigning a TODO, scan for existing `garyclaw/*` branches that match the claimed title (fuzzy match via normalized Levenshtein < 0.3). If a branch exists with commits ahead of main, skip the TODO — the work exists but just needs merge conflict resolution, not reimplementation.
-
-**Implementation notes:**
-- Fix 1 in `src/worktree.ts` `mergeWorktreeBranch()`: add stash/pop around the rebase+merge block, or exclude `.garyclaw` from the diff check
-- Fix 1 in `src/worktree.ts` `createWorktree()`: ensure `.garyclaw/` is in the worktree's `.gitignore`
-- Fix 2 in `src/job-runner.ts` `processNext()` pre-assignment: call `listWorktrees()` or scan `git branch --list 'garyclaw/*'`, check each branch for commits ahead of main, fuzzy-match branch name against TODO title
-- Fix 2 alternative: scan `daemon-state.json` across all instances for completed jobs with `claimedTodoTitle` matching — if found and branch exists, skip
-
-**Why:** On 2026-03-29 overnight, every auto-merge failed (dirty working tree) and every cron cycle rebuilt the same features (no cross-cycle dedup). Combined: 5 workers × 4 cycles × $3-4/run = $49 spent, but $30 was duplicate work on already-built features that couldn't merge.
-
-**Effort:** S (human: ~2 days / CC: ~15 min)
-**Depends on:** Nothing
-**Added by:** human observation on 2026-03-29
+Implemented by default daemon. Stash/pop in mergeWorktreeBranch (commit 6b14436). getCompletedTodoTitles in daemon-registry.ts for cross-cycle dedup (commits 1450261, b70b005). Wired into job-runner pre-assignment.
 
 ## ~~P2: garyclaw doctor — Self-Diagnostic Command~~ — COMPLETE (2026-03-27)
 
@@ -318,45 +291,13 @@ Implemented in commit 0b53787 + eng review fixes. `createTextAccumulatingCallbac
 **Depends on:** Nothing (evaluate.ts and all analysis functions already exist and are tested)
 **Added by:** /plan-eng-review on 2026-03-28
 
-## P2: Self-Commit Filtering in Git Poller
+## ~~P2: Self-Commit Filtering in Git Poller~~ — COMPLETE (2026-03-28)
 
-**What:** The git poller should ignore commits made by the daemon itself. When HEAD changes, run `git log --format=%ce {oldHead}..{newHead}` and skip the trigger if every commit has `committer_email === "garyclaw-daemon@local"`. This requires the daemon to set `GIT_COMMITTER_EMAIL=garyclaw-daemon@local` in the env passed to `buildSdkEnv()` (already verified in spike: "Verify GIT_COMMITTER_EMAIL Propagation Through SDK" — COMPLETE 2026-03-27), and the poller to check committer identity before firing.
+Implemented by cron-fix daemon instance. GARYCLAW_DAEMON_EMAIL constant in sdk-wrapper.ts, getCommitEmails() in triggers.ts, self-commit filtering in poll loop, selfCommitEmail config override. 7 commits auto-merged to main. QA'd with 4 fixes.
 
-**Why:** The daemon's biggest dollar waste. Every pipeline run triggers a QA cascade: implement commits code → poller detects HEAD change → fires QA → QA commits fixes → poller detects again → fires more QA. On 2026-03-28, the daemon ran 8 QA passes (~$6) chasing its own commits when 2-3 would have sufficed. This happens on every cron cycle. At 12 cycles/day, that's $30-60/day wasted.
+## ~~P2: Sleep-Resilient Cron Poller~~ — COMPLETE (2026-03-28)
 
-**Pros:** Saves $3-5 per pipeline run. Eliminates the self-triggering cascade entirely. The GIT_COMMITTER_EMAIL approach is already spiked and verified. The git poller already has the old/new HEAD values — just needs to check the committer before calling onTrigger.
-
-**Cons:** Daemon commits become invisible to the git poller. If a daemon commit introduces a regression, QA won't auto-trigger from the poll. Mitigation: the pipeline already includes QA as the final skill, so regressions are caught in-pipeline. External commits (human pushes) still trigger QA normally.
-
-**Implementation notes:**
-- In `src/sdk-wrapper.ts` `buildSdkEnv()`: add `GIT_COMMITTER_EMAIL: "garyclaw-daemon@local"` to the env object
-- In `src/triggers.ts` `getGitHead()`: add a new export `getCommitAuthors(projectDir, oldHead, newHead): string[]` that returns committer emails via `git log --format=%ce {old}..{new}`
-- In `src/triggers.ts` `createGitPoller` poll function: after detecting HEAD change, call `getCommitAuthors()` and skip trigger if all are `garyclaw-daemon@local`
-- Add `committerEmail` to `GitPollerDeps` for testability (injectable like `getHead`)
-
-**Effort:** XS (human: ~30 min / CC: ~5 min)
-**Depends on:** Nothing (GIT_COMMITTER_EMAIL spike already passed)
-**Added by:** human observation on 2026-03-28
-
-## P2: Sleep-Resilient Cron Poller
-
-**What:** The cron poller currently checks every 60s: "does the current minute match the cron expression?" If macOS sleeps through a matching minute, the trigger is permanently lost. Fix: track `lastCheckedAt` timestamp and on each tick, check if *any* matching minute occurred between `lastCheckedAt` and now. When the laptop wakes after hours of sleep, the poller catches up immediately and fires the missed trigger.
-
-**Why:** The self-improvement pipeline runs on `0 */2 * * *` (every 2 hours). macOS sleep regularly causes missed triggers overnight — observed on 2026-03-27 when the cron poller missed triggers during sleep. Each missed trigger = one lost improvement cycle. Over a night of sleep (8h), that's 3-4 missed cycles, which means 3-4 features/fixes that could have been built but weren't.
-
-**Pros:** Makes overnight autonomous operation reliable. The daemon becomes truly "start and forget" instead of "check in every few hours." Simple change to `createCronPoller` — replace the "does current minute match?" check with a "did any minute since lastCheckedAt match?" scan.
-
-**Cons:** After a long sleep, the catch-up fire is delayed until the next 60s tick. Could fire multiple triggers if multiple cron windows were missed — but the job dedup will collapse them. One edge case: if the laptop sleeps for 24+ hours, firing all missed triggers at once could be expensive. Mitigation: cap catch-up to 1 trigger (fire at most once per wake, regardless of how many windows were missed).
-
-**Implementation notes:**
-- In `src/triggers.ts` `createCronPoller`: add `let lastCheckedAt = Date.now()` state
-- On each `check()` tick: scan every minute from `lastCheckedAt` to `now` against the cron schedule. If any match and `lastFiredMinute` doesn't cover it, fire once and update `lastCheckedAt = Date.now()`
-- Cap catch-up: if multiple windows were missed, fire only once (the most recent match)
-- Add `lastCheckedAt` to `CronPollerDeps` for testability
-
-**Effort:** S (human: ~2 days / CC: ~15 min)
-**Depends on:** Nothing
-**Added by:** human observation on 2026-03-28
+Implemented by worker-1 daemon instance. lastCheckedAt scan on wake, single-fire cap, recovery logging, O(minutes-slept) per tick. 4 commits auto-merged to main.
 
 ## ~~P2: Pipeline Resume After Daemon Crash~~ ✅ COMPLETE (2026-03-29)
 
