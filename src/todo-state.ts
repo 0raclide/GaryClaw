@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { readdirSync, existsSync } from "node:fs";
 import { normalizedLevenshtein } from "./reflection.js";
 import { execFileSync } from "node:child_process";
-import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
+import { safeReadJSON, safeWriteJSON, safeReadText, safeWriteText } from "./safe-json.js";
 import { readPidFile, isPidAlive } from "./pid-utils.js";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -464,4 +464,58 @@ export function findNextSkill(pipelineSkills: string[], preferredStart: string):
  */
 export function skillToTodoState(skillName: string): TodoLifecycleState | null {
   return SKILL_TO_STATE[skillName] ?? null;
+}
+
+// ── Auto-mark TODOS.md ───────────────────────────────────────────
+
+/**
+ * Rewrite a TODOS.md heading from open to ~~complete~~.
+ * Matches heading by slug comparison (handles minor title edits).
+ * Appends a completion summary line below the heading.
+ *
+ * Returns true if the file was modified, false if title not found or already marked.
+ */
+export function markTodoCompleteInFile(
+  todosPath: string,
+  title: string,
+  summary: string,
+): boolean {
+  const content = safeReadText(todosPath);
+  if (!content) return false;
+
+  const targetSlug = slugify(title);
+  if (!targetSlug) return false;
+
+  const lines = content.split("\n");
+  const dateStr = new Date().toISOString().slice(0, 10);
+  let modified = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Match ## headings (any depth 2+)
+    if (!line.match(/^#{2,}\s/)) continue;
+
+    // Skip already-complete headings (contain ~~)
+    if (line.includes("~~")) continue;
+
+    // Extract heading text (strip ## prefix)
+    const headingText = line.replace(/^#{2,}\s+/, "").trim();
+    const headingSlug = slugify(headingText);
+
+    if (headingSlug === targetSlug) {
+      // Rewrite heading: ## P2: Foo Bar → ## ~~P2: Foo Bar~~ — COMPLETE (2026-03-29)
+      const prefix = line.match(/^(#{2,}\s+)/)?.[1] ?? "## ";
+      lines[i] = `${prefix}~~${headingText}~~ — COMPLETE (${dateStr})`;
+      // Insert summary line after heading
+      lines.splice(i + 1, 0, "", `${summary}`, "");
+      modified = true;
+      break;
+    }
+  }
+
+  if (modified) {
+    safeWriteText(todosPath, lines.join("\n"));
+  }
+
+  return modified;
 }
