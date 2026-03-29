@@ -50,17 +50,9 @@ Implemented by default daemon. Pre-merge test gate + merge audit log in worktree
 
 Implemented by default daemon. Extracts predicted file paths from TODO descriptions and design docs, builds claimedFiles set across instances, skips items with overlapping files. Fail-open when no files detected.
 
-## P3: Semantic Validation for Bootstrap (Reimplement from Design Doc)
+## ~~P3: Semantic Validation for Bootstrap~~ — COMPLETE (2026-03-29)
 
-**What:** Five pure-TS validators that check CLAUDE.md claims against reality: validateFileReferences, validateTechStackClaims, validateTestClaims, validateCommands, validateTodosFormat. Runs in <100ms. Feeds correction prompts when bootstrap quality gate triggers re-bootstrap. Previously built by worker-4 overnight but could not be merged.
-
-**Why:** Bootstrap can hallucinate file paths, wrong test frameworks, non-existent commands. Downstream skills (implement, QA) waste tokens working from incorrect assumptions. Semantic validation catches these before the pipeline continues.
-
-**Design doc:** `docs/designs/evaluate-bootstrap-quality.md` + `docs/designs/todos-format-validation.md`
-
-**Effort:** S (human: ~2 days / CC: ~20 min)
-**Depends on:** Nothing
-**Added by:** Session 3 overnight parallel run — worker-4 built it but branch conflicted (2026-03-29)
+Built by default daemon. Command + test_directory claim types for bootstrap validation. Commit d2554cb.
 
 ## ~~P2: Fix Auto-Merge Dirty Working Tree + Cross-Cycle Dedup~~ — COMPLETE (2026-03-29)
 
