@@ -620,4 +620,85 @@ describe("ask-handler", () => {
       expect(oracleInput.memory).toBeUndefined();
     });
   });
+
+  describe("warn routing", () => {
+    it("routes decision log write failure through onWarn callback", async () => {
+      const onWarn = vi.fn();
+      const handler = createAskHandler({
+        onAskUser: vi.fn().mockResolvedValue("Dark"),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        // Use an invalid path to trigger a write error
+        decisionLogPath: "/dev/null/impossible/path/decisions.jsonl",
+        onWarn,
+      });
+
+      await handler.canUseTool(
+        "AskUserQuestion",
+        makeSingleAskInput("Theme?", defaultOptions),
+      );
+
+      expect(onWarn).toHaveBeenCalledWith(
+        expect.stringContaining("[GaryClaw] Failed to write decision log:"),
+      );
+    });
+
+    it("routes escalated log write failure through onWarn in autonomous mode", async () => {
+      const onWarn = vi.fn();
+      const escOptions = [
+        { label: "Delete all", description: "Delete all data" },
+        { label: "Keep", description: "Keep existing data" },
+      ];
+      const handler = createAskHandler({
+        onAskUser: vi.fn(),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        autonomous: true,
+        oracle: {
+          askOracle: vi.fn().mockResolvedValue({
+            choice: "Keep",
+            confidence: 2,
+            rationale: "Dangerous",
+            principle: "Safety first",
+            escalate: true,
+            isTaste: false,
+          }),
+          config: { model: "test-model" as const },
+          skillName: "qa",
+        },
+        escalatedLogPath: "/dev/null/impossible/path/escalated.jsonl",
+        onWarn,
+      });
+
+      await handler.canUseTool(
+        "AskUserQuestion",
+        makeSingleAskInput("Delete?", escOptions),
+      );
+
+      expect(onWarn).toHaveBeenCalledWith(
+        expect.stringContaining("[GaryClaw] Failed to write escalated log:"),
+      );
+    });
+
+    it("falls back to console.warn when onWarn not provided", async () => {
+      const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const handler = createAskHandler({
+        onAskUser: vi.fn().mockResolvedValue("Dark"),
+        askTimeoutMs: 5000,
+        sessionIndex: 0,
+        decisionLogPath: "/dev/null/impossible/path/decisions.jsonl",
+        // No onWarn — should fall back to console.warn
+      });
+
+      await handler.canUseTool(
+        "AskUserQuestion",
+        makeSingleAskInput("Theme?", defaultOptions),
+      );
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.stringContaining("[GaryClaw] Failed to write decision log:"),
+      );
+      spy.mockRestore();
+    });
+  });
 });

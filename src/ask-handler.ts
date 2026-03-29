@@ -12,7 +12,8 @@
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Decision, CanUseToolResult, OracleMemoryFiles } from "./types.js";
+import { resolveWarnFn } from "./types.js";
+import type { Decision, CanUseToolResult, OracleMemoryFiles, WarnFn } from "./types.js";
 import type { OracleOutput, OracleConfig, OracleInput, OracleBatchInput, OracleBatchQuestion } from "./oracle.js";
 
 export interface AskHandlerConfig {
@@ -51,6 +52,7 @@ export interface AskHandler {
 
 export function createAskHandler(config: AskHandlerConfig): AskHandler {
   const decisions: Decision[] = [];
+  const warn = resolveWarnFn(config.onWarn);
 
   async function canUseTool(
     toolName: string,
@@ -106,7 +108,7 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
           decisions.push(decision);
 
           if (config.decisionLogPath) {
-            writeDecisionLog(config.decisionLogPath, decision);
+            writeDecisionLog(config.decisionLogPath, decision, warn);
           }
         }
       }
@@ -243,25 +245,26 @@ function processOracleResult(
   };
 
   // Escalation: log to escalated.jsonl for audit trail.
+  const processWarn = resolveWarnFn(config.onWarn);
   if (oracleResult.escalate) {
-    writeEscalatedLog(config.escalatedLogPath, decision, oracleResult);
+    writeEscalatedLog(config.escalatedLogPath, decision, oracleResult, processWarn);
   }
 
   answers[questionText] = answerText;
   decisions.push(decision);
 
   if (config.decisionLogPath) {
-    writeDecisionLog(config.decisionLogPath, decision);
+    writeDecisionLog(config.decisionLogPath, decision, processWarn);
   }
 }
 
-function writeDecisionLog(path: string, decision: Decision): void {
+function writeDecisionLog(path: string, decision: Decision, warn: WarnFn): void {
   try {
     mkdirSync(dirname(path), { recursive: true });
     appendFileSync(path, JSON.stringify(decision) + "\n", "utf-8");
   } catch (err) {
     // Non-fatal but warn — lost audit trail is worth knowing about
-    console.warn(`[GaryClaw] Failed to write decision log: ${err instanceof Error ? err.message : String(err)}`);
+    warn(`[GaryClaw] Failed to write decision log: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -269,6 +272,7 @@ function writeEscalatedLog(
   path: string | undefined,
   decision: Decision,
   oracleResult: OracleOutput,
+  warn: WarnFn,
 ): void {
   if (!path) return;
   try {
@@ -283,7 +287,7 @@ function writeEscalatedLog(
     appendFileSync(path, JSON.stringify(record) + "\n", "utf-8");
   } catch (err) {
     // Non-fatal but warn — lost escalation trail is worth knowing about
-    console.warn(`[GaryClaw] Failed to write escalated log: ${err instanceof Error ? err.message : String(err)}`);
+    warn(`[GaryClaw] Failed to write escalated log: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
