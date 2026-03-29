@@ -26,7 +26,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Codebase Summary Persistence: COMPLETE** (2026-03-27) — Observation extraction, dedup, relay prompt injection across relay boundaries
 **Adaptive maxTurns: COMPLETE** (2026-03-28) — Per-segment turn prediction from growth rate + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max
 **Dogfood Bootstrap: COMPLETE** (2026-03-28) — Cold-start bootstrap skill, codebase analysis, CLAUDE.md/TODOS.md generation for external repos
-- 34 source modules + CLI, 86 test files, 1869 tests
+**Pipeline Resume After Crash: COMPLETE** (2026-03-29) — Re-queue interrupted jobs, retry limit (3 crashes = abandon), pipeline resume from last completed skill, dashboard crash recovery stats
+- 34 source modules + CLI, 87 test files, 1896 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -194,6 +195,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Fast-forward only merge** — on daemon stop, attempt `--ff-only` merge to base branch; if diverged, leave branch for manual merge
 - **Auto-research trigger** — post-job keyword extraction from low-confidence decisions, topic grouping by 2+ shared keywords, freshness-aware dedup, gated behind `autoResearch.enabled` (default: false)
 - **Adaptive maxTurns** — per-segment turn prediction from `computeGrowthRate()` + heavy tool lookahead, browse-heavy gets 3-8 turns, edit-heavy gets full max. User's `--max-turns` is ceiling. Fresh monitor per relay session naturally falls back to configured default. `HEAVY_TOOLS` (WebFetch/WebSearch/Screenshot) trigger 2.5x growth rate multiplier for next segment. `--no-adaptive` disables.
+- **Pipeline resume after crash** — On daemon restart, `running` jobs re-queued with `retryCount` instead of marked failed. Jobs exceeding 2 retries abandoned. Multi-skill jobs with `pipeline.json` call `resumePipeline()` to skip completed skills. Single-skill jobs retry from scratch. `priorSkillCostUsd` tracks pre-crash spending for dashboard reporting. Recovery notification sent on resume.
 - **Sleep-resilient cron poller** — `lastCheckedAt` scan on wake (floored to minute boundary), single-fire cap (latest match only), O(minutes-slept) per tick. Recovery logging: gaps > 2 min produce "Cron recovered after N min, M window(s) missed" detail for daemon log observability. Catches missed cron windows during macOS sleep. No persistence across daemon restarts (catch-up only for windows missed while poller was running). Clock backward jump is safe (empty scan range).
 
 ---
@@ -256,6 +258,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-extended.test.ts` | 17 | Extended job runner: budget edge cases, concurrent enqueue |
 | `test/job-runner.regression-2.test.ts` | 3 | Job runner regression: dedup with completed jobs |
 | `test/job-runner.regression-3.test.ts` | 3 | Job runner regression: "adaptive disabled" reason classification |
+| `test/job-runner-resume.test.ts` | 27 | Crash recovery: re-queue on restart, retry limit, pipeline resume wiring, single-skill retry, priorSkillCostUsd, notification, failure taxonomy, dashboard stats |
 | `test/triggers.test.ts` | 54 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns, log on null HEAD |
 | `test/daemon.test.ts` | 51 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request, autoResearch validation |
 | `test/daemon-extended.test.ts` | 46 | Extended daemon: shutdown, poller lifecycle, IPC edge cases |
