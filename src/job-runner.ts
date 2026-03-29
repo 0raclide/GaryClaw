@@ -163,6 +163,13 @@ export function createJobRunner(
         d.log("info", `Job ${job.id} interrupted — re-queued for resume (attempt ${retryCount}/2)`);
       }
     }
+    // Recover rate_limited jobs on restart — if rateLimitResetAt was lost or
+    // corrupted, these would be stuck forever with no re-queue path.
+    if (job.status === "rate_limited") {
+      job.status = "queued";
+      job.costUsd = 0;
+      d.log("info", `Job ${job.id} was rate_limited at crash — re-queued`);
+    }
   }
   persistState(state, checkpointDir);
 
