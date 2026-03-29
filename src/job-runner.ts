@@ -479,7 +479,20 @@ export function createJobRunner(
         const todosContent = safeReadText(todosPath);
         const todoItems = todosContent ? parseTodoItems(todosContent) : [];
         const todoItem = todoItems.find(i => i.title === todoTitle);
-        const hasDesignDoc = !!nextJob.designDoc;
+        // Check Job field first, then scan docs/designs/ for a slug match
+        let hasDesignDoc = !!nextJob.designDoc;
+        if (!hasDesignDoc && todoTitle) {
+          try {
+            const designsDir = join(jobConfig.worktreePath ?? jobConfig.projectDir, "docs", "designs");
+            if (existsSync(designsDir)) {
+              const slug = slugify(todoTitle);
+              const files = readdirSync(designsDir);
+              hasDesignDoc = files.some(f => f.replace(/\.md$/i, "") === slug);
+            }
+          } catch {
+            // Fail-open: if scan fails, assume no design doc
+          }
+        }
         const originalSkills = [...nextJob.skills];
         const composed = composePipeline({
           effort: todoItem?.effort ?? null,
