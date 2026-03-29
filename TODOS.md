@@ -1,6 +1,6 @@
 # TODOS
 
-## P1: TODO State Tracking — Artifact Detection + State Files
+## ~~P1: TODO State Tracking — Artifact Detection + State Files~~ — COMPLETE (2026-03-29)
 
 **What:** Track the lifecycle state of each TODO item so the daemon can resume from where it left off instead of rebuilding from scratch. Two complementary systems:
 
