@@ -1,8 +1,8 @@
 /**
  * Doctor — self-diagnostic command for GaryClaw.
  *
- * Runs 6 subsystem checks: stale PIDs, oracle memory integrity, orphaned worktrees,
- * stuck reflection locks, global budget status, and auth verification.
+ * Runs 7 subsystem checks: stale PIDs, oracle memory integrity, orphaned worktrees,
+ * stuck reflection locks, global budget status, auth verification, and orphaned TODO state.
  *
  * Default mode is diagnose-only (no side effects). Pass --fix to auto-heal
  * fixable issues. Pass --json for machine-readable output.
