@@ -113,6 +113,23 @@ export function validateDaemonConfig(data: unknown): string | null {
     }
   }
 
+  // Validate merge config if provided (optional field)
+  if (d.merge !== undefined) {
+    if (typeof d.merge !== "object" || d.merge === null) {
+      return "merge must be an object";
+    }
+    const m = d.merge as Record<string, unknown>;
+    if (m.testCommand !== undefined && (typeof m.testCommand !== "string" || m.testCommand.length === 0)) {
+      return "merge.testCommand must be a non-empty string";
+    }
+    if (m.testTimeout !== undefined && (typeof m.testTimeout !== "number" || m.testTimeout <= 0)) {
+      return "merge.testTimeout must be a positive number";
+    }
+    if (m.skipValidation !== undefined && typeof m.skipValidation !== "boolean") {
+      return "merge.skipValidation must be a boolean";
+    }
+  }
+
   // Validate autoResearch if provided (optional field)
   if (d.autoResearch !== undefined) {
     if (typeof d.autoResearch !== "object" || d.autoResearch === null) {
