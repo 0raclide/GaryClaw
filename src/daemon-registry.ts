@@ -198,7 +198,7 @@ export function isSkillSetActive(
     if (!state) continue;
 
     for (const job of state.jobs) {
-      if (job.status !== "queued" && job.status !== "running") continue;
+      if (job.status !== "queued" && job.status !== "running" && job.status !== "rate_limited") continue;
 
       const jobKey = job.designDoc
         ? `${job.skills.join(",")};${job.designDoc}`
@@ -411,6 +411,27 @@ export function migrateToInstanceDir(checkpointDir: string): boolean {
   }
 
   return migrated;
+}
+
+// ── Cross-instance rate limit coordination ───────────────────────
+
+/**
+ * Set a global rate limit hold in global-budget.json.
+ * Uses extend-only semantics: only updates if the new reset time is later
+ * than the existing one (last-writer-wins is safe due to extend-only).
+ */
+export function setGlobalRateLimitHold(
+  parentDir: string,
+  resetAt: string,
+  _instanceName: string,
+): void {
+  const budget = readGlobalBudget(parentDir);
+  // Only extend the hold, never shorten it
+  if (!budget.rateLimitResetAt || new Date(resetAt) > new Date(budget.rateLimitResetAt)) {
+    budget.rateLimitResetAt = resetAt;
+    const filePath = join(parentDir, GLOBAL_BUDGET_FILE);
+    safeWriteJSON(filePath, budget);
+  }
 }
 
 // ── Internal helpers ─────────────────────────────────────────────
