@@ -22,6 +22,7 @@ import {
   getCompletedTodoTitles,
   getClaimedFiles,
   setGlobalRateLimitHold,
+  clearGlobalRateLimitHold,
 } from "./daemon-registry.js";
 import {
   extractPredictedFiles,
@@ -312,6 +313,8 @@ export function createJobRunner(
           if (Date.now() < resetAt.getTime()) {
             return; // Another instance is rate-limited — hold this one too
           }
+          // Expired — clear stale global hold to avoid repeated file I/O
+          clearGlobalRateLimitHold(parentCheckpointDir);
         }
       } catch {
         // Fail-open: if global budget read fails, proceed

@@ -434,6 +434,19 @@ export function setGlobalRateLimitHold(
   }
 }
 
+/**
+ * Clear an expired global rate limit hold from global-budget.json.
+ * Called by the first instance that detects expiry to avoid repeated stale reads.
+ */
+export function clearGlobalRateLimitHold(parentDir: string): void {
+  const budget = readGlobalBudget(parentDir);
+  if (budget.rateLimitResetAt) {
+    budget.rateLimitResetAt = undefined;
+    const filePath = join(parentDir, GLOBAL_BUDGET_FILE);
+    safeWriteJSON(filePath, budget);
+  }
+}
+
 // ── Internal helpers ─────────────────────────────────────────────
 
 function validateDaemonState(data: unknown): data is DaemonState {
