@@ -46,6 +46,7 @@ import { getResearchTopics } from "./auto-research.js";
 import { readOracleMemory, defaultMemoryConfig } from "./oracle-memory.js";
 import {
   slugify,
+  readTodoState,
   findTodoState,
   writeTodoState,
   detectArtifacts,
