@@ -1,0 +1,402 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  readPipelineOutcomes,
+  appendPipelineOutcome,
+  computeSkipRiskScores,
+  shouldUseOracleComposition,
+  computeFailureRates,
+  DEFAULT_DECAY_HALF_LIFE,
+  MIN_SKIP_SAMPLES,
+  CIRCUIT_BREAKER_MARGIN,
+  DEFAULT_CIRCUIT_BREAKER_MIN_SAMPLES,
+  DEFAULT_SKIP_RISK_THRESHOLD,
+} from "../src/pipeline-history.js";
+import type { PipelineOutcomeRecord } from "../src/types.js";
+
+// ── Helpers ───────────────────────────────────────────────────────
+
+const TMP_DIR = join(__dirname, ".tmp-pipeline-history");
+
+function makeRecord(overrides: Partial<PipelineOutcomeRecord> = {}): PipelineOutcomeRecord {
+  return {
+    jobId: "job-1",
+    timestamp: "2026-03-29T00:00:00Z",
+    todoTitle: "Test Item",
+    effort: "S",
+    priority: 3,
+    skills: ["implement", "qa"],
+    skippedSkills: [],
+    qaFailureCount: 0,
+    reopenedCount: 0,
+    outcome: "success",
+    oracleAdjusted: false,
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  mkdirSync(TMP_DIR, { recursive: true });
+});
+
+afterEach(() => {
+  rmSync(TMP_DIR, { recursive: true, force: true });
+});
+
+// ── I/O: readPipelineOutcomes ────────────────────────────────────
+
+describe("readPipelineOutcomes", () => {
+  it("returns empty array for missing file", () => {
+    expect(readPipelineOutcomes(join(TMP_DIR, "nonexistent.jsonl"))).toEqual([]);
+  });
+
+  it("reads valid JSONL records", () => {
+    const path = join(TMP_DIR, "outcomes.jsonl");
+    const r1 = makeRecord({ jobId: "j1" });
+    const r2 = makeRecord({ jobId: "j2", outcome: "failure" });
+    writeFileSync(path, JSON.stringify(r1) + "\n" + JSON.stringify(r2) + "\n");
+
+    const result = readPipelineOutcomes(path);
+    expect(result).toHaveLength(2);
+    expect(result[0].jobId).toBe("j1");
+    expect(result[1].jobId).toBe("j2");
+    expect(result[1].outcome).toBe("failure");
+  });
+
+  it("skips malformed lines", () => {
+    const path = join(TMP_DIR, "outcomes.jsonl");
+    const r1 = makeRecord({ jobId: "j1" });
+    writeFileSync(path, JSON.stringify(r1) + "\n" + "not json\n" + "{}}\n");
+
+    const result = readPipelineOutcomes(path);
+    expect(result).toHaveLength(1);
+    expect(result[0].jobId).toBe("j1");
+  });
+
+  it("skips records missing required fields", () => {
+    const path = join(TMP_DIR, "outcomes.jsonl");
+    writeFileSync(path, '{"jobId":"j1","outcome":"success"}\n{"foo":"bar"}\n');
+
+    const result = readPipelineOutcomes(path);
+    expect(result).toHaveLength(1);
+  });
+
+  it("handles empty file", () => {
+    const path = join(TMP_DIR, "outcomes.jsonl");
+    writeFileSync(path, "");
+    expect(readPipelineOutcomes(path)).toEqual([]);
+  });
+
+  it("handles file with only whitespace/newlines", () => {
+    const path = join(TMP_DIR, "outcomes.jsonl");
+    writeFileSync(path, "\n\n  \n");
+    expect(readPipelineOutcomes(path)).toEqual([]);
+  });
+});
+
+// ── I/O: appendPipelineOutcome ───────────────────────────────────
+
+describe("appendPipelineOutcome", () => {
+  it("creates file and appends record", () => {
+    const path = join(TMP_DIR, "sub", "outcomes.jsonl");
+    const record = makeRecord({ jobId: "j1" });
+    appendPipelineOutcome(path, record);
+
+    const raw = readFileSync(path, "utf-8");
+    const parsed = JSON.parse(raw.trim());
+    expect(parsed.jobId).toBe("j1");
+  });
+
+  it("appends to existing file", () => {
+    const path = join(TMP_DIR, "outcomes.jsonl");
+    appendPipelineOutcome(path, makeRecord({ jobId: "j1" }));
+    appendPipelineOutcome(path, makeRecord({ jobId: "j2" }));
+
+    const lines = readFileSync(path, "utf-8").trim().split("\n");
+    expect(lines).toHaveLength(2);
+  });
+
+  it("does not throw on write failure", () => {
+    // Path that can't be created (file as parent)
+    const path = join(TMP_DIR, "outcomes.jsonl");
+    writeFileSync(path, "");
+    // Try to write inside the file-as-directory — should not throw
+    expect(() => appendPipelineOutcome(join(path, "sub", "out.jsonl"), makeRecord())).not.toThrow();
+  });
+});
+
+// ── Pure: computeSkipRiskScores ──────────────────────────────────
+
+describe("computeSkipRiskScores", () => {
+  it("returns empty map for empty outcomes", () => {
+    expect(computeSkipRiskScores([])).toEqual(new Map());
+  });
+
+  it("returns 0 for skills with fewer than MIN_SKIP_SAMPLES skips", () => {
+    const outcomes = [
+      makeRecord({ skippedSkills: ["office-hours"], outcome: "failure" }),
+      makeRecord({ skippedSkills: ["office-hours"], outcome: "failure" }),
+    ];
+    const scores = computeSkipRiskScores(outcomes);
+    expect(scores.get("office-hours")).toBe(0);
+  });
+
+  it("computes high risk when all skips correlate with failures", () => {
+    const outcomes = Array.from({ length: 5 }, (_, i) =>
+      makeRecord({
+        jobId: `j${i}`,
+        skippedSkills: ["plan-eng-review"],
+        outcome: "failure",
+        qaFailureCount: 2,
+      }),
+    );
+    const scores = computeSkipRiskScores(outcomes);
+    expect(scores.get("plan-eng-review")).toBeCloseTo(1.0, 1);
+  });
+
+  it("computes low risk when all skips succeed", () => {
+    const outcomes = Array.from({ length: 5 }, (_, i) =>
+      makeRecord({
+        jobId: `j${i}`,
+        skippedSkills: ["office-hours"],
+        outcome: "success",
+      }),
+    );
+    const scores = computeSkipRiskScores(outcomes);
+    expect(scores.get("office-hours")).toBeCloseTo(0.0, 1);
+  });
+
+  it("computes mixed risk from mixed outcomes", () => {
+    // 3 failures + 2 successes = ~0.6 (with decay favoring recent)
+    const outcomes = [
+      makeRecord({ jobId: "j0", skippedSkills: ["eng-review"], outcome: "failure" }),
+      makeRecord({ jobId: "j1", skippedSkills: ["eng-review"], outcome: "failure" }),
+      makeRecord({ jobId: "j2", skippedSkills: ["eng-review"], outcome: "failure" }),
+      makeRecord({ jobId: "j3", skippedSkills: ["eng-review"], outcome: "success" }),
+      makeRecord({ jobId: "j4", skippedSkills: ["eng-review"], outcome: "success" }),
+    ];
+    const scores = computeSkipRiskScores(outcomes);
+    const risk = scores.get("eng-review")!;
+    // With exponential decay, recent successes get more weight
+    expect(risk).toBeGreaterThan(0.2);
+    expect(risk).toBeLessThan(0.8);
+  });
+
+  it("applies exponential decay — recent failures weight more", () => {
+    // Old successes, recent failures
+    const oldSuccess = Array.from({ length: 5 }, (_, i) =>
+      makeRecord({ jobId: `old${i}`, skippedSkills: ["qa"], outcome: "success" }),
+    );
+    const recentFailures = Array.from({ length: 5 }, (_, i) =>
+      makeRecord({ jobId: `new${i}`, skippedSkills: ["qa"], outcome: "failure" }),
+    );
+    const scores = computeSkipRiskScores([...oldSuccess, ...recentFailures]);
+    const risk = scores.get("qa")!;
+    // Recent failures dominate, so risk should be > 0.5
+    expect(risk).toBeGreaterThan(0.5);
+  });
+
+  it("exponential decay — old failures decay, recent successes dominate", () => {
+    const oldFailures = Array.from({ length: 5 }, (_, i) =>
+      makeRecord({ jobId: `old${i}`, skippedSkills: ["qa"], outcome: "failure" }),
+    );
+    const recentSuccess = Array.from({ length: 5 }, (_, i) =>
+      makeRecord({ jobId: `new${i}`, skippedSkills: ["qa"], outcome: "success" }),
+    );
+    const scores = computeSkipRiskScores([...oldFailures, ...recentSuccess]);
+    const risk = scores.get("qa")!;
+    // Recent successes dominate, so risk should be < 0.5
+    expect(risk).toBeLessThan(0.5);
+  });
+
+  it("tracks multiple skills independently", () => {
+    const outcomes = [
+      makeRecord({ jobId: "j0", skippedSkills: ["office-hours", "eng-review"], outcome: "failure" }),
+      makeRecord({ jobId: "j1", skippedSkills: ["office-hours"], outcome: "success" }),
+      makeRecord({ jobId: "j2", skippedSkills: ["office-hours", "eng-review"], outcome: "failure" }),
+      makeRecord({ jobId: "j3", skippedSkills: ["eng-review"], outcome: "success" }),
+      makeRecord({ jobId: "j4", skippedSkills: ["office-hours", "eng-review"], outcome: "success" }),
+    ];
+    const scores = computeSkipRiskScores(outcomes);
+    expect(scores.has("office-hours")).toBe(true);
+    expect(scores.has("eng-review")).toBe(true);
+    // Both have 3+ samples
+    expect(scores.get("office-hours")).not.toBe(scores.get("eng-review"));
+  });
+
+  it("ignores records where skill was NOT skipped", () => {
+    const outcomes = [
+      makeRecord({ jobId: "j0", skippedSkills: ["office-hours"], skills: ["implement", "qa"], outcome: "failure" }),
+      makeRecord({ jobId: "j1", skippedSkills: [], skills: ["implement", "qa", "office-hours"], outcome: "failure" }),
+      makeRecord({ jobId: "j2", skippedSkills: ["office-hours"], skills: ["implement", "qa"], outcome: "failure" }),
+      makeRecord({ jobId: "j3", skippedSkills: ["office-hours"], skills: ["implement", "qa"], outcome: "success" }),
+    ];
+    const scores = computeSkipRiskScores(outcomes);
+    // j1 has no skippedSkills for office-hours, so only 3 samples
+    expect(scores.get("office-hours")).toBeDefined();
+  });
+
+  it("respects custom decay half-life", () => {
+    // With very short half-life (1), old data decays fast
+    const outcomes = [
+      makeRecord({ jobId: "j0", skippedSkills: ["qa"], outcome: "failure" }),
+      makeRecord({ jobId: "j1", skippedSkills: ["qa"], outcome: "failure" }),
+      makeRecord({ jobId: "j2", skippedSkills: ["qa"], outcome: "failure" }),
+      makeRecord({ jobId: "j3", skippedSkills: ["qa"], outcome: "success" }),
+      makeRecord({ jobId: "j4", skippedSkills: ["qa"], outcome: "success" }),
+    ];
+    const fastDecay = computeSkipRiskScores(outcomes, 1);
+    const slowDecay = computeSkipRiskScores(outcomes, 100);
+    // Fast decay weights recent successes much more → lower risk
+    expect(fastDecay.get("qa")!).toBeLessThan(slowDecay.get("qa")!);
+  });
+
+  it("handles partial outcomes as failures", () => {
+    const outcomes = Array.from({ length: 5 }, (_, i) =>
+      makeRecord({
+        jobId: `j${i}`,
+        skippedSkills: ["eng-review"],
+        outcome: "partial",
+      }),
+    );
+    const scores = computeSkipRiskScores(outcomes);
+    // "partial" != "success", so should be treated as failure
+    expect(scores.get("eng-review")).toBeCloseTo(1.0, 1);
+  });
+});
+
+// ── Pure: shouldUseOracleComposition ─────────────────────────────
+
+describe("shouldUseOracleComposition", () => {
+  it("returns true with no outcomes", () => {
+    expect(shouldUseOracleComposition([])).toBe(true);
+  });
+
+  it("returns true with insufficient Oracle-adjusted samples", () => {
+    const outcomes = Array.from({ length: 5 }, (_, i) =>
+      makeRecord({ jobId: `j${i}`, oracleAdjusted: true, outcome: "failure" }),
+    );
+    // Only 5 samples, default min is 10
+    expect(shouldUseOracleComposition(outcomes)).toBe(true);
+  });
+
+  it("returns true when Oracle performs better than static", () => {
+    const oracle = Array.from({ length: 10 }, (_, i) =>
+      makeRecord({ jobId: `o${i}`, oracleAdjusted: true, outcome: "success" }),
+    );
+    const statics = Array.from({ length: 10 }, (_, i) =>
+      makeRecord({ jobId: `s${i}`, oracleAdjusted: false, outcome: i < 3 ? "failure" : "success" }),
+    );
+    expect(shouldUseOracleComposition([...oracle, ...statics])).toBe(true);
+  });
+
+  it("returns true when Oracle and static have similar rates", () => {
+    // Both at 20% failure rate — within margin
+    const oracle = Array.from({ length: 10 }, (_, i) =>
+      makeRecord({ jobId: `o${i}`, oracleAdjusted: true, outcome: i < 2 ? "failure" : "success" }),
+    );
+    const statics = Array.from({ length: 10 }, (_, i) =>
+      makeRecord({ jobId: `s${i}`, oracleAdjusted: false, outcome: i < 2 ? "failure" : "success" }),
+    );
+    expect(shouldUseOracleComposition([...oracle, ...statics])).toBe(true);
+  });
+
+  it("trips breaker when Oracle is meaningfully worse", () => {
+    // Oracle: 50% failure, Static: 10% failure — well beyond margin
+    const oracle = Array.from({ length: 10 }, (_, i) =>
+      makeRecord({ jobId: `o${i}`, oracleAdjusted: true, outcome: i < 5 ? "failure" : "success" }),
+    );
+    const statics = Array.from({ length: 10 }, (_, i) =>
+      makeRecord({ jobId: `s${i}`, oracleAdjusted: false, outcome: i < 1 ? "failure" : "success" }),
+    );
+    expect(shouldUseOracleComposition([...oracle, ...statics])).toBe(false);
+  });
+
+  it("respects custom minSampleSize", () => {
+    const oracle = Array.from({ length: 3 }, (_, i) =>
+      makeRecord({ jobId: `o${i}`, oracleAdjusted: true, outcome: "failure" }),
+    );
+    // With minSampleSize=3, this should trip
+    expect(shouldUseOracleComposition(oracle, 3)).toBe(false);
+    // With default minSampleSize=10, insufficient data
+    expect(shouldUseOracleComposition(oracle)).toBe(true);
+  });
+
+  it("handles all-static outcomes (no Oracle jobs)", () => {
+    const statics = Array.from({ length: 10 }, (_, i) =>
+      makeRecord({ jobId: `s${i}`, oracleAdjusted: false }),
+    );
+    // No Oracle-adjusted jobs < minSampleSize → return true
+    expect(shouldUseOracleComposition(statics)).toBe(true);
+  });
+
+  it("handles zero static jobs (all Oracle)", () => {
+    // 10 Oracle jobs, all success, no static comparison
+    const oracle = Array.from({ length: 10 }, (_, i) =>
+      makeRecord({ jobId: `o${i}`, oracleAdjusted: true, outcome: "success" }),
+    );
+    // staticFailureRate = 0, oracleFailureRate = 0 → 0 > 0 + 0.1 is false → true
+    expect(shouldUseOracleComposition(oracle)).toBe(true);
+  });
+});
+
+// ── Pure: computeFailureRates ────────────────────────────────────
+
+describe("computeFailureRates", () => {
+  it("returns zeros for empty outcomes", () => {
+    const result = computeFailureRates([]);
+    expect(result.oracleFailureRate).toBe(0);
+    expect(result.staticFailureRate).toBe(0);
+    expect(result.oracleAdjustedCount).toBe(0);
+    expect(result.staticOnlyCount).toBe(0);
+  });
+
+  it("computes correct rates for mixed outcomes", () => {
+    const outcomes = [
+      makeRecord({ oracleAdjusted: true, outcome: "success" }),
+      makeRecord({ oracleAdjusted: true, outcome: "failure" }),
+      makeRecord({ oracleAdjusted: false, outcome: "success" }),
+      makeRecord({ oracleAdjusted: false, outcome: "success" }),
+      makeRecord({ oracleAdjusted: false, outcome: "failure" }),
+    ];
+    const result = computeFailureRates(outcomes);
+    expect(result.oracleFailureRate).toBe(50);
+    expect(result.staticFailureRate).toBeCloseTo(33.33, 1);
+    expect(result.oracleAdjustedCount).toBe(2);
+    expect(result.staticOnlyCount).toBe(3);
+  });
+
+  it("treats partial as failure", () => {
+    const outcomes = [
+      makeRecord({ oracleAdjusted: true, outcome: "partial" }),
+      makeRecord({ oracleAdjusted: true, outcome: "success" }),
+    ];
+    const result = computeFailureRates(outcomes);
+    expect(result.oracleFailureRate).toBe(50);
+  });
+});
+
+// ── Constants ────────────────────────────────────────────────────
+
+describe("constants", () => {
+  it("DEFAULT_DECAY_HALF_LIFE is 20", () => {
+    expect(DEFAULT_DECAY_HALF_LIFE).toBe(20);
+  });
+
+  it("MIN_SKIP_SAMPLES is 3", () => {
+    expect(MIN_SKIP_SAMPLES).toBe(3);
+  });
+
+  it("DEFAULT_SKIP_RISK_THRESHOLD is 0.3", () => {
+    expect(DEFAULT_SKIP_RISK_THRESHOLD).toBe(0.3);
+  });
+
+  it("DEFAULT_CIRCUIT_BREAKER_MIN_SAMPLES is 10", () => {
+    expect(DEFAULT_CIRCUIT_BREAKER_MIN_SAMPLES).toBe(10);
+  });
+
+  it("CIRCUIT_BREAKER_MARGIN is 0.1", () => {
+    expect(CIRCUIT_BREAKER_MARGIN).toBe(0.1);
+  });
+});
