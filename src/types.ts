@@ -409,6 +409,7 @@ export type FailureCategory =
   | "infra-issue"     // Disk, network, OOM, timeout
   | "budget-exceeded" // Per-job or daily cost limit hit
   | "merge-failed"    // Pre-merge test failure or rebase conflict
+  | "daemon-crash"    // Job abandoned after repeated daemon restarts
   | "unknown";        // Unclassifiable — conservative fallback
 
 export interface FailureRecord {

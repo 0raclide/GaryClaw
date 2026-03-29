@@ -126,7 +126,7 @@ export function createJobRunner(
         job.status = "failed";
         job.error = `Daemon restarted ${retryCount} times — job abandoned (likely a persistent failure, not transient)`;
         job.completedAt = new Date().toISOString();
-        job.failureCategory = "daemon_crash" as any; // Generic crash category
+        job.failureCategory = "daemon-crash";
         job.retryable = false;
 
         // Append failure record for observability
