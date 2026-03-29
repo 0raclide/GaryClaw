@@ -255,6 +255,121 @@ export function buildResumePrompt(fullPrompt: string): string {
   return "New decision needed:\n\n" + fullPrompt.slice(idx);
 }
 
+// ── Session state machine ────────────────────────────────────────
+
+/** Action returned by OracleSessionState methods to drive the caller's loop. */
+export type SessionAction =
+  | { action: "return"; result: string }
+  | { action: "retry" }
+  | { action: "throw"; error: Error };
+
+/**
+ * Pure state machine for oracle session reuse. Separated from the SDK call
+ * so all state transitions (batch reset, MAX_REUSE, resume fallback, retry)
+ * are testable without importing the SDK.
+ *
+ * Usage:
+ * ```
+ *   const state = new OracleSessionState(onEvent);
+ *   const { effectivePrompt, isResume, resumeSessionId } = state.prepareCall(prompt);
+ *   // ... SDK call ...
+ *   const action = state.handleSuccess(result, newSessionId);
+ *   // or: const action = state.handleError(err);
+ * ```
+ */
+export class OracleSessionState {
+  sessionId: string | null = null;
+  callCount = 0;
+  private retried = false;
+  private currentIsResume = false;
+
+  constructor(
+    private onSessionEvent?: (event: OracleSessionEvent) => void,
+  ) {}
+
+  /**
+   * Prepare for a query call. Handles batch detection, MAX_REUSE reset,
+   * and decides whether to resume or cold-start.
+   */
+  prepareCall(prompt: string): {
+    effectivePrompt: string;
+    isResume: boolean;
+    resumeSessionId: string | null;
+  } {
+    this.retried = false;
+
+    // Batch calls bypass session reuse — different prompt structure
+    if (prompt.includes(ORACLE_BATCH_MARKER) && this.sessionId !== null) {
+      this.sessionId = null;
+      this.callCount = 0;
+      this.onSessionEvent?.({ type: "session_reset", callCount: 0, sessionId: undefined });
+    }
+
+    // Reset session periodically to bound context growth
+    if (this.callCount >= MAX_REUSE) {
+      this.onSessionEvent?.({ type: "session_reset", callCount: this.callCount, sessionId: this.sessionId ?? undefined });
+      this.sessionId = null;
+      this.callCount = 0;
+    }
+
+    const isResume = this.sessionId !== null;
+    this.currentIsResume = isResume;
+    const effectivePrompt = isResume ? buildResumePrompt(prompt) : prompt;
+
+    return { effectivePrompt, isResume, resumeSessionId: isResume ? this.sessionId : null };
+  }
+
+  /**
+   * Handle a successful SDK call. Returns whether to return the result or retry.
+   */
+  handleSuccess(result: string, newSessionId: string | null): SessionAction {
+    if (result && newSessionId) {
+      if (this.currentIsResume) {
+        this.onSessionEvent?.({ type: "session_resumed", callCount: this.callCount + 1, sessionId: newSessionId });
+      } else {
+        this.onSessionEvent?.({ type: "session_created", callCount: 1, sessionId: newSessionId });
+      }
+      this.sessionId = newSessionId;
+      this.callCount++;
+      return { action: "return", result };
+    }
+
+    if (this.currentIsResume && !this.retried) {
+      // Resume produced no result — reset and retry cold
+      this.onSessionEvent?.({ type: "resume_fallback", callCount: this.callCount, sessionId: this.sessionId ?? undefined });
+      this.sessionId = null;
+      this.callCount = 0;
+      this.retried = true;
+      this.currentIsResume = false;
+      return { action: "retry" };
+    }
+
+    // Cold start with no result — return empty
+    return { action: "return", result };
+  }
+
+  /**
+   * Handle an SDK error. Returns whether to retry cold or throw.
+   */
+  handleError(err: unknown): SessionAction {
+    if (this.currentIsResume && !this.retried) {
+      // Resume error — reset and retry cold
+      this.onSessionEvent?.({ type: "resume_fallback", callCount: this.callCount, sessionId: this.sessionId ?? undefined });
+      this.sessionId = null;
+      this.callCount = 0;
+      this.retried = true;
+      this.currentIsResume = false;
+      return { action: "retry" };
+    }
+
+    // Cold start also failed — propagate original error for diagnostics
+    const error = err instanceof Error
+      ? err
+      : new Error(`Oracle query failed: ${String(err)}`);
+    return { action: "throw", error };
+  }
+}
+
 /**
  * Extract the 5 standard oracle fields from a parsed JSON entry.
  * Shared by parseOracleResponse and parseBatchOracleResponse to keep
@@ -545,32 +660,16 @@ export function createSdkOracleQueryFn(
   env: Record<string, string>,
   onSessionEvent?: (event: OracleSessionEvent) => void,
 ): (prompt: string) => Promise<string> {
-  let sessionId: string | null = null;
-  let callCount = 0;
+  const state = new OracleSessionState(onSessionEvent);
 
   return async (prompt: string): Promise<string> => {
     // Dynamic import to avoid loading SDK in tests
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
 
-    // Batch calls bypass session reuse — different prompt structure
-    if (prompt.includes(ORACLE_BATCH_MARKER) && sessionId !== null) {
-      sessionId = null;
-      callCount = 0;
-      onSessionEvent?.({ type: "session_reset", callCount: 0, sessionId: undefined });
-    }
+    // prepareCall handles batch detection, MAX_REUSE reset, resume decision
+    let { effectivePrompt, isResume, resumeSessionId } = state.prepareCall(prompt);
 
-    // Reset session periodically to bound context growth
-    if (callCount >= MAX_REUSE) {
-      onSessionEvent?.({ type: "session_reset", callCount, sessionId: sessionId ?? undefined });
-      sessionId = null;
-      callCount = 0;
-    }
-
-    let retried = false;
     while (true) {
-      const isResume = sessionId !== null;
-      const effectivePrompt = isResume ? buildResumePrompt(prompt) : prompt;
-
       let result = "";
       let newSessionId: string | null = null;
 
@@ -583,7 +682,7 @@ export function createSdkOracleQueryFn(
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,
             canUseTool: async (_toolName: string, _input: Record<string, unknown>, _options: { signal: AbortSignal }) => ({ behavior: "deny" as const, message: "Oracle sub-query does not allow tool use" }),
-            ...(isResume && sessionId ? { resume: sessionId } : {}),
+            ...(isResume && resumeSessionId ? { resume: resumeSessionId } : {}),
           },
         });
 
@@ -599,38 +698,23 @@ export function createSdkOracleQueryFn(
           }
         }
 
-        // Update session tracking on success
-        if (result && newSessionId) {
-          if (isResume) {
-            onSessionEvent?.({ type: "session_resumed", callCount: callCount + 1, sessionId: newSessionId });
-          } else {
-            onSessionEvent?.({ type: "session_created", callCount: 1, sessionId: newSessionId });
-          }
-          sessionId = newSessionId;
-          callCount++;
-          return result;
-        } else if (isResume && !retried) {
-          // Resume produced no result — reset and retry cold
-          onSessionEvent?.({ type: "resume_fallback", callCount, sessionId: sessionId ?? undefined });
-          sessionId = null;
-          callCount = 0;
-          retried = true;
+        const action = state.handleSuccess(result, newSessionId);
+        if (action.action === "return") return action.result;
+        // Retry cold: session was reset by handleSuccess, use full prompt
+        effectivePrompt = prompt;
+        isResume = false;
+        resumeSessionId = null;
+        continue;
+      } catch (err) {
+        const action = state.handleError(err);
+        if (action.action === "retry") {
+          // Retry cold: session was reset by handleError, use full prompt
+          effectivePrompt = prompt;
+          isResume = false;
+          resumeSessionId = null;
           continue;
         }
-
-        // Cold start with no result — return empty (existing behavior)
-        return result;
-      } catch {
-        if (isResume && !retried) {
-          // Resume error — reset and retry cold
-          onSessionEvent?.({ type: "resume_fallback", callCount, sessionId: sessionId ?? undefined });
-          sessionId = null;
-          callCount = 0;
-          retried = true;
-          continue;
-        }
-        // Cold start also failed — propagate
-        throw new Error("Oracle query failed");
+        throw action.error;
       }
     }
   };

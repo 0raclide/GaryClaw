@@ -2,14 +2,14 @@
   "date": "2026-03-29",
   "url": "cli-tool",
   "healthScore": 100,
-  "testFiles": 132,
-  "tests": 2376,
-  "testsPassing": 2376,
+  "testFiles": 136,
+  "tests": 2449,
+  "testsPassing": 2449,
   "typescriptErrors": 0,
   "issues": [
-    { "id": "ISSUE-001", "title": "loadUnresolvedReviewFindings zero test coverage", "severity": "high", "category": "functional", "status": "verified" },
-    { "id": "ISSUE-002", "title": "checkOracleMemory error paths untested", "severity": "medium", "category": "functional", "status": "verified" },
-    { "id": "ISSUE-003", "title": "hasInjectionPatterns no isolated tests", "severity": "medium", "category": "functional", "status": "verified" },
-    { "id": "ISSUE-004", "title": "CLAUDE.md stale test counts after new files", "severity": "low", "category": "content", "status": "verified" }
+    { "id": "ISSUE-001", "title": "CLAUDE.md missing 2 test table entries", "severity": "medium", "category": "content", "status": "verified" },
+    { "id": "ISSUE-002", "title": "CLAUDE.md header count wrong", "severity": "low", "category": "content", "status": "verified" },
+    { "id": "ISSUE-003", "title": "No test for ask-handler onWarn threading", "severity": "medium", "category": "functional", "status": "verified" },
+    { "id": "ISSUE-004", "title": "P5 TODO not marked complete", "severity": "low", "category": "content", "status": "verified" }
   ]
 }
