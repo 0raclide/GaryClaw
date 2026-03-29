@@ -65,6 +65,30 @@ export function notifyMergeBlocked(job: Job, result: MergeResult, config: Daemon
 }
 
 /**
+ * Send a macOS notification when a rate limit hold begins.
+ */
+export function notifyRateLimitHold(resetAt: Date, instanceName: string, config: DaemonConfig): void {
+  if (!config.notifications.enabled || !config.notifications.onError) return;
+
+  const instanceLabel = instanceName && instanceName !== "default" ? ` [${instanceName}]` : "";
+  const title = `GaryClaw${instanceLabel} Rate Limited`;
+  const message = `Holding all jobs until ${resetAt.toLocaleTimeString()}`;
+  sendNotification(title, message);
+}
+
+/**
+ * Send a macOS notification when a rate limit hold expires.
+ */
+export function notifyRateLimitResume(instanceName: string, config: DaemonConfig): void {
+  if (!config.notifications.enabled || !config.notifications.onComplete) return;
+
+  const instanceLabel = instanceName && instanceName !== "default" ? ` [${instanceName}]` : "";
+  const title = `GaryClaw${instanceLabel} Resumed`;
+  const message = "Rate limit hold expired — jobs resuming";
+  sendNotification(title, message);
+}
+
+/**
  * Send a macOS notification for an escalated decision.
  */
 export function notifyEscalation(question: string, config: DaemonConfig): void {

@@ -12,7 +12,7 @@ import { safeWriteJSON, safeReadJSON } from "./safe-json.js";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runPipeline, resumePipeline, readPipelineState } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
-import { notifyJobComplete, notifyJobError, notifyJobResumed, notifyMergeBlocked, writeSummary } from "./notifier.js";
+import { notifyJobComplete, notifyJobError, notifyJobResumed, notifyMergeBlocked, notifyRateLimitHold, notifyRateLimitResume, writeSummary } from "./notifier.js";
 import { generateDashboard } from "./dashboard.js";
 import {
   readGlobalBudget,
@@ -21,6 +21,7 @@ import {
   getClaimedTodoTitles,
   getCompletedTodoTitles,
   getClaimedFiles,
+  setGlobalRateLimitHold,
 } from "./daemon-registry.js";
 import {
   extractPredictedFiles,
@@ -89,6 +90,8 @@ export interface JobRunnerDeps {
   notifyJobError: typeof notifyJobError;
   notifyJobResumed: typeof notifyJobResumed;
   notifyMergeBlocked?: (job: Job, result: MergeResult, config: DaemonConfig) => void;
+  notifyRateLimitHold?: (resetAt: Date, instanceName: string, config: DaemonConfig) => void;
+  notifyRateLimitResume?: (instanceName: string, config: DaemonConfig) => void;
   writeSummary: typeof writeSummary;
   log: (level: string, message: string) => void;
 }
@@ -102,6 +105,8 @@ const defaultDeps: JobRunnerDeps = {
   notifyJobError,
   notifyJobResumed,
   notifyMergeBlocked,
+  notifyRateLimitHold,
+  notifyRateLimitResume,
   writeSummary,
   log: () => {},
 };
@@ -229,7 +234,7 @@ export function createJobRunner(
     const duplicate = state.jobs.find(
       (j) => {
         const jKey = j.designDoc ? `${j.skills.join(",")};${j.designDoc}` : j.skills.join(",");
-        return (j.status === "queued" || j.status === "running") && jKey === skillKey;
+        return (j.status === "queued" || j.status === "running" || j.status === "rate_limited") && jKey === skillKey;
       },
     );
     if (duplicate) {
@@ -276,6 +281,41 @@ export function createJobRunner(
 
   async function processNext(): Promise<void> {
     if (running) return;
+
+    // Rate limit hold: don't process any jobs until reset time passes
+    if (state.rateLimitResetAt) {
+      const resetAt = new Date(state.rateLimitResetAt);
+      if (Date.now() < resetAt.getTime()) {
+        return; // Still rate-limited — caller (poll interval) will retry later
+      }
+      // Reset time passed — clear the hold
+      d.log("info", "Rate limit hold expired — resuming job processing");
+      d.notifyRateLimitResume?.(resolvedInstanceName, currentConfig);
+      state.rateLimitResetAt = undefined;
+      // Re-queue any rate_limited jobs
+      for (const job of state.jobs) {
+        if (job.status === "rate_limited") {
+          job.status = "queued";
+          d.log("info", `Re-queued rate-limited job ${job.id}`);
+        }
+      }
+      persistState(state, checkpointDir);
+    }
+
+    // Check global rate limit hold (shared across all instances)
+    if (parentCheckpointDir) {
+      try {
+        const globalBudget = readGlobalBudget(parentCheckpointDir);
+        if (globalBudget.rateLimitResetAt) {
+          const resetAt = new Date(globalBudget.rateLimitResetAt);
+          if (Date.now() < resetAt.getTime()) {
+            return; // Another instance is rate-limited — hold this one too
+          }
+        }
+      } catch {
+        // Fail-open: if global budget read fails, proceed
+      }
+    }
 
     const nextJob = state.jobs.find((j) => j.status === "queued");
     if (!nextJob) return;
@@ -629,8 +669,31 @@ export function createJobRunner(
       const record = buildFailureRecord(err, nextJob.id, nextJob.skills, resolvedInstanceName);
       appendFailureRecord(record, checkpointDir);
 
-      d.writeSummary(nextJob, jobDir);
-      d.notifyJobError(nextJob, jobConfig);
+      // Rate limit detection: hold all jobs instead of spam-retrying
+      if (classification.category === "infra-issue" && isRateLimitError(nextJob.error)) {
+        const resetAt = parseRateLimitResetTime(nextJob.error);
+        const holdUntil = resetAt ?? new Date(Date.now() + RATE_LIMIT_FALLBACK_MS);
+        state.rateLimitResetAt = holdUntil.toISOString();
+        nextJob.status = "rate_limited";
+        nextJob.completedAt = undefined; // Not actually completed — will be re-queued
+        d.log("info", `Rate limited until ${holdUntil.toISOString()} — holding all jobs`);
+
+        // Propagate to global budget for cross-instance coordination
+        if (parentCheckpointDir) {
+          try {
+            setGlobalRateLimitHold(parentCheckpointDir, holdUntil.toISOString(), resolvedInstanceName);
+          } catch {
+            // Fail-open: local hold is sufficient
+          }
+        }
+
+        persistState(state, checkpointDir);
+        // Skip normal error notification — send rate limit notification instead
+        d.notifyRateLimitHold?.(holdUntil, resolvedInstanceName, jobConfig);
+      } else {
+        d.writeSummary(nextJob, jobDir);
+        d.notifyJobError(nextJob, jobConfig);
+      }
       if ((nextJob.retryCount ?? 0) > 0) {
         d.log("warn", `Retry ${nextJob.retryCount}/2 failed for ${nextJob.id} [${classification.category}]`);
       }
