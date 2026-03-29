@@ -359,18 +359,20 @@ export function createJobRunner(
       if (jobConfig.worktreePath && resolvedInstanceName !== "default") {
         try {
           const baseBranch = resolveBaseBranch(jobConfig.projectDir);
-          const mergeConfig = jobConfig.merge ?? {};
+          const mergeConfig = jobConfig.merge;
           const mergeResult = mergeWorktreeBranch(
             jobConfig.projectDir,
             resolvedInstanceName,
             baseBranch,
             {
-              validation: mergeConfig.skipValidation
-                ? { skipValidation: true }
-                : {
-                    testCommand: mergeConfig.testCommand,
-                    testTimeout: mergeConfig.testTimeout,
-                  },
+              validation: mergeConfig
+                ? mergeConfig.skipValidation
+                  ? { skipValidation: true }
+                  : {
+                      testCommand: mergeConfig.testCommand,
+                      testTimeout: mergeConfig.testTimeout,
+                    }
+                : undefined,
               jobId: nextJob.id,
             },
           );
