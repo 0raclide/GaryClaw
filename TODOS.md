@@ -1,5 +1,47 @@
 # TODOS
 
+## P1: TODO State Tracking — Artifact Detection + State Files
+
+**What:** Track the lifecycle state of each TODO item so the daemon can resume from where it left off instead of rebuilding from scratch. Two complementary systems:
+
+**System B (state file):** `.garyclaw/todo-state/{slug}.json` — persistent memory per TODO. Written after each pipeline skill completes. Survives instance cleanup, branch deletion, daemon restarts. Fields: `title`, `state` (open→designed→implemented→reviewed→qa-complete→merged→complete), `designDocPath`, `branch`, `instanceName`, `lastJobId`, `updatedAt`.
+
+**System A (artifact detection):** Evidence-based verification. Scans for design docs in `docs/designs/`, branches with commits ahead of main, completed jobs in daemon-state.json, commits on main matching the title. Cross-validates System B every cycle. Self-heals when B is stale or missing.
+
+**State transitions** happen only at skill boundaries (never mid-skill). Skills are idempotent — re-running QA just finds fewer issues. Pipeline start skill determined by state:
+- `open` → start at prioritize
+- `designed` → skip prioritize + office-hours, start at implement
+- `implemented` → skip to eng-review
+- `reviewed` → skip to QA
+- `qa-complete` → merge only
+- `merged/complete` → skip entirely
+
+**Edge cases addressed:**
+- **Slug stability:** Pure deterministic `slugify()` function with comprehensive tests. State file stores original title for Levenshtein fallback matching (threshold 0.3) if title changes slightly.
+- **Stale "implementing" state:** If `updatedAt` > 2h and instance PID is dead (via `isPidAlive`), reset to previous stage with warning log.
+- **Instance cleanup deletes branch:** B says "implemented" but no branch exists. Reconciliation checks if commits landed on main → promote to "merged." If nowhere → reset to "designed."
+- **Parallel write prevention:** Pre-assignment claiming (claimedTodoTitle) is the lock. State file writes only happen after claiming. No new locking needed.
+- **A disagrees with B:** A shows MORE advanced state → promote B (evidence trumps records). A shows LESS advanced AND B is stale (>2h) → trust A. B is recent (<2h) → trust B (work in progress).
+
+**Implementation:**
+- New module `src/todo-state.ts` (~150 lines): `slugify()`, `readTodoState()`, `writeTodoState()`, `reconcileState()`, `getStartSkill()`
+- Wire into `src/job-runner.ts` `processNext()`: read state → determine start skill → pass to pipeline
+- Wire into `src/pipeline.ts`: after each skill completes, call `writeTodoState()` to advance state
+- Wire into `src/job-runner.ts` post-merge: advance to "merged"/"complete"
+- Extend `src/doctor.ts`: detect orphaned state files, stale states, slug mismatches
+- All state writes use `safeWriteJSON` (atomic, corruption recovery)
+
+**Deferred (not in scope):**
+- Dashboard state summary widget
+- Automatic TODOS.md `~~complete~~` annotation from state
+- Mid-skill checkpointing (skills are idempotent)
+
+**Why:** On 2026-03-29, 5 parallel workers rebuilt the same features 2-3x each ($30 wasted) because the daemon had no memory of what was already designed/implemented. Design docs existed, branches had code, but every cycle started fresh. State tracking eliminates this waste and makes the self-improvement loop truly incremental.
+
+**Effort:** S (human: ~3 days / CC: ~30 min)
+**Depends on:** Nothing
+**Added by:** human + AI brainstorm on 2026-03-29
+
 ## ~~P2: Pre-Merge Validation Gate~~ — COMPLETE (2026-03-29)
 
 Implemented by default daemon. Pre-merge test gate + merge audit log in worktree.ts, validation config wiring in job-runner, merge-failed failure taxonomy rule, dashboard merge health stats, DaemonConfig.merge validation. QA'd with regression tests.
