@@ -89,6 +89,7 @@ export const PIPELINE_LIFECYCLE_ORDER = [
  * 3. Collapse multiple hyphens
  * 4. Trim leading/trailing hyphens
  * 5. Truncate to 80 chars (at word boundary)
+ * 6. If result is empty (all non-Latin chars), use djb2 hash fallback
  */
 export function slugify(title: string): string {
   let slug = title
@@ -102,6 +103,17 @@ export function slugify(title: string): string {
     const truncated = slug.slice(0, MAX_SLUG_LENGTH);
     const lastHyphen = truncated.lastIndexOf("-");
     slug = lastHyphen > 0 ? truncated.slice(0, lastHyphen) : truncated;
+  }
+
+  // Guard: all-emoji, all-CJK, or other non-Latin titles produce empty slugs.
+  // Use djb2 hash for a deterministic, collision-resistant fallback.
+  // Only applies when title has content but slug is empty (truly empty titles stay empty).
+  if (!slug && title.length > 0) {
+    let hash = 5381;
+    for (let i = 0; i < title.length; i++) {
+      hash = ((hash << 5) + hash + title.charCodeAt(i)) >>> 0;
+    }
+    return `item-${hash.toString(36)}`;
   }
 
   return slug;

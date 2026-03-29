@@ -77,8 +77,9 @@ describe("slugify", () => {
     expect(slugify("")).toBe("");
   });
 
-  it("handles all-special-char string", () => {
-    expect(slugify("—+—")).toBe("");
+  it("handles all-special-char string with djb2 hash fallback", () => {
+    const result = slugify("—+—");
+    expect(result).toMatch(/^item-[a-z0-9]+$/);
   });
 
   it("is deterministic (same input → same output)", () => {
@@ -88,6 +89,47 @@ describe("slugify", () => {
 
   it("handles numbers", () => {
     expect(slugify("Phase 5a: Memory")).toBe("phase-5a-memory");
+  });
+
+  // ── Unicode edge cases (Fix 8) ────────────────────────────────
+
+  it("strips emoji, preserves Latin words", () => {
+    expect(slugify("🚀 Launch Feature")).toBe("launch-feature");
+  });
+
+  it("strips CJK, preserves Latin words", () => {
+    expect(slugify("修复 Bug 在 Dashboard")).toBe("bug-dashboard");
+  });
+
+  it("returns djb2 hash for all-emoji title", () => {
+    const result = slugify("🎉🎊🎈");
+    expect(result).toMatch(/^item-[a-z0-9]+$/);
+    // Deterministic: same input → same hash
+    expect(slugify("🎉🎊🎈")).toBe(result);
+  });
+
+  it("returns djb2 hash for all-CJK title", () => {
+    const result = slugify("修复仪表盘");
+    expect(result).toMatch(/^item-[a-z0-9]+$/);
+  });
+
+  it("djb2 hash is deterministic across calls", () => {
+    const title = "🚀🔥💯";
+    expect(slugify(title)).toBe(slugify(title));
+  });
+
+  it("handles mixed Unicode with some Latin", () => {
+    expect(slugify("修复 API 在 Dashboard 中的 Bug")).toBe("api-dashboard-bug");
+  });
+
+  it("truncates long Unicode-mixed titles at 80 chars", () => {
+    const long = "Launch " + "a".repeat(200) + " Feature";
+    const result = slugify(long);
+    expect(result.length).toBeLessThanOrEqual(80);
+  });
+
+  it("empty title returns empty string (not hash)", () => {
+    expect(slugify("")).toBe("");
   });
 });
 
