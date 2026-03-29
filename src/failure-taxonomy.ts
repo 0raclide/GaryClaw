@@ -36,6 +36,14 @@ export const RULES: readonly ClassificationRule[] = [
     errorNames: ["PerJobCostExceededError"],
   },
 
+  // ── Merge validation failure (test gate or rebase conflict) ──
+  {
+    category: "merge-failed",
+    retryable: true,
+    suggestion: "Pre-merge tests failed or rebase had conflicts — branch left rebased but unmerged",
+    errorNames: ["MergeValidationError"],
+  },
+
   // ── Auth issues ──
   {
     category: "auth-issue",
