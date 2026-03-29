@@ -380,3 +380,33 @@ Shipped in 5 commits on `garyclaw/overnight-3`: retry logic in `job-runner.ts` (
 **Completed:** 2026-03-29. Prompt prefix extracted in commit e878ab4 (`buildOraclePromptPrefix`). Field extraction helper extracted in commit 314ee5d (`extractOracleFields`). Both `buildOraclePrompt`/`buildBatchOraclePrompt` and `parseOracleResponse`/`parseBatchOracleResponse` now share single implementations.
 
 **Added by:** /plan-eng-review on 2026-03-29
+
+## P5: Replace `head -5` Shell-Out in detectArtifacts With Native Node I/O
+
+**What:** `detectArtifacts()` in `todo-state.ts:232` uses `execFileSync("head", ["-5", filePath])` to read the first 5 lines of design doc files for keyword matching. Replace with `readFileSync(filePath, "utf-8").split("\n").slice(0, 5).join("\n")`.
+
+**Why:** Platform dependency (no `head` on Windows) and slower than native Node fs. The current approach spawns a subprocess per candidate design doc file, which adds unnecessary overhead. Native Node I/O is cross-platform and avoids process spawn.
+
+**Effort:** XS (human: ~15 min / CC: ~3 min)
+**Depends on:** Nothing
+**Added by:** /plan-eng-review on 2026-03-29
+
+## P5: Pass rootCheckpointDir Explicitly Through GaryClawConfig
+
+**What:** `pipeline.ts:515` uses regex string manipulation (`config.checkpointDir.replace(/\/jobs\/[^/]+$/, "").replace(/\/skill-\d+-[^/]+$/, "")`) to derive the root `.garyclaw` dir from the skill-specific checkpoint path. Replace with an explicit `rootCheckpointDir` field on `GaryClawConfig`, set by `job-runner.ts` before calling `runPipeline()`.
+
+**Why:** Regex path stripping is fragile. If the directory nesting structure changes (e.g., adding a nesting level for parallel pipelines), the regex silently writes state files to the wrong directory. Explicit over clever, per project preferences.
+
+**Effort:** XS (human: ~30 min / CC: ~5 min)
+**Depends on:** Nothing
+**Added by:** /plan-eng-review on 2026-03-29
+
+## P5: Cache resolveBaseBranchSafe() in detectArtifacts
+
+**What:** `detectArtifacts()` in `todo-state.ts` calls `resolveBaseBranchSafe()` twice per invocation (line 262 for branch commit counting, line 275 for main log scan). Each spawns a `git symbolic-ref` subprocess. Call it once at the top and pass the result to both consumers.
+
+**Why:** Saves ~20ms and one process spawn per detectArtifacts() call. The result is deterministic within a single call. Simple DRY fix.
+
+**Effort:** XS (human: ~10 min / CC: ~2 min)
+**Depends on:** Nothing
+**Added by:** /plan-eng-review on 2026-03-29
