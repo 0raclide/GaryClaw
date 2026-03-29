@@ -35,6 +35,7 @@ import { mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
 import type { MergeResult } from "./worktree.js";
 import { safeReadText } from "./safe-json.js";
 import { parseTodoItems } from "./prioritize.js";
+import { composePipeline } from "./pipeline-compose.js";
 import {
   PerJobCostExceededError,
 } from "./types.js";
@@ -470,8 +471,40 @@ export function createJobRunner(
       }
     }
 
-    // ── TODO state tracking: skip already-completed stages ────────
+    // ── Adaptive pipeline composition ────────────────────────────
     const todoTitle = nextJob.claimedTodoTitle ?? preAssignedTitle;
+    if (todoTitle && nextJob.skills.length > 1) {
+      try {
+        const todosPath = join(jobConfig.worktreePath ?? jobConfig.projectDir, "TODOS.md");
+        const todosContent = safeReadText(todosPath);
+        const todoItems = todosContent ? parseTodoItems(todosContent) : [];
+        const todoItem = todoItems.find(i => i.title === todoTitle);
+        const hasDesignDoc = !!nextJob.designDoc;
+        const originalSkills = [...nextJob.skills];
+        const composed = composePipeline({
+          effort: todoItem?.effort ?? null,
+          priority: todoItem?.priority ?? 3,
+          hasDesignDoc,
+          requestedSkills: nextJob.skills,
+        });
+        if (composed.skills.length < nextJob.skills.length) {
+          d.log("info", `Adaptive composition: [${originalSkills.join(", ")}] -> [${composed.skills.join(", ")}] (${composed.reason}, saves ${composed.savings})`);
+          nextJob.composedFrom = originalSkills;
+          nextJob.skills = composed.skills;
+          callbacks.onEvent({
+            type: "pipeline_composed",
+            originalSkills,
+            composedSkills: composed.skills,
+            reason: composed.reason,
+          });
+        }
+      } catch (err) {
+        d.log("warn", `Pipeline composition failed: ${err instanceof Error ? err.message : String(err)}`);
+        // Fail-open: use original skills
+      }
+    }
+
+    // ── TODO state tracking: skip already-completed stages ────────
     if (todoTitle && nextJob.skills.length > 1) {
       try {
         const slug = slugify(todoTitle);

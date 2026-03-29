@@ -283,6 +283,41 @@ export function readAllMergeAuditEntries(parentDir: string): MergeAuditEntry[] {
 }
 
 /**
+ * Aggregate pipeline composition statistics from today's jobs.
+ * Jobs without composedFrom (no composition happened) are excluded.
+ */
+export function aggregateCompositionStats(
+  jobs: Job[],
+  todayStr?: string,
+): DashboardData["composition"] {
+  const today = todayStr ?? new Date().toISOString().slice(0, 10);
+  const todayJobs = jobs.filter((j) => j.enqueuedAt.startsWith(today));
+  const composed = todayJobs.filter((j) => j.composedFrom && j.composedFrom.length > 0);
+
+  if (composed.length === 0) {
+    return {
+      composedJobs: 0,
+      avgSkillsBefore: 0,
+      avgSkillsAfter: 0,
+      estimatedSavingsUsd: 0,
+    };
+  }
+
+  const totalBefore = composed.reduce((sum, j) => sum + j.composedFrom!.length, 0);
+  const totalAfter = composed.reduce((sum, j) => sum + j.skills.length, 0);
+  // Rough estimate: each skipped skill saves ~$0.50
+  const skippedSkills = totalBefore - totalAfter;
+  const estimatedSavingsUsd = skippedSkills * 0.50;
+
+  return {
+    composedJobs: composed.length,
+    avgSkillsBefore: totalBefore / composed.length,
+    avgSkillsAfter: totalAfter / composed.length,
+    estimatedSavingsUsd,
+  };
+}
+
+/**
  * Compute health score (0-100) and top concern.
  *
  * Weights:
@@ -464,6 +499,21 @@ export function formatDashboard(data: DashboardData): string {
     );
   }
 
+  // Composition Savings section (only when composition has been applied)
+  if (data.composition && data.composition.composedJobs > 0) {
+    lines.push(
+      "",
+      "## Composition Savings",
+      "",
+      "| Metric | Value |",
+      "|--------|-------|",
+      `| Jobs Composed | ${data.composition.composedJobs} |`,
+      `| Avg Skills Before | ${data.composition.avgSkillsBefore.toFixed(1)} |`,
+      `| Avg Skills After | ${data.composition.avgSkillsAfter.toFixed(1)} |`,
+      `| Est. Savings | $${data.composition.estimatedSavingsUsd.toFixed(2)} |`,
+    );
+  }
+
   // Budget section
   const remainingPct =
     data.budget.dailyLimitUsd > 0
@@ -525,7 +575,10 @@ export function buildDashboard(
   // Merge health from audit log entries
   const mergeHealth = aggregateMergeStats(mergeAuditEntries ?? [], todayStr);
 
-  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, mergeHealth, instances });
+  // Pipeline composition stats
+  const composition = aggregateCompositionStats(state.jobs, todayStr);
+
+  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, mergeHealth, composition, instances });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -537,6 +590,7 @@ export function buildDashboard(
     adaptiveTurns,
     bootstrapEnrichment,
     mergeHealth,
+    composition,
     instances,
   };
 }

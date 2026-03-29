@@ -353,6 +353,9 @@ export function formatEvent(event: OrchestratorEvent): string {
 
     case "oracle_session":
       return `${DIM}  Oracle session: ${event.event.type} (call #${event.event.callCount})${RESET}`;
+
+    case "pipeline_composed":
+      return `${YELLOW}[Composition]${RESET} [${event.originalSkills.join(", ")}] → [${event.composedSkills.join(", ")}] (${event.reason})`;
   }
 }
 
