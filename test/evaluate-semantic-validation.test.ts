@@ -398,8 +398,9 @@ describe("verifyClaudeMdClaims (test_directory)", () => {
     ];
     const result = verifyClaudeMdClaims(claims, TEST_DIR, []);
     expect(result[0].verified).toBe(false);
-    expect(result[0].evidence).toContain("actual count: 5");
-    expect(result[0].evidence).toContain("claimed: 42");
+    expect(result[0].evidence).toContain("claimed 42");
+    expect(result[0].evidence).toContain("found 5");
+    expect(result[0].evidence).toContain("±20% tolerance failed");
   });
 
   it("tolerance allows exactly 20% deviation", () => {
@@ -421,7 +422,8 @@ describe("verifyClaudeMdClaims (test_directory)", () => {
     ];
     const result = verifyClaudeMdClaims(claims, TEST_DIR, []);
     expect(result[0].verified).toBe(false);
-    expect(result[0].evidence).toContain("actual count: 0");
+    expect(result[0].evidence).toContain("found 0");
+    expect(result[0].evidence).toContain("±20% tolerance failed");
   });
 
   it("reports no test directory found when no alternatives exist", () => {

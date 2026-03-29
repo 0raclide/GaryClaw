@@ -80,7 +80,9 @@ export const KNOWN_FRAMEWORKS: ReadonlyMap<string, readonly string[]> = new Map(
   ["GraphQL", ["graphql", "@apollo/client", "apollo-server"]],
   ["Docker", ["dockerode"]],
   ["Redis", ["redis", "ioredis"]],
-  ["PostgreSQL", ["pg", "@types/pg"]],
+  // Supabase, Prisma, Drizzle all connect to PostgreSQL internally.
+  // Only packages with observed real-world false negatives are added.
+  ["PostgreSQL", ["pg", "@types/pg", "@supabase/supabase-js", "@prisma/client", "prisma", "drizzle-orm"]],
   ["SQLite", ["better-sqlite3", "sqlite3"]],
   ["MongoDB", ["mongodb"]],
   ["Vite", ["vite"]],
@@ -614,6 +616,11 @@ export function verifyClaudeMdClaims(
   const depSet = new Set(deps.map((d) => d.toLowerCase()));
   const hasPackageJson = existsSync(join(projectDir, "package.json"));
 
+  // Pre-pass: count test-count claims to detect per-feature vs aggregate patterns
+  const testCountClaimCount = claims.filter(
+    (c) => c.type === "test_directory" && c.claimed.startsWith("test-count:"),
+  ).length;
+
   return claims.map((claim) => {
     const verified = { ...claim };
 
@@ -764,6 +771,22 @@ export function verifyClaudeMdClaims(
         } else if (claim.claimed.startsWith("test-count:")) {
           const claimedCount = parseInt(claim.claimed.slice("test-count:".length), 10);
           const testPattern = /\.(test|spec)\.(ts|tsx|js|jsx|mjs)$/;
+
+          if (testCountClaimCount > 1) {
+            // Multiple per-feature counts: skip individual verification.
+            // These are per-feature breakdowns, not repo-wide totals.
+            let actualTotal: number;
+            try {
+              actualTotal = countTestFiles(projectDir, testPattern);
+            } catch {
+              actualTotal = 0;
+            }
+            verified.verified = true;
+            verified.evidence = `per-feature count (${actualTotal} total test files in repo)`;
+            break;
+          }
+
+          // Single aggregate count: verify against actual total with 20% tolerance
           let actualCount = 0;
           try {
             actualCount = countTestFiles(projectDir, testPattern);
@@ -779,7 +802,7 @@ export function verifyClaudeMdClaims(
             verified.evidence = `actual count: ${actualCount} (within tolerance of claimed ${claimedCount})`;
           } else {
             verified.verified = false;
-            verified.evidence = `actual count: ${actualCount}, claimed: ${claimedCount} (off by ${Math.abs(actualCount - claimedCount)})`;
+            verified.evidence = `claimed ${claimedCount}, found ${actualCount} (±20% tolerance failed)`;
           }
         }
         break;

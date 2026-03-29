@@ -9,6 +9,7 @@ export default defineConfig({
       "**/node_modules/**",
       "**/dist/**",
       "**/.garyclaw/**",
+      "**/test/fixtures/**",
     ],
     // Run I/O-heavy test files (real git repos, Unix sockets) in a separate
     // sequential pool so they don't get starved by 60+ parallel mock-based files.
