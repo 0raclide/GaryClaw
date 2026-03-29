@@ -625,14 +625,17 @@ export function analyzeBootstrapQuality(projectDir: string): BootstrapEvaluation
     ? generateReverseCoverageClaims(deps, claudeMdContent)
     : [];
 
-  // Combine all claims
+  // Store all claims for reporting, but only score forward claims.
+  // Reverse claims (deps in repo but not in doc) are already penalized
+  // by the framework coverage sub-score — including them here would
+  // double-count the same omission.
   const allClaims = [...verifiedForward, ...reverseClaims];
   result.claims = allClaims;
-  result.claimsTotal = allClaims.length;
-  result.claimsVerified = allClaims.filter((c) => c.verified).length;
+  result.claimsTotal = verifiedForward.length;
+  result.claimsVerified = verifiedForward.filter((c) => c.verified).length;
 
-  if (allClaims.length > 0) {
-    const failedClaims = allClaims.filter((c) => !c.verified);
+  if (verifiedForward.length > 0) {
+    const failedClaims = verifiedForward.filter((c) => !c.verified);
     if (failedClaims.length > 0) {
       result.qualityNotes.push(
         `Claim verification: ${result.claimsVerified}/${result.claimsTotal} claims verified (${failedClaims.length} failed)`,
@@ -666,13 +669,15 @@ export function analyzeBootstrapQuality(projectDir: string): BootstrapEvaluation
   // Structural completeness: 30 pts (reduced from 40)
   const structuralScore = (found.length / EXPECTED_SECTIONS.length) * 30;
 
-  // Claim verification: 20 pts (NEW — % of claims verified, forward + reverse)
+  // Claim verification: 20 pts (forward claims only — reverse claims are
+  // already penalized by framework coverage, so we exclude them to avoid
+  // double-counting the same omission)
   let claimScore = 0;
-  if (allClaims.length > 0) {
+  if (verifiedForward.length > 0) {
     claimScore = (result.claimsVerified / result.claimsTotal) * 20;
   } else {
-    // No claims extracted — give full marks (nothing to verify)
-    claimScore = 20;
+    // No claims extracted — neutral score (vagueness is not rewarded)
+    claimScore = 10;
   }
   result.claimVerificationScore = Math.round(claimScore * 100) / 100;
 
