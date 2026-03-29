@@ -138,7 +138,9 @@ Implemented in commit 923c08a. Aggregates avg/min/max adaptive turns per job, se
 **Depends on:** Phase 4a (complete)
 **Added by:** /qa Run 6 on 2026-03-26
 
-## P3: Oracle Decision Batching (Latency Optimization)
+## ~~P3: Oracle Decision Batching (Latency Optimization)~~ — COMPLETE (2026-03-29)
+
+Implemented in 2 commits on `garyclaw/worker-5`. `askOracleBatch()` in oracle.ts batches multiple questions into one API call with `buildBatchOraclePrompt()` / `parseBatchOracleResponse()`. Ask-handler uses batching when available + multi-question, serial fallback otherwise. Orchestrator wires `askOracleBatch` into oracle config. 43 new tests (32 oracle-batch + 11 ask-handler-batch). Backward compatible: single questions delegate to `askOracle()`, `askOracleBatch` is optional in config.
 
 **What:** Batch nearby Oracle decisions into a single API call when multiple AskUserQuestions fire within the same segment. Currently each decision is a separate 40K-token API call (~2-5s). Batching could reduce total Oracle latency by 50-70%.
 
@@ -194,26 +196,28 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 
 **Added by:** /qa on 2026-03-27
 
-## P5: Low-Severity QA Findings (deferred)
+## ~~P5: Low-Severity QA Findings (deferred)~~ — COMPLETE (2026-03-29)
+
+All 15 items resolved. Last 4 fixed by worker-5 instance on 2026-03-29: isTaste JSDoc documentation, parseDomainSections edge case test, pipeline startTime default fallback, pipeline static import conversion.
 
 **What:** 15 low-severity issues found by /qa deep audit (run 5, 2026-03-27). None are bugs that affect correctness today, but are code quality / robustness improvements.
 
 **Items:**
-- [ ] `isTaste` field in oracle.ts mirrors confidence threshold, not taste semantics — rename or document
+- [x] `isTaste` field in oracle.ts mirrors confidence threshold, not taste semantics — rename or document — Documented with JSDoc on OracleOutput.isTaste, 2026-03-29
 - [x] Oracle ESCALATION_PHRASES "delete" matches benign strings like "deleted" — use word boundary — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-003)
 - [x] `(msg as any)` type assertions in `createSdkOracleQueryFn` — add runtime shape validation — Fixed by /qa Run 11 on main, 2026-03-28 (ISSUE-001): replaced with extractResultData
 - [x] `INJECTION_PATTERNS` in oracle-memory.ts bypassable with leading whitespace — trim before matching — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-001)
 - [x] Shallow copy in `updateMetricsWithOutcome` shares `confidenceTrend` array reference — deep copy array — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-001)
 - [x] `readDecisionsFromLog` silently drops corrupt JSONL lines — add warning log — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-002)
-- [ ] `parseDomainSections` edge case with adjacent sections without body text — add test
+- [x] `parseDomainSections` edge case with adjacent sections without body text — add test — Added 2 edge case tests, 2026-03-29
 - [x] `createResearchCanUseTool` sync return used where async expected — align signatures — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-003)
 - [x] Research cost extraction uses `(msg as any).total_cost_usd` — use extractResultData instead — Fixed by /qa Run 10 on main, 2026-03-28 (ISSUE-002)
 - [x] `extractTopicKeywords` doesn't filter numeric-only tokens — add isNaN guard — Fixed by /qa Run 11 on main, 2026-03-28 (ISSUE-002): added `/^\d+$/` filter
 - [x] `isTopicGroupFresh` brittle to topic naming variations — consider fuzzy matching — Fixed by /qa Run 11 on main, 2026-03-28 (ISSUE-003): checks all matching sections, not just first
 - [x] `branchName` doesn't sanitize `instanceName` for illegal git branch chars — add validation — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-002)
 - [x] `listWorktrees` swallows all git errors silently — log warning on error — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-004)
-- [ ] Pipeline `startTime!` non-null assertion — use explicit default
-- [ ] Pipeline dynamic import of orchestrator creates circular dependency — extract shared interface
+- [x] Pipeline `startTime!` non-null assertion — use explicit default — Replaced with `?? state.startTime` fallback, 2026-03-29
+- [x] Pipeline dynamic import of orchestrator creates circular dependency — extract shared interface — No circular dep exists; converted to static import, 2026-03-29
 
 **Effort:** XS each (human: ~30 min each / CC: ~5 min each)
 **Depends on:** Nothing
@@ -293,3 +297,39 @@ Implemented in commit 0b53787 + eng review fixes. `createTextAccumulatingCallbac
 ## ~~P2: Pipeline Resume After Daemon Crash~~ ✅ COMPLETE (2026-03-29)
 
 Shipped in 5 commits on `garyclaw/overnight-3`: retry logic in `job-runner.ts` (re-queue with `retryCount`, abandon after 3 crashes), `resumePipeline` wiring for multi-skill jobs with `pipeline.json`, `priorSkillCostUsd` for dashboard cost tracking, crash recovery stats in `formatDashboard`, and `notifyJobResumed` for recovery notifications. 27 tests in `job-runner-resume.test.ts` + 11 regression tests from QA review.
+
+## P3: Oracle Session Reuse (Latency Optimization — Approach A)
+
+**What:** Maintain a persistent Oracle conversation per ask-handler instance. First decision sends full 43K context (principles + memory + history), subsequent decisions resume with just ~1K (the new question). Expected 50% latency reduction across ALL Oracle calls, not just multi-question batches.
+
+**Why:** Oracle batching (COMPLETE) only helps when multiple questions arrive in the same AskUserQuestion call. In practice, most questions arrive individually (1 per tool call). Session reuse would give 50% reduction on ALL Oracle calls by amortizing the 43K prompt across the session.
+
+**Approach:** SDK resume with `maxTurns:1` Oracle-style queries. First call builds full prompt, subsequent calls resume the same conversation with just the new question. Requires a spike to verify SDK resume works with single-turn Oracle queries.
+
+**Pros:** 50% latency reduction on every Oracle call. Compounds with batching (batching helps multi-question, session reuse helps single-question).
+
+**Cons:** Requires spike to verify SDK resume behavior. Session state management adds complexity. If the session context grows unbounded, may need periodic reset.
+
+**Context:** Recommended by /plan-eng-review on 2026-03-29 as the primary optimization. Batching was the secondary optimization (now COMPLETE). Session reuse is the bigger win because it applies to all calls.
+
+**Effort:** S (human: ~3 days / CC: ~30 min)
+**Depends on:** Oracle batching (COMPLETE), spike to verify SDK resume with maxTurns:1
+**Added by:** /plan-eng-review on 2026-03-29
+
+## P5: Route parseBatchOracleResponse console.warn Through Callbacks
+
+**What:** 4 `console.warn` calls in `parseBatchOracleResponse` (oracle.ts:468-490) use stderr for fallback path observability. The rest of GaryClaw routes diagnostics through event callbacks. In daemon mode, stderr warnings are invisible... they don't appear in the daemon log, decision audit trail, or dashboard.
+
+**Why:** When batch parsing falls back (array length mismatch, JSON parse failure, individual object fallback), operators have zero visibility. These are exactly the situations you'd want to know about.
+
+**Implementation:** Add an optional `onWarn?: (msg: string) => void` callback to `parseBatchOracleResponse`, or return warnings alongside results for the caller to emit via the existing event system. The 4 `console.warn` calls become `onWarn?.()` calls.
+
+**Effort:** XS (human: ~30 min / CC: ~5 min)
+**Depends on:** Nothing
+**Added by:** /plan-eng-review recommendation on 2026-03-29, written by /qa on 2026-03-29
+
+## ~~P4: Extract Shared Oracle Prompt Prefix (DRY Fix)~~ — COMPLETE
+
+**Completed:** 2026-03-29. Prompt prefix extracted in commit e878ab4 (`buildOraclePromptPrefix`). Field extraction helper extracted in commit 314ee5d (`extractOracleFields`). Both `buildOraclePrompt`/`buildBatchOraclePrompt` and `parseOracleResponse`/`parseBatchOracleResponse` now share single implementations.
+
+**Added by:** /plan-eng-review on 2026-03-29

@@ -39,7 +39,7 @@ import {
 } from "./token-monitor.js";
 import { writeCheckpoint, readCheckpoint, generateRelayPrompt } from "./checkpoint.js";
 import { createAskHandler } from "./ask-handler.js";
-import { askOracle, createSdkOracleQueryFn } from "./oracle.js";
+import { askOracle, askOracleBatch, createSdkOracleQueryFn } from "./oracle.js";
 import { executeRelay, finalizeRelay } from "./relay.js";
 import { buildReport, formatReportMarkdown } from "./report.js";
 import { PerJobCostExceededError, type Issue } from "./types.js";
@@ -276,6 +276,7 @@ async function runSkillInternal(
         ? {
             oracle: {
               askOracle,
+              askOracleBatch,
               config: {
                 queryFn: createSdkOracleQueryFn(config.env),
                 escalateThreshold: 6,

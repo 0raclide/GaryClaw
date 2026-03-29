@@ -37,6 +37,7 @@ vi.mock("../src/checkpoint.js", async (importOriginal) => {
 
 vi.mock("../src/oracle.js", () => ({
   askOracle: vi.fn(),
+  askOracleBatch: vi.fn(),
   createSdkOracleQueryFn: vi.fn().mockReturnValue(vi.fn()),
 }));
 
