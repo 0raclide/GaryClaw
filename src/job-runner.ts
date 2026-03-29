@@ -50,7 +50,7 @@ import {
   buildFailureRecord,
   appendFailureRecord,
 } from "./failure-taxonomy.js";
-import { readDecisionsFromLog } from "./reflection.js";
+import { readDecisionsFromLog, countPipelineOutcomes } from "./reflection.js";
 import { getResearchTopics } from "./auto-research.js";
 import { readOracleMemory, defaultMemoryConfig } from "./oracle-memory.js";
 import {
@@ -538,6 +538,45 @@ export function createJobRunner(
             }
           }
         }
+        // ── Oracle-recommended pipeline override ───────────────────
+        // If the prioritize skill output a "### Recommended Pipeline" section
+        // and we have enough pipeline outcome data, use it instead of static table.
+        const priorityDir = jobConfig.worktreePath ?? jobConfig.projectDir;
+        const priorityPath = join(priorityDir, ".garyclaw", "priority.md");
+        const priorityContent = safeReadText(priorityPath);
+        if (priorityContent) {
+          const oracleRecommendation = parsePipelineRecommendation(priorityContent);
+          if (oracleRecommendation) {
+            // Count pipeline outcomes from decision-outcomes.md for cold-start gate
+            const memConfig = defaultMemoryConfig(jobConfig.projectDir);
+            const memoryFiles = readOracleMemory(memConfig, jobConfig.projectDir);
+            const pipelineOutcomeCount = countPipelineOutcomes(memoryFiles.decisionOutcomes);
+
+            if (pipelineOutcomeCount >= ORACLE_PIPELINE_THRESHOLD) {
+              // Intersect with requestedSkills (oracle can only remove, never add)
+              const oracleComposed = originalSkills.filter(s => oracleRecommendation.includes(s));
+              if (oracleComposed.length > 0 && oracleComposed.length !== nextJob.skills.length) {
+                d.log("info", `Oracle pipeline override: [${nextJob.skills.join(", ")}] -> [${oracleComposed.join(", ")}] (${pipelineOutcomeCount} outcomes)`);
+                nextJob.skills = oracleComposed;
+                nextJob.composedFrom = nextJob.composedFrom ?? originalSkills;
+                nextJob.compositionMethod = "oracle";
+                callbacks.onEvent({
+                  type: "pipeline_composed",
+                  originalSkills,
+                  composedSkills: oracleComposed,
+                  reason: `oracle recommendation (${pipelineOutcomeCount} outcomes)`,
+                });
+              }
+            } else {
+              d.log("debug", `Oracle pipeline recommendation available but only ${pipelineOutcomeCount}/${ORACLE_PIPELINE_THRESHOLD} outcomes — using static table`);
+            }
+          }
+        }
+
+        // Set compositionMethod to "static" if composition happened but oracle didn't override
+        if (nextJob.composedFrom && !nextJob.compositionMethod) {
+          nextJob.compositionMethod = "static";
+        }
       } catch (err) {
         d.log("warn", `Pipeline composition failed: ${err instanceof Error ? err.message : String(err)}`);
         // Fail-open: use original skills
@@ -978,6 +1017,27 @@ function buildGaryClawConfig(
 export function parsePriorityPickTitle(content: string): string | null {
   const match = content.match(/^## Top Pick:\s*(.+)/m);
   return match ? match[1].trim() : null;
+}
+
+/** Minimum pipeline outcome count before oracle recommendations override static table. */
+export const ORACLE_PIPELINE_THRESHOLD = 10;
+
+/**
+ * Parse the "### Recommended Pipeline" section from priority.md content.
+ * Returns an array of skill names, or null if the section is missing or malformed.
+ *
+ * Accepts both ASCII arrows (->) and unicode arrows (→).
+ * Allows blank lines between the heading and the pipeline content.
+ */
+export function parsePipelineRecommendation(content: string): string[] | null {
+  const match = content.match(
+    /### Recommended Pipeline\s*\n+\s*([a-z][a-z0-9-]*(?:\s*(?:->|→)\s*[a-z][a-z0-9-]*)*)/i,
+  );
+  if (!match) return null;
+  return match[1]
+    .split(/\s*(?:->|→)\s*/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 function buildCallbacks(
