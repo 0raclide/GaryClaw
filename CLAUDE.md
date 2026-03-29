@@ -33,7 +33,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
-- 38 source modules + CLI, 160 test files, 2745 tests
+- 38 source modules + CLI, 161 test files, 2758 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -300,7 +300,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/safe-json-extended.test.ts` | 13 | Extended safe-json: concurrent writes, large files, encoding |
 | `test/safe-json.regression-1.test.ts` | 5 | ENOENT retry on rename during parallel cold-start I/O |
 | `test/oracle-memory.test.ts` | 47 | Two-layer resolution, sanitization, metrics, circuit breaker, outcomes |
-| `test/reflection.test.ts` | 42 | Levenshtein, reopened detection, outcome mapping, reflection runner, sandboxing |
+| `test/reflection.test.ts` | 46 | Levenshtein, reopened detection, outcome mapping, reflection runner, sandboxing |
 | `test/reflection-pipeline-outcome.test.ts` | 19 | buildPipelineOutcome: success/acceptable/failure, skipped skills, compositionMethod; countPipelineOutcomes: null/empty/positive/mixed |
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
@@ -347,7 +347,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/file-conflict.test.ts` | 30 | extractPredictedFiles, expandWithDependencies, hasFileOverlap, DEFAULT_FILE_DEPS validation |
 | `test/daemon-registry-file-conflict.test.ts` | 7 | getClaimedFiles: cross-instance scanning, self-exclusion, status filtering, aggregation |
 | `test/job-runner-file-conflict.test.ts` | 8 | File conflict integration: skip conflicting items, fall-through, fail-open, custom dep map, idle on all blocked |
-| `test/todo-state.test.ts` | 58 | slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation truth table, getStartSkill, findNextSkill, skillToTodoState |
+| `test/todo-state.test.ts` | 66 | slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation truth table, getStartSkill, findNextSkill, skillToTodoState |
 | `test/todo-state-automark.test.ts` | 10 | markTodoCompleteInFile: heading match, strikethrough, case sensitivity, no-match safety |
 | `test/types-warn.test.ts` | 3 | resolveWarnFn: callback passthrough, console.warn fallback, undefined handling |
 | `test/job-runner-todo-state.test.ts` | 10 | TODO state integration: skip complete, trim pipeline, design doc passthrough, fail-open, single-skill bypass |
@@ -370,6 +370,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/doctor-injection.test.ts` | 11 | Doctor injection: hasInjectionPatterns via checkOracleMemory, all 8 patterns, false positives, corrupt metrics, circuit breaker, --fix |
 | `test/evaluate-claims.test.ts` | 26 | Claim verification: extractClaudeMdClaims, verifyClaudeMdClaims |
 | `test/evaluate-claims.regression-1.test.ts` | 5 | Evaluate claims regression: double-counting, no-claims fallback, P1-P5 mismatch |
+| `test/evaluate-claims.regression-2.test.ts` | 13 | Evaluate claims regression: per-feature test-count verification, PostgreSQL indirect deps via Supabase/Prisma/Drizzle, NihontoWatch fixture integration |
 | `test/evaluate-semantic-validation.test.ts` | 43 | Semantic bootstrap validation: extractCommandClaims, extractTestDirectoryClaims, command + test_directory claim verification |
 | `test/evaluate.regression-5.test.ts` | 4 | Evaluate regression: stale improvement-candidates.md duplicate TODOs |
 | `test/job-runner-auto-mark.test.ts` | 9 | Job runner auto-mark: catchUpCompletedTodos marks TODOS.md headings for merged items |
