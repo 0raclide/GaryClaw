@@ -164,103 +164,62 @@ All three items from `docs/designs/implement-skill-hardening.md` implemented: `v
 
 Implemented in commit 923c08a. Aggregates avg/min/max adaptive turns per job, segment count with adaptive prediction vs. fallback default, heavy tool multiplier activation distribution. 27 tests in `test/dashboard.test.ts` and `test/dashboard.regression-1.test.ts`.
 
-## P2: Auto-Mark TODOS.md When Features Land on Main
+## P2: Self-Maintaining Backlog — Auto-Complete + Rate Limit Resilience
 
-**What:** After a successful auto-merge (or when the default daemon commits directly to main), scan the git log for recent commits and match them against open TODOS.md items. When a match is found, automatically update the heading to `~~complete~~` with a summary. This closes the loop between "feature built" and "TODO marked done."
+**What:** Two capabilities that make the daemon's backlog management fully autonomous:
 
-**Why:** The #1 operational pain in Session 3. The daemon built features and committed them to main, but TODOS.md still showed them as open. Next cycle re-picked them, re-built them, wasted $30+ overnight. Even with TODO state tracking, the disagreement between TODOS.md and state files caused infinite skip→re-enqueue loops that required manual intervention every time.
+**1. Auto-mark TODOS.md when features land on main.** After a successful pipeline (auto-merge or direct commit), scan git log for recent commits, fuzzy-match against open TODO titles, and update the heading to `~~complete~~` with a summary. Also runs on daemon start as catch-up for items completed before a crash. Guard: never mark items currently "running" in any instance.
 
-**Implementation notes:**
-- After auto-merge or after a pipeline completes on default instance: scan `git log --oneline -10` for recent feat/fix commits
-- Match commit messages against open TODO titles (fuzzy match via Levenshtein, threshold 0.3)
-- When matched: read TODOS.md, find the `## P{N}: {title}` heading, replace with `## ~~P{N}: {title}~~ — COMPLETE ({date})`
-- Add a 1-line summary: "Implemented by {instanceName} daemon. {commitCount} commits."
-- Guard: never mark an item complete that's currently "running" in any instance's daemon-state.json
-- Also run on daemon start: scan for items that were built but never marked (catch-up for crashes)
+**2. Rate limit backoff with scheduled retry.** Parse the reset time from Claude Max rate limit errors ("resets at Xpm"), store `rateLimitResetAt` in daemon state, hold queued jobs until the reset time passes. Mark rate-limited jobs as `"rate_limited"` status (not "complete") so cross-cycle dedup ignores them. Prevents the spam-retry pattern that burned through 25+ auth attempts in 10 seconds overnight.
 
-**Files:** `src/job-runner.ts` (post-merge hook), `src/prioritize.ts` (reuse `parseTodoItems`), new function `markTodoComplete(projectDir, title, summary)`
+**Why:** The two biggest operational pains in Session 3. Auto-mark: daemon built features but TODOS.md showed them open → re-picked → rebuilt → $30 wasted overnight. Rate limit: 5 instances hit limit at 02:19 → spam-retried → ran $0 pipelines → polluted dedup → lost 4 hours of idle time.
 
-**Effort:** S (human: ~2 days / CC: ~15 min)
+**Files:** `src/job-runner.ts` (post-pipeline hook for auto-mark, rate limit check in processNext), `src/orchestrator.ts` (parse reset time from auth error), `src/types.ts` (rateLimitResetAt, rate_limited status), new function `markTodoComplete()`
+
+**Effort:** S (human: ~3 days / CC: ~25 min)
 **Depends on:** Nothing
 **Added by:** Session 3 retrospective on 2026-03-29
 
-## P2: Rate Limit Backoff With Scheduled Retry
+## P2: Adaptive Pipeline Composition — Skill Sequence Based on Task
 
-**What:** When the daemon hits a Claude Max rate limit ("You've hit your limit, resets at Xpm"), it currently retries 5 times in 10 seconds, burns through all pipeline skills at $0, and marks the job "complete" with zero work done. Instead: parse the reset time from the error, back off, and schedule a retry at the reset time.
+**What:** Choose which pipeline skills to run based on the TODO's priority, effort, and current state. Currently every item runs the full 5-skill pipeline (`prioritize → office-hours → implement → eng-review → qa`) regardless of whether it's a 4-line P5 fix or a multi-file P2 feature. This wastes $3-4 and 30 minutes on tasks that need 2 minutes.
 
-**Why:** On 2026-03-29 overnight, rate limits hit at 02:19 and 08:05. Each time, 5 parallel instances spam-retried auth 25+ times in seconds, then ran entire 5-skill pipelines with every skill instantly failing. The jobs were marked "complete" despite doing nothing, polluting cross-cycle dedup. Total waste: ~$0 direct but lost 2 cron cycles (4 hours of idle time per instance).
+**Skill sequence rules:**
+- **P2/P3 + S/M effort** → full pipeline (prioritize → office-hours → implement → eng-review → qa)
+- **P4/P5 + XS effort** → fast path (implement → qa only, skip design and review)
+- **Multiple XS items from same priority** → batch into one implement session ("fix these 4 things")
+- **Already designed (state: "designed")** → skip prioritize + office-hours, start at implement
+- **Already reviewed (state: "reviewed")** → skip to QA only
 
-**Implementation notes:**
-- In orchestrator's `verifyAuth()`: parse error message for reset time (`resets Xam/pm (Timezone)`)
-- Store reset time in daemon state: `rateLimitResetAt: ISO string`
-- In job-runner `processNext()`: before starting any job, check `rateLimitResetAt`. If in the future, skip with log "Rate limited until {time}" and don't mark job as failed (keep queued)
-- On each processNext tick (5s interval): re-check. When past reset time, clear the flag and proceed
-- Mark rate-limited jobs as "rate_limited" status (not "complete") so cross-cycle dedup ignores them
+Also includes: configurable skill sequences in daemon.json per trigger type, runtime skill selection in job-runner based on pre-assigned item metadata.
 
-**Files:** `src/orchestrator.ts` (auth error parsing), `src/job-runner.ts` (rate limit check), `src/types.ts` (rateLimitResetAt on DaemonState, rate_limited JobStatus)
+**Why:** 4 P5 items currently in the backlog each take a full 30-min cycle when they need 2 minutes. That's $12-16 and 2 hours for work that should cost $1 and take 10 minutes. As the daemon matures, most remaining items will be small fixes — the pipeline overhead becomes the bottleneck.
 
-**Effort:** S (human: ~2 days / CC: ~20 min)
+**Files:** `src/job-runner.ts` (skill selection logic in processNext), `src/pipeline.ts` (support dynamic skill lists), `src/types.ts` (pipeline composition config)
+
+**Effort:** S (human: ~3 days / CC: ~25 min)
 **Depends on:** Nothing
 **Added by:** Session 3 retrospective on 2026-03-29
 
-## P3: Auto-Cleanup on Daemon Start (Doctor Auto-Fix)
+## P3: Daemon Fleet Command — Parallel Launch + Auto-Cleanup + Live Status
 
-**What:** Run `garyclaw doctor --fix` automatically when a daemon starts. Detects and fixes: stale PID files from dead instances, orphaned worktrees, stuck reflection/merge locks, stale global budget entries from dead instances, orphaned TODO state files. Currently all of these require manual intervention — we spent 15+ minutes per session cleaning up stale state.
+**What:** Three capabilities that make parallel daemon operation a first-class experience:
 
-**Why:** Every session started with manual cleanup: killing stale PIDs, resetting global budgets, removing orphaned worktrees, cleaning instance dirs. The doctor command exists and can fix all of these — it just needs to run automatically on daemon start instead of requiring a manual invocation.
+**1. `daemon start --parallel N`.** Single command to launch N coordinated instances. Creates worker-1 through worker-N with worktrees, writes per-instance configs (unique designDoc for dedup bypass), triggers each with the self-improvement pipeline. Validates budget fits N simultaneous jobs. Replaces 50+ manual tool calls.
 
-**Implementation notes:**
-- In `src/daemon.ts` `startDaemon()`: call `runDoctorFix(checkpointDir)` before starting pollers
-- `runDoctorFix`: run all 7 doctor checks with `--fix` behavior (auto-resolve stale PIDs, stuck locks, orphaned state)
-- Log each fix: "Auto-fix: removed stale PID for instance {name}"
-- Don't fail daemon start if doctor finds unfixable issues — just log warnings
-- Global budget cleanup: zero out entries for instances whose PID is dead
+**2. Auto-cleanup on start.** Runs `doctor --fix` automatically when any daemon starts: clears stale PIDs, orphaned worktrees, stuck locks, dead instance budget entries, orphaned TODO state files. No more manual cleanup sessions.
 
-**Files:** `src/daemon.ts` (startup hook), `src/doctor.ts` (extract fix logic into callable function)
+**3. Real-time pipeline status.** `daemon status` shows: current skill (e.g., "implement 3/5"), claimed TODO title, time elapsed, commits made. Format: `Running: implement (3/5) — "Self-Commit Filtering" — 12m 34s — 3 commits`. Reads pipeline.json + worktree git log. Replaces 100+ manual log-reading tool calls per session.
 
-**Effort:** XS (human: ~1 day / CC: ~10 min)
+**Why:** Launching 5 parallel instances in Session 3 took 30+ minutes of manual orchestration per attempt. Every session started with 15+ minutes of cleanup. Every status check required reading raw logs. These three features make parallel operation a single command with full visibility.
+
+**Files:** `src/cli.ts` (--parallel flag, status formatting), `src/daemon.ts` (multi-instance start, doctor-on-boot, IPC status enhancement), `src/doctor.ts` (extract fix logic into callable function)
+
+**Effort:** M (human: ~1 week / CC: ~45 min)
 **Depends on:** Nothing
 **Added by:** Session 3 retrospective on 2026-03-29
 
-## P3: `daemon start --parallel N` Command
-
-**What:** Single command to launch N coordinated parallel instances: `garyclaw daemon start --parallel 5`. Creates N named instances (worker-1 through worker-N) with worktrees, triggers each with the self-improvement pipeline, handles per-instance designDoc for dedup bypass. Replaces the 50+ manual tool calls it currently takes to launch a parallel fleet.
-
-**Why:** Launching 5 parallel instances in Session 3 required: starting each individually, triggering each with unique designDoc, debugging dedup rejections, handling stale state. The whole process took 30+ minutes of manual orchestration each time. A single command would make parallel operation accessible.
-
-**Implementation notes:**
-- New CLI flag: `daemon start --parallel N` (default: 1, max: 10)
-- Creates instances: `worker-1` through `worker-N` with worktrees
-- Writes per-instance daemon.json (unique designDoc in cron trigger for dedup bypass)
-- Triggers each with `prioritize office-hours implement plan-eng-review qa --design-doc worker-{i}`
-- Auto-cleanup on `daemon stop --all --cleanup`: removes all worker instances
-- Budget: validates N × perJobCost fits within dailyCostLimit before launching
-
-**Files:** `src/cli.ts` (--parallel flag), `src/daemon.ts` (multi-instance start logic)
-
-**Effort:** S (human: ~2 days / CC: ~20 min)
-**Depends on:** Nothing
-**Added by:** Session 3 retrospective on 2026-03-29
-
-## P3: Real-Time Pipeline Status in `daemon status`
-
-**What:** Extend `daemon status` to show what each instance is actively working on: current skill (e.g., "implement 3/5"), claimed TODO title, time elapsed, commits made so far. Currently just shows "Running: yes" with job ID and cost — zero visibility into what's happening.
-
-**Why:** Every status check in Session 3 required reading the daemon log, grepping for "Starting skill", checking git log in worktrees, and reading pipeline.json. A single `daemon status` should show all of this. Would have saved 100+ log-reading tool calls across the session.
-
-**Implementation notes:**
-- In `daemon status` IPC response: include `currentSkill` (from pipeline.json `currentSkillIndex`), `claimedTodoTitle` (from job), `elapsedSeconds`, `commitCount` (from git log in worktree)
-- Format: `Running: implement (3/5) — "Self-Commit Filtering" — 12m 34s — 3 commits`
-- Read pipeline.json from current job dir for skill progress
-- Read worktree git log for commit count since branch creation
-
-**Files:** `src/daemon.ts` (IPC status handler), `src/cli.ts` (status display formatting)
-
-**Effort:** S (human: ~2 days / CC: ~15 min)
-**Depends on:** Nothing
-**Added by:** Session 3 retrospective on 2026-03-29
-
-## P3: Memory-Informed Adaptive Scheduling
+## P3: Oracle Intelligence — Session Reuse + Memory-Informed Scheduling
 
 **What:** The Oracle learns optimal trigger patterns from job outcomes — e.g., "QA finds 3x more bugs after large commits, so trigger QA after commits touching 5+ files, not on every push." Replaces static cron rules with learned patterns.
 
@@ -438,16 +397,25 @@ Shipped in 5 commits on `garyclaw/overnight-3`: retry logic in `job-runner.ts` (
 **Depends on:** Oracle batching (COMPLETE), spike to verify SDK resume with maxTurns:1
 **Added by:** /plan-eng-review on 2026-03-29
 
-## P5: Route parseBatchOracleResponse console.warn Through Callbacks
+## ~~P5: Route parseBatchOracleResponse console.warn Through Callbacks~~ — COMPLETE
 
-**What:** 4 `console.warn` calls in `parseBatchOracleResponse` (oracle.ts:468-490) use stderr for fallback path observability. The rest of GaryClaw routes diagnostics through event callbacks. In daemon mode, stderr warnings are invisible... they don't appear in the daemon log, decision audit trail, or dashboard.
+**Completed:** 2026-03-29. Commit c8282bd added `onWarn?: (msg: string) => void` to `parseBatchOracleResponse` and `askOracleBatch`. All 4 `console.warn` calls now route through the callback, with `console.warn` as the default fallback. Threading wired through ask-handler → orchestrator → event system. 11 tests in `oracle-batch-warn.test.ts`, 3 tests in `ask-handler-batch.regression-2.test.ts`.
 
-**Why:** When batch parsing falls back (array length mismatch, JSON parse failure, individual object fallback), operators have zero visibility. These are exactly the situations you'd want to know about.
+**Added by:** /plan-eng-review recommendation on 2026-03-29, completed by daemon on 2026-03-29
 
-**Implementation:** Add an optional `onWarn?: (msg: string) => void` callback to `parseBatchOracleResponse`, or return warnings alongside results for the caller to emit via the existing event system. The 4 `console.warn` calls become `onWarn?.()` calls.
+## P5: Route Remaining 8 console.warn Calls Through Callbacks
 
-**Effort:** XS (human: ~30 min / CC: ~5 min)
-**Depends on:** Nothing
+**What:** 8 `console.warn` calls remain across 3 modules, all invisible in daemon mode:
+- `ask-handler.ts` (2): decision log write failure, escalated log write failure
+- `reflection.ts` (4): lock timeout, outcome write failure, metrics write failure, corrupt JSONL skip
+- `worktree.ts` (2): stash pop failure, worktree list failure
+
+**Why:** The onWarn pattern is now proven (parseBatchOracleResponse). These 8 calls represent the same observability gap. In daemon mode, operators can't see any of these warnings.
+
+**Implementation:** Apply the same `onWarn?: (msg: string) => void` pattern to each module. Thread from orchestrator config → ask-handler/reflection/worktree. Existing `oracle-batch-warn.test.ts` serves as the test template.
+
+**Effort:** S (human: ~1 hr / CC: ~10 min)
+**Depends on:** P5 onWarn pattern (COMPLETE)
 **Added by:** /plan-eng-review recommendation on 2026-03-29, written by /qa on 2026-03-29
 
 ## ~~P4: Extract Shared Oracle Prompt Prefix (DRY Fix)~~ — COMPLETE
