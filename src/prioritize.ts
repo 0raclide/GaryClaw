@@ -332,6 +332,13 @@ Write \`.garyclaw/priority.md\` with this exact structure:
 ## Skipped Items
 - [Title]: [reason — unmet deps / too large / P4 while P2 exists]
 
+### Recommended Pipeline
+implement -> qa
+
+### Pipeline Reasoning
+[1-2 sentences explaining why these specific skills were chosen or omitted.
+Reference past pipeline outcomes if available in decision history.]
+
 ## Backlog Health
 - Total items: N
 - Actionable (all deps met): N
@@ -356,6 +363,29 @@ The backlog may need new items, dependency resolution, or scope splitting.
 \`\`\`
 
 Then STOP. Do not pick an item below the threshold.
+
+## Recommended Pipeline Guidelines
+
+After scoring, recommend a pipeline (sequence of skills) for the top pick:
+- Consider the item's blast radius (files touched, cross-module impact)
+- Consider past pipeline outcomes from decision history (if available)
+- When skipping a skill (e.g., office-hours, plan-eng-review), state what evidence supports the skip
+- Default to these rules when no pipeline outcome data exists:
+  - XS effort: implement -> qa
+  - S effort, low priority: implement -> qa
+  - S effort, P2-P3 with design doc: implement -> plan-eng-review -> qa
+  - S effort, P2-P3 without design doc: office-hours -> implement -> qa
+  - M+ effort or P1: prioritize -> office-hours -> implement -> plan-eng-review -> qa
+- Use arrow notation: skill1 -> skill2 -> skill3
+
+### Pipeline Outcome History
+
+When you see "Pipeline Outcomes" in the decision history, use them to adjust your
+Recommended Pipeline:
+- If skipping skill X led to "failure" outcomes (3+ QA issues), include X
+- If skipping skill X led to "success" outcomes, continue skipping X
+- If mixed results, include X for high-blast-radius items, skip for low-risk
+- Weight recent outcomes more heavily than older ones
 
 ## Anti-Patterns
 
