@@ -4,12 +4,16 @@
  * Two modes:
  * - Human mode (default): prompts user via onAskUser callback
  * - Autonomous mode: routes to Decision Oracle, with escalation fallback
+ *
+ * Oracle Decision Batching: When multiple questions arrive in a single
+ * AskUserQuestion tool call in autonomous mode, they are batched into
+ * a single Oracle API call via askOracleBatch() instead of N serial calls.
  */
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Decision, CanUseToolResult, OracleMemoryFiles } from "./types.js";
-import type { OracleOutput, OracleConfig, OracleInput } from "./oracle.js";
+import type { OracleOutput, OracleConfig, OracleInput, OracleBatchInput, OracleBatchQuestion } from "./oracle.js";
 
 export interface AskHandlerConfig {
   onAskUser: (
@@ -25,6 +29,7 @@ export interface AskHandlerConfig {
   autonomous?: boolean;
   oracle?: {
     askOracle: (input: OracleInput, config: OracleConfig) => Promise<OracleOutput>;
+    askOracleBatch?: (input: OracleBatchInput, config: OracleConfig) => Promise<OracleOutput[]>;
     config: OracleConfig;
     skillName: string;
     projectContext?: string;
@@ -68,61 +73,22 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
     try {
       const answers: Record<string, string> = {};
 
-      for (const q of questions) {
-        const questionText = q.question;
-        const options = q.options ?? [];
-        const multiSelect = q.multiSelect ?? false;
+      if (config.autonomous && config.oracle) {
+        // Oracle mode — batch all questions into one API call when possible
+        await handleOracleBatch(questions, answers, decisions, config);
+      } else {
+        // Human mode — serial (each question prompted individually)
+        for (const q of questions) {
+          const questionText = q.question;
+          const options = q.options ?? [];
+          const multiSelect = q.multiSelect ?? false;
 
-        let decision: Decision;
-
-        if (config.autonomous && config.oracle) {
-          // Oracle mode
-          const oracleResult = await config.oracle.askOracle(
-            {
-              question: questionText,
-              options,
-              skillName: config.oracle.skillName,
-              decisionHistory: decisions,
-              projectContext: config.oracle.projectContext,
-              memory: config.oracle.memory,
-            },
-            config.oracle.config,
-          );
-
-          // When oracle chooses "Other" with a proposal, use the proposal as
-          // the free-text answer so the skill sees custom input, not just "Other".
-          const answerText =
-            oracleResult.choice.toLowerCase() === "other" && oracleResult.otherProposal
-              ? oracleResult.otherProposal
-              : oracleResult.choice;
-
-          decision = {
-            timestamp: new Date().toISOString(),
-            sessionIndex: config.sessionIndex,
-            question: questionText,
-            options,
-            chosen: oracleResult.choice,
-            confidence: oracleResult.confidence,
-            rationale: oracleResult.rationale,
-            principle: oracleResult.principle,
-          };
-
-          // Escalation: log to escalated.jsonl for audit trail.
-          // In autonomous mode, the oracle's choice is used regardless of escalation
-          // (no human to fall back to). The escalation log enables post-hoc review.
-          if (oracleResult.escalate) {
-            writeEscalatedLog(config.escalatedLogPath, decision, oracleResult);
-          }
-
-          answers[questionText] = answerText;
-        } else {
-          // Human mode
           const chosenLabel = await withTimeout(
             config.onAskUser(questionText, options, multiSelect),
             config.askTimeoutMs,
           );
 
-          decision = {
+          const decision: Decision = {
             timestamp: new Date().toISOString(),
             sessionIndex: config.sessionIndex,
             question: questionText,
@@ -134,12 +100,11 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
           };
 
           answers[questionText] = chosenLabel;
-        }
+          decisions.push(decision);
 
-        decisions.push(decision);
-
-        if (config.decisionLogPath) {
-          writeDecisionLog(config.decisionLogPath, decision);
+          if (config.decisionLogPath) {
+            writeDecisionLog(config.decisionLogPath, decision);
+          }
         }
       }
 
@@ -162,6 +127,116 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
   }
 
   return { canUseTool, getDecisions };
+}
+
+/**
+ * Handle Oracle decisions for all questions — uses batching when available
+ * and multiple questions arrive, falls back to serial for single question
+ * or when askOracleBatch is not provided.
+ */
+async function handleOracleBatch(
+  questions: Array<{
+    question: string;
+    header?: string;
+    options: { label: string; description: string }[];
+    multiSelect?: boolean;
+  }>,
+  answers: Record<string, string>,
+  decisions: Decision[],
+  config: AskHandlerConfig,
+): Promise<void> {
+  const oracle = config.oracle!;
+
+  // Use batching when: batch function available AND multiple questions
+  if (oracle.askOracleBatch && questions.length > 1) {
+    const batchQuestions: OracleBatchQuestion[] = questions.map((q, i) => ({
+      id: i + 1,
+      question: q.question,
+      options: q.options ?? [],
+    }));
+
+    const batchInput: OracleBatchInput = {
+      questions: batchQuestions,
+      skillName: oracle.skillName,
+      decisionHistory: [...decisions],  // Snapshot: don't share mutable reference
+      projectContext: oracle.projectContext,
+      memory: oracle.memory,
+    };
+
+    const batchResults = await oracle.askOracleBatch(batchInput, oracle.config);
+
+    // Process each result
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const oracleResult = batchResults[i];
+      processOracleResult(q, oracleResult, answers, decisions, config);
+    }
+  } else {
+    // Serial fallback: single question or no batch function
+    for (const q of questions) {
+      const oracleResult = await oracle.askOracle(
+        {
+          question: q.question,
+          options: q.options ?? [],
+          skillName: oracle.skillName,
+          decisionHistory: decisions,
+          projectContext: oracle.projectContext,
+          memory: oracle.memory,
+        },
+        oracle.config,
+      );
+
+      processOracleResult(q, oracleResult, answers, decisions, config);
+    }
+  }
+}
+
+/**
+ * Process a single oracle result: build decision, write logs, populate answers.
+ */
+function processOracleResult(
+  q: {
+    question: string;
+    options: { label: string; description: string }[];
+    multiSelect?: boolean;
+  },
+  oracleResult: OracleOutput,
+  answers: Record<string, string>,
+  decisions: Decision[],
+  config: AskHandlerConfig,
+): void {
+  const questionText = q.question;
+  const options = q.options ?? [];
+
+  // When oracle chooses "Other" with a proposal, use the proposal as
+  // the free-text answer so the skill sees custom input, not just "Other".
+  const answerText =
+    oracleResult.choice.toLowerCase() === "other" && oracleResult.otherProposal
+      ? oracleResult.otherProposal
+      : oracleResult.choice;
+
+  const decision: Decision = {
+    timestamp: new Date().toISOString(),
+    sessionIndex: config.sessionIndex,
+    question: questionText,
+    options,
+    chosen: oracleResult.choice,
+    confidence: oracleResult.confidence,
+    rationale: oracleResult.rationale,
+    principle: oracleResult.principle,
+  };
+
+  // Escalation: log to escalated.jsonl for audit trail.
+  if (oracleResult.escalate) {
+    writeEscalatedLog(config.escalatedLogPath, decision, oracleResult);
+  }
+
+  answers[questionText] = answerText;
+  decisions.push(decision);
+
+  if (config.decisionLogPath) {
+    writeDecisionLog(config.decisionLogPath, decision);
+  }
 }
 
 function writeDecisionLog(path: string, decision: Decision): void {
