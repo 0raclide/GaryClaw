@@ -625,6 +625,7 @@ async function runSkillInternal(
               issues: allIssues,
               jobId: runId,
               projectDir: config.projectDir,
+              onWarn: (msg) => callbacks.onEvent({ type: "assistant_text", text: msg }),
             });
           } catch (err) {
             // Reflection failure is non-fatal — don't block completion.

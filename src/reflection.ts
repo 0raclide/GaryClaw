@@ -17,12 +17,14 @@
  */
 
 import { join } from "node:path";
+import { resolveWarnFn } from "./types.js";
 import type {
   Decision,
   Issue,
   DecisionOutcome,
   OracleMemoryConfig,
   OracleMetrics,
+  WarnFn,
 } from "./types.js";
 import {
   readMetrics,
@@ -269,6 +271,7 @@ export interface ReflectionInput {
   jobId?: string;
   projectDir: string;
   memoryConfig?: OracleMemoryConfig;
+  onWarn?: WarnFn;
 }
 
 export interface ReflectionResult {
@@ -286,11 +289,12 @@ export interface ReflectionResult {
  */
 export function runReflection(input: ReflectionInput): ReflectionResult {
   const memConfig = input.memoryConfig ?? defaultMemoryConfig(input.projectDir);
+  const warn = resolveWarnFn(input.onWarn);
 
   // Acquire lock before reading+writing oracle memory (prevents concurrent clobber)
   const lockAcquired = acquireReflectionLock(memConfig.projectDir);
   if (!lockAcquired) {
-    console.warn("[GaryClaw] Could not acquire reflection lock (timeout) — skipping reflection writes");
+    warn("[GaryClaw] Could not acquire reflection lock (timeout) — skipping reflection writes");
     // Still compute outcomes for the return value, but don't write to disk
     const existingOutcomes = readDecisionOutcomes(memConfig);
     const reopenedIds = findReopenedDecisions(input.issues, existingOutcomes);
@@ -323,7 +327,7 @@ export function runReflection(input: ReflectionInput): ReflectionResult {
     try {
       writeDecisionOutcomesRolling(memConfig, allOutcomes);
     } catch (err) {
-      console.warn(`[GaryClaw] Failed to write decision outcomes: ${err instanceof Error ? err.message : String(err)}`);
+      warn(`[GaryClaw] Failed to write decision outcomes: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // Update metrics
@@ -335,7 +339,7 @@ export function runReflection(input: ReflectionInput): ReflectionResult {
     try {
       writeMetrics(memConfig, metrics);
     } catch (err) {
-      console.warn(`[GaryClaw] Failed to write metrics: ${err instanceof Error ? err.message : String(err)}`);
+      warn(`[GaryClaw] Failed to write metrics: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     return {
@@ -354,10 +358,11 @@ export function runReflection(input: ReflectionInput): ReflectionResult {
  * Read decisions from a decisions.jsonl file.
  * Returns an empty array if the file doesn't exist or is empty.
  */
-export function readDecisionsFromLog(decisionLogPath: string): Decision[] {
+export function readDecisionsFromLog(decisionLogPath: string, onWarn?: WarnFn): Decision[] {
   const content = safeReadText(decisionLogPath);
   if (!content) return [];
 
+  const warn = resolveWarnFn(onWarn);
   const decisions: Decision[] = [];
   for (const line of content.split("\n").filter(Boolean)) {
     try {
@@ -367,7 +372,7 @@ export function readDecisionsFromLog(decisionLogPath: string): Decision[] {
       }
     } catch {
       // Log warning for corrupt lines so silent data loss is visible
-      console.warn(`[reflection] Skipped corrupt JSONL line: ${line.slice(0, 120)}`);
+      warn(`[reflection] Skipped corrupt JSONL line: ${line.slice(0, 120)}`);
     }
   }
   return decisions;
