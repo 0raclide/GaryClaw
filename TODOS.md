@@ -290,22 +290,6 @@ Implemented in commit 0b53787 + eng review fixes. `createTextAccumulatingCallbac
 **Depends on:** Nothing
 **Added by:** human observation on 2026-03-28
 
-## P2: Pipeline Resume After Daemon Crash
+## ~~P2: Pipeline Resume After Daemon Crash~~ ✅ COMPLETE (2026-03-29)
 
-**What:** When the daemon restarts after a crash (Mac sleep, OOM, signal), it currently marks any running pipeline job as "failed" and moves on. Instead, it should detect the interrupted pipeline, read its `pipeline.json` state, and resume from the last completed skill. The pipeline state already tracks per-skill status (`complete`, `running`, `pending`). The crashed skill gets retried; subsequent skills run normally.
-
-**Why:** The full self-improvement pipeline (`prioritize → office-hours → implement → eng-review → qa`) costs $3-4 and takes 30-40 minutes. On 2026-03-28, a pipeline died mid-implement after spending $1.29 on prioritize + office-hours. That $1.29 was wasted — the daemon started fresh on the next cycle. Over a week of overnight operation with daily Mac sleeps, this wastes $10-20 in abandoned pipelines.
-
-**Pros:** Recovers $1-3 per crash. Makes the daemon resilient to interruptions. The infrastructure already exists: `pipeline.json` has skill status, the `resume` CLI command exists, and `job-runner.ts` already persists job state. The main work is wiring the daemon's restart logic to attempt resume instead of marking failed.
-
-**Cons:** Resuming a crashed skill is not always safe — if implement was mid-commit, the working tree might be dirty. Mitigation: the relay system already handles dirty working trees via `git stash --include-untracked`. The resumed skill starts fresh with a checkpoint prompt. One risk: if the crash was caused by the skill itself (infinite loop, OOM), resuming will hit the same crash. Mitigation: track retry count per job. If a job crashes twice, mark it failed and move on.
-
-**Implementation notes:**
-- In `src/job-runner.ts` `createJobRunner()`: change the startup loop that marks `running` jobs as `failed`. Instead, mark them as `queued` with a `retryCount` field incremented. If `retryCount >= 2`, mark as `failed`.
-- In `processNext()`: when starting a job with `retryCount > 0` and a `pipeline.json` that has completed skills, call `runPipeline` with a `resumeFromSkill` index derived from the pipeline state's `currentSkillIndex`.
-- In `src/pipeline.ts`: add `resumeFromSkill` parameter to `runPipeline()` that skips already-completed skills (their state is preserved in pipeline.json).
-- Add `retryCount` to the `Job` interface in `types.ts`.
-
-**Effort:** S (human: ~3 days / CC: ~20 min)
-**Depends on:** Nothing
-**Added by:** human observation on 2026-03-28
+Shipped in 5 commits on `garyclaw/overnight-3`: retry logic in `job-runner.ts` (re-queue with `retryCount`, abandon after 3 crashes), `resumePipeline` wiring for multi-skill jobs with `pipeline.json`, `priorSkillCostUsd` for dashboard cost tracking, crash recovery stats in `formatDashboard`, and `notifyJobResumed` for recovery notifications. 27 tests in `job-runner-resume.test.ts` + 11 regression tests from QA review.
