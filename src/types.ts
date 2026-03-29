@@ -160,7 +160,9 @@ export type OrchestratorEvent =
   | { type: "pipeline_skill_start"; skillName: string; skillIndex: number; totalSkills: number }
   | { type: "pipeline_skill_complete"; skillName: string; skillIndex: number; totalSkills: number; costUsd: number }
   | { type: "pipeline_complete"; totalSkills: number; totalCostUsd: number }
-  | { type: "adaptive_turns"; maxTurns: number; reason: string; sessionIndex: number; segmentIndex: number };
+  | { type: "adaptive_turns"; maxTurns: number; reason: string; sessionIndex: number; segmentIndex: number }
+  | { type: "bootstrap_quality_check"; qualityScore: number; missingSections: string[]; notes: string[] }
+  | { type: "bootstrap_quality_recheck"; qualityScore: number; previousScore: number };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;
@@ -544,6 +546,15 @@ export interface SegmentResult {
 
 // ── Evaluation (dogfood campaign evaluator) ──────────────────────
 
+export type ClaimType = "tech_stack" | "file_path" | "test_framework" | "entry_point";
+
+export interface ClaudeMdClaim {
+  type: ClaimType;
+  claimed: string;        // what CLAUDE.md says
+  evidence: string;       // what the filesystem shows
+  verified: boolean;      // does the claim hold?
+}
+
 export interface BootstrapEvaluation {
   claudeMdExists: boolean;
   claudeMdSizeTokens: number;
@@ -554,6 +565,10 @@ export interface BootstrapEvaluation {
   todosMdItemsAboveThreshold: number;    // items that scored >5.0 in prioritize
   qualityScore: number;                  // 0-100
   qualityNotes: string[];
+  claims?: ClaudeMdClaim[];              // per-claim verification results
+  claimsVerified?: number;               // count of verified claims
+  claimsTotal?: number;                  // total claims extracted
+  claimVerificationScore?: number;       // 0-20 sub-score
 }
 
 export interface OracleEvaluation {
