@@ -10,7 +10,7 @@
  */
 
 import { join } from "node:path";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 
 import { estimateTokens } from "./checkpoint.js";
@@ -274,11 +274,13 @@ function isNegationContext(content: string, matchIndex: number, matchLength: num
 /**
  * Extract factual claims from CLAUDE.md content.
  *
- * Extracts four types of claims:
+ * Extracts six types of claims:
  * - tech_stack: Framework/library names from KNOWN_FRAMEWORKS
  * - file_path: File paths matching src/..., lib/..., test/..., app/... patterns
  * - test_framework: Test runner mentions (vitest, jest, mocha, pytest, go test)
  * - entry_point: File paths near "entry point", "main file", "starts at" patterns
+ * - command: npm/yarn/pnpm/bun scripts and file-based commands from code blocks
+ * - test_directory: Test directory mentions and test file count claims
  *
  * Skips claims inside install instruction code blocks, tree listings,
  * and negation/comparison contexts.
@@ -400,7 +402,195 @@ export function extractClaudeMdClaims(claudeMdContent: string): ClaudeMdClaim[] 
     });
   }
 
+  // 6. Command claims
+  const commandClaims = extractCommandClaims(claudeMdContent);
+  for (const claim of commandClaims) addClaim(claim);
+
+  // 7. Test directory claims
+  const testDirClaims = extractTestDirectoryClaims(claudeMdContent);
+  for (const claim of testDirClaims) addClaim(claim);
+
   return claims;
+}
+
+// ── Command claim extraction ─────────────────────────────────────
+
+/**
+ * Extract verifiable command claims from fenced code blocks in CLAUDE.md.
+ *
+ * Extracts:
+ * - `npm run <script>` / `yarn <script>` / `pnpm <script>` / `bun run <script>` → npm-script:<script>
+ * - `npm test` / `npm start` → npm-script:test / npm-script:start
+ * - `npx tsx <path>` / `npx ts-node <path>` / `node <path>` → file-command:<path>
+ *
+ * Skips: npm install, git, cd, mkdir, echo, comments, variable assignments, npx <package>.
+ */
+export function extractCommandClaims(claudeMdContent: string): ClaudeMdClaim[] {
+  const claims: ClaudeMdClaim[] = [];
+  const seen = new Set<string>();
+
+  if (!claudeMdContent.trim()) return claims;
+
+  // Match fenced code blocks (```bash, ```sh, ``` with no language, ```zsh)
+  const fenceRegex = /^(`{3,}|~{3,})(bash|sh|zsh|shell|)?\s*\n([\s\S]*?)^\1/gm;
+  let blockMatch: RegExpExecArray | null;
+
+  while ((blockMatch = fenceRegex.exec(claudeMdContent)) !== null) {
+    const blockContent = blockMatch[3] ?? "";
+    const lines = blockContent.split("\n");
+
+    for (const rawLine of lines) {
+      // Strip leading whitespace, $, >, continuation chars
+      const line = rawLine.replace(/^\s*[$>]\s*/, "").trim();
+      if (!line) continue;
+
+      // Skip comments, variable assignments, non-command lines
+      if (line.startsWith("#")) continue;
+      if (/^\w+=/.test(line)) continue;
+      if (/^(cd|mkdir|echo|git|export|source|cat|cp|mv|rm|chmod|curl|wget)\b/.test(line)) continue;
+
+      // npm/yarn/pnpm/bun run <script>
+      const runMatch = line.match(/^(?:npm|yarn|pnpm|bun)\s+run\s+(\S+)/);
+      if (runMatch) {
+        const key = `npm-script:${runMatch[1]}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          claims.push({ type: "command", claimed: key, evidence: "", verified: false });
+        }
+        continue;
+      }
+
+      // npm test / npm start (shorthand for npm run test / npm run start)
+      const shorthandMatch = line.match(/^npm\s+(test|start)\b/);
+      if (shorthandMatch) {
+        const key = `npm-script:${shorthandMatch[1]}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          claims.push({ type: "command", claimed: key, evidence: "", verified: false });
+        }
+        continue;
+      }
+
+      // bun test (shorthand)
+      if (/^bun\s+test\b/.test(line)) {
+        const key = "npm-script:test";
+        if (!seen.has(key)) {
+          seen.add(key);
+          claims.push({ type: "command", claimed: key, evidence: "", verified: false });
+        }
+        continue;
+      }
+
+      // npx tsx <path> / npx ts-node <path> / node <path>
+      const fileCommandMatch = line.match(/^(?:npx\s+(?:tsx|ts-node)|node)\s+(\S+)/);
+      if (fileCommandMatch) {
+        const filePath = fileCommandMatch[1].replace(/[.,;:]+$/, "");
+        // Skip if it doesn't look like a file path (no / or no extension)
+        if (filePath.includes("/") || filePath.includes(".")) {
+          const key = `file-command:${filePath}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            claims.push({ type: "command", claimed: key, evidence: "", verified: false });
+          }
+        }
+        continue;
+      }
+
+      // Skip npx <package> (e.g., npx vitest) — not verifiable as file reference
+      // Skip npm install, npm ci, etc.
+    }
+  }
+
+  return claims;
+}
+
+// ── Test directory claim extraction ──────────────────────────────
+
+/**
+ * Extract test directory and test count claims from CLAUDE.md prose.
+ *
+ * Extracts:
+ * - Test directory mentions: `test/`, `tests/`, `__tests__/`, `spec/` in prose
+ * - Test file count claims: "N test files", "N tests" where N is a number
+ *
+ * Skips directories mentioned inside tree listing code blocks.
+ */
+export function extractTestDirectoryClaims(claudeMdContent: string): ClaudeMdClaim[] {
+  const claims: ClaudeMdClaim[] = [];
+  const seen = new Set<string>();
+
+  if (!claudeMdContent.trim()) return claims;
+
+  const fencedBlocks = extractFencedBlocks(claudeMdContent);
+  const treeBlocks = fencedBlocks.filter((b) => b.isTreeListing);
+
+  // 1. Test directory mentions in prose: `test/`, `tests/`, `__tests__/`, `spec/`, `specs/`
+  const dirPattern = /`((?:test|tests|__tests__|spec|specs))\/?`/g;
+  let dirMatch: RegExpExecArray | null;
+
+  while ((dirMatch = dirPattern.exec(claudeMdContent)) !== null) {
+    // Skip if inside tree listing
+    if (isInsideFencedBlock(dirMatch.index, treeBlocks)) continue;
+
+    const dirName = dirMatch[1];
+    const key = `test-dir:${dirName}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      claims.push({ type: "test_directory", claimed: key, evidence: "", verified: false });
+    }
+  }
+
+  // 2. Test file count claims: "N test files", "N tests", "N test files"
+  const countPattern = /(\d+)\s+test(?:\s+files?|s\b)/gi;
+  let countMatch: RegExpExecArray | null;
+
+  while ((countMatch = countPattern.exec(claudeMdContent)) !== null) {
+    // Skip if inside a code block
+    if (isInsideFencedBlock(countMatch.index, fencedBlocks)) continue;
+
+    const count = parseInt(countMatch[1], 10);
+    // Skip very small numbers that are probably not file counts (e.g., "2 test cases")
+    if (count < 5) continue;
+
+    const key = `test-count:${count}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      claims.push({ type: "test_directory", claimed: key, evidence: "", verified: false });
+    }
+  }
+
+  return claims;
+}
+
+// ── Test file counter (avoids circular import with bootstrap.ts) ─
+
+const SKIP_DIRS = new Set(["node_modules", ".git", ".garyclaw", "dist", "build", ".next", "coverage"]);
+
+/**
+ * Recursively count files matching a pattern. Lightweight alternative to
+ * walkFileTree that avoids the evaluate.ts ↔ bootstrap.ts circular import.
+ */
+function countTestFiles(dir: string, pattern: RegExp, cap = 5000): number {
+  let count = 0;
+  function walk(d: string): void {
+    if (count >= cap) return;
+    let entries: string[];
+    try { entries = readdirSync(d); } catch { return; }
+    for (const e of entries) {
+      if (count >= cap) return;
+      const full = join(d, e);
+      try {
+        const stat = statSync(full);
+        if (stat.isDirectory()) {
+          if (!SKIP_DIRS.has(e)) walk(full);
+        } else if (pattern.test(e)) {
+          count++;
+        }
+      } catch { /* permission error */ }
+    }
+  }
+  walk(dir);
+  return count;
 }
 
 // ── Claim verification ───────────────────────────────────────────
@@ -515,6 +705,82 @@ export function verifyClaudeMdClaims(
         } else {
           verified.verified = false;
           verified.evidence = "file does not exist";
+        }
+        break;
+      }
+
+      case "command": {
+        if (claim.claimed.startsWith("npm-script:")) {
+          const scriptName = claim.claimed.slice("npm-script:".length);
+          const pkgPath = join(projectDir, "package.json");
+          if (!existsSync(pkgPath)) {
+            verified.verified = true;
+            verified.evidence = "no package.json, verification deferred";
+            break;
+          }
+          try {
+            const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+            const scripts = pkg.scripts ?? {};
+            if (scriptName in scripts) {
+              verified.verified = true;
+              verified.evidence = `script exists: "${scripts[scriptName]}"`;
+            } else {
+              verified.verified = false;
+              const available = Object.keys(scripts);
+              verified.evidence = `no "${scriptName}" script in package.json${available.length > 0 ? ` (available: ${available.join(", ")})` : ""}`;
+            }
+          } catch {
+            verified.verified = true;
+            verified.evidence = "package.json parse error, verification deferred";
+          }
+        } else if (claim.claimed.startsWith("file-command:")) {
+          const filePath = claim.claimed.slice("file-command:".length);
+          if (existsSync(join(projectDir, filePath))) {
+            verified.verified = true;
+            verified.evidence = "file exists";
+          } else {
+            verified.verified = false;
+            verified.evidence = "file does not exist";
+          }
+        }
+        break;
+      }
+
+      case "test_directory": {
+        if (claim.claimed.startsWith("test-dir:")) {
+          const dirName = claim.claimed.slice("test-dir:".length);
+          const dirPath = join(projectDir, dirName);
+          if (existsSync(dirPath)) {
+            verified.verified = true;
+            verified.evidence = "directory exists";
+          } else {
+            const alternatives = ["test", "tests", "__tests__", "spec", "specs"];
+            const found = alternatives.filter((d) => existsSync(join(projectDir, d)));
+            verified.verified = false;
+            verified.evidence = found.length > 0
+              ? `directory does not exist (found instead: ${found.join(", ")})`
+              : "directory does not exist (no test directory found)";
+          }
+        } else if (claim.claimed.startsWith("test-count:")) {
+          const claimedCount = parseInt(claim.claimed.slice("test-count:".length), 10);
+          const testPattern = /\.(test|spec)\.(ts|tsx|js|jsx|mjs)$/;
+          let actualCount = 0;
+          try {
+            actualCount = countTestFiles(projectDir, testPattern);
+          } catch {
+            verified.verified = true;
+            verified.evidence = "could not count test files, verification deferred";
+            break;
+          }
+          // Allow 20% tolerance or 3 files, whichever is larger
+          const tolerance = Math.max(3, Math.ceil(claimedCount * 0.2));
+          if (Math.abs(actualCount - claimedCount) <= tolerance) {
+            verified.verified = true;
+            verified.evidence = `actual count: ${actualCount} (within tolerance of claimed ${claimedCount})`;
+          } else {
+            verified.verified = false;
+            verified.evidence = `actual count: ${actualCount}, claimed: ${claimedCount} (off by ${Math.abs(actualCount - claimedCount)})`;
+          }
         }
         break;
       }
@@ -1070,6 +1336,15 @@ export function formatEvaluationReport(report: EvaluationReport): string {
     lines.push("**Notes:**");
     for (const note of report.bootstrap.qualityNotes) {
       lines.push(`- ${note}`);
+    }
+    lines.push("");
+  }
+
+  const failedClaims = (report.bootstrap.claims ?? []).filter((c) => !c.verified);
+  if (failedClaims.length > 0) {
+    lines.push("**Failed Claims:**");
+    for (const claim of failedClaims) {
+      lines.push(`- [${claim.type}] "${claim.claimed}" — ${claim.evidence}`);
     }
     lines.push("");
   }

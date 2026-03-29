@@ -818,6 +818,10 @@ export async function buildEnrichedBootstrapPrompt(
             return `- Claimed test framework "${c.claimed}" but ${c.evidence}`;
           case "entry_point":
             return `- Claimed entry point "${c.claimed}" but ${c.evidence}`;
+          case "command":
+            return `- Command "${c.claimed.replace(/^(npm-script:|file-command:)/, "")}" — ${c.evidence}`;
+          case "test_directory":
+            return `- Test claim "${c.claimed.replace(/^(test-dir:|test-count:)/, "")}" — ${c.evidence}`;
         }
       });
       failedClaimsSection = `\n## Factual Errors Found\nThe previous CLAUDE.md contained these factual errors:\n${claimLines.join("\n")}\nPlease correct these in the new version.\n`;

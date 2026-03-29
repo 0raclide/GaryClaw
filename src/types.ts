@@ -569,7 +569,7 @@ export interface SegmentResult {
 
 // ── Evaluation (dogfood campaign evaluator) ──────────────────────
 
-export type ClaimType = "tech_stack" | "file_path" | "test_framework" | "entry_point";
+export type ClaimType = "tech_stack" | "file_path" | "test_framework" | "entry_point" | "command" | "test_directory";
 
 export interface ClaudeMdClaim {
   type: ClaimType;
