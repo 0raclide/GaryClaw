@@ -1,14 +1,27 @@
 {
   "date": "2026-03-29",
-  "url": "cli-tool",
+  "url": "cli-test-suite",
   "healthScore": 100,
   "issues": [
     {
       "id": "ISSUE-001",
-      "title": "formatDashboard and computeHealthScore crash on undefined mergeHealth",
-      "severity": "critical",
+      "title": "Cross-cycle dedup test skill collision",
+      "severity": "medium",
       "category": "functional",
-      "status": "verified"
+      "status": "fixed"
     }
-  ]
+  ],
+  "categoryScores": {
+    "console": 100,
+    "links": 100,
+    "functional": 100,
+    "visual": 100,
+    "ux": 100,
+    "performance": 100,
+    "content": 100,
+    "accessibility": 100
+  },
+  "testFiles": 119,
+  "testsRun": 2214,
+  "testsPassed": 2214
 }
