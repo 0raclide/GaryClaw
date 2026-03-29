@@ -272,6 +272,7 @@ async function runSkillInternal(
       sessionIndex,
       decisionLogPath,
       autonomous: config.autonomous,
+      onWarn: (msg: string) => callbacks.onEvent({ type: "assistant_text", text: msg }),
       ...(config.autonomous
         ? {
             oracle: {

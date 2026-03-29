@@ -349,6 +349,7 @@ function shouldEscalateForSecurity(
 export async function askOracleBatch(
   input: OracleBatchInput,
   config: OracleConfig,
+  onWarn?: (msg: string) => void,
 ): Promise<OracleOutput[]> {
   // Single question: no batching overhead, delegate to askOracle
   if (input.questions.length === 0) return [];
@@ -386,7 +387,7 @@ export async function askOracleBatch(
     }));
   }
 
-  const parsedAnswers = parseBatchOracleResponse(rawResponse, input.questions);
+  const parsedAnswers = parseBatchOracleResponse(rawResponse, input.questions, onWarn);
 
   // Apply escalation logic per question (same as single askOracle)
   return parsedAnswers.map((parsed, i) => {
@@ -452,7 +453,10 @@ Each element corresponds to one question, in order:
 export function parseBatchOracleResponse(
   raw: string,
   questions: OracleBatchQuestion[],
+  onWarn?: (msg: string) => void,
 ): Array<Omit<OracleOutput, "isTaste" | "escalate">> {
+  const warn = onWarn ?? console.warn;
+
   // Try to extract a JSON array
   const arrayMatch = raw.match(/\[[\s\S]*\]/);
   if (arrayMatch) {
@@ -465,11 +469,11 @@ export function parseBatchOracleResponse(
         });
       }
       // Array parsed but wrong length
-      console.warn(
+      warn(
         `[oracle-batch] JSON array parsed but length mismatch: expected ${questions.length}, got ${Array.isArray(parsed) ? parsed.length : "non-array"}. Falling back to individual JSON extraction.`,
       );
     } catch {
-      console.warn(
+      warn(
         `[oracle-batch] JSON array parse failed. Falling back to individual JSON extraction.`,
       );
     }
@@ -478,7 +482,7 @@ export function parseBatchOracleResponse(
   // Fallback: try to find individual JSON objects in the response
   const jsonObjects = raw.match(/\{[^{}]*\}/g);
   if (jsonObjects && jsonObjects.length >= questions.length) {
-    console.warn(
+    warn(
       `[oracle-batch] Using individual JSON object fallback: found ${jsonObjects.length} objects for ${questions.length} questions.`,
     );
     return questions.map((q, i) => {
@@ -487,7 +491,7 @@ export function parseBatchOracleResponse(
   }
 
   // Complete fallback: return fallback choices for all questions
-  console.warn(
+  warn(
     `[oracle-batch] Complete fallback: no parseable JSON for ${questions.length} questions. Returning default choices.`,
   );
   return questions.map((q) => fallbackChoice(q.options, "Could not parse batch oracle response"));

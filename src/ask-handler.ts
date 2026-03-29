@@ -29,13 +29,16 @@ export interface AskHandlerConfig {
   autonomous?: boolean;
   oracle?: {
     askOracle: (input: OracleInput, config: OracleConfig) => Promise<OracleOutput>;
-    askOracleBatch?: (input: OracleBatchInput, config: OracleConfig) => Promise<OracleOutput[]>;
+    askOracleBatch?: (input: OracleBatchInput, config: OracleConfig, onWarn?: (msg: string) => void) => Promise<OracleOutput[]>;
     config: OracleConfig;
     skillName: string;
     projectContext?: string;
     memory?: OracleMemoryFiles;
   };
   escalatedLogPath?: string;
+
+  // Optional warning callback (routes warnings to event system in daemon mode)
+  onWarn?: (msg: string) => void;
 }
 
 export interface AskHandler {
@@ -167,7 +170,7 @@ async function handleOracleBatch(
       memory: oracle.memory,
     };
 
-    const batchResults = await oracle.askOracleBatch(batchInput, oracle.config);
+    const batchResults = await oracle.askOracleBatch(batchInput, oracle.config, config.onWarn);
 
     // Process each result — guard against length mismatch from partial parse failures
     for (let i = 0; i < questions.length; i++) {
