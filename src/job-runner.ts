@@ -222,7 +222,8 @@ export function createJobRunner(
 
     // Snapshot config at job start — reload-safe: running jobs keep original config
     const jobConfig = currentConfig;
-    const callbacks = buildCallbacks(nextJob, jobConfig, d);
+    const claimCtx = nextJob.skills.includes("prioritize") ? { state, checkpointDir } : undefined;
+    const callbacks = buildCallbacks(nextJob, jobConfig, d, claimCtx);
 
     // Compute claimed items for priority claiming (if this job runs prioritize)
     let claimedItems: Array<{ title: string; instanceName: string }> | undefined;
@@ -262,26 +263,6 @@ export function createJobRunner(
           updateGlobalBudget(parentCheckpointDir, nextJob.costUsd, resolvedInstanceName);
         } catch (err) {
           d.log("warn", `Failed to update global budget: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-
-      // Claim the TODO item that prioritize picked (before marking complete,
-      // so other instances see the claim while this job is "running")
-      if (nextJob.skills.includes("prioritize")) {
-        try {
-          const priorityDir = jobConfig.worktreePath ?? jobConfig.projectDir;
-          const priorityPath = join(priorityDir, ".garyclaw", "priority.md");
-          const priorityContent = safeReadText(priorityPath);
-          if (priorityContent) {
-            const title = parsePriorityPickTitle(priorityContent);
-            if (title && title !== "Backlog Exhausted") {
-              nextJob.claimedTodoTitle = title;
-              persistState(state, checkpointDir);
-              d.log("info", `Priority claimed: "${title}"`);
-            }
-          }
-        } catch (err) {
-          d.log("warn", `Priority claim parsing failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -457,7 +438,12 @@ export function parsePriorityPickTitle(content: string): string | null {
   return match ? match[1].trim() : null;
 }
 
-function buildCallbacks(job: Job, config: DaemonConfig, deps: JobRunnerDeps): OrchestratorCallbacks {
+function buildCallbacks(
+  job: Job,
+  config: DaemonConfig,
+  deps: JobRunnerDeps,
+  claimContext?: { state: DaemonState; checkpointDir: string },
+): OrchestratorCallbacks {
   return {
     onEvent: (event: OrchestratorEvent) => {
       // Track cost from events and enforce per-job cost limit.
@@ -475,6 +461,25 @@ function buildCallbacks(job: Job, config: DaemonConfig, deps: JobRunnerDeps): Or
       ) {
         throw new PerJobCostExceededError(job.costUsd, config.budget.perJobCostLimitUsd);
       }
+      // Claim TODO title immediately after prioritize finishes (not after full pipeline)
+      if (event.type === "pipeline_skill_complete" && event.skillName === "prioritize" && claimContext) {
+        try {
+          const priorityDir = config.worktreePath ?? config.projectDir;
+          const priorityPath = join(priorityDir, ".garyclaw", "priority.md");
+          const priorityContent = safeReadText(priorityPath);
+          if (priorityContent) {
+            const title = parsePriorityPickTitle(priorityContent);
+            if (title && title !== "Backlog Exhausted") {
+              job.claimedTodoTitle = title;
+              persistState(claimContext.state, claimContext.checkpointDir);
+              deps.log("info", `Priority claimed (early): "${title}"`);
+            }
+          }
+        } catch (err) {
+          deps.log("warn", `Early priority claim failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
       // Collect adaptive turns stats
       if (event.type === "adaptive_turns") {
         if (!job.adaptiveTurnsStats) {
