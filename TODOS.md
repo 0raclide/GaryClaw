@@ -295,3 +295,37 @@ Implemented in commit 0b53787 + eng review fixes. `createTextAccumulatingCallbac
 ## ~~P2: Pipeline Resume After Daemon Crash~~ ✅ COMPLETE (2026-03-29)
 
 Shipped in 5 commits on `garyclaw/overnight-3`: retry logic in `job-runner.ts` (re-queue with `retryCount`, abandon after 3 crashes), `resumePipeline` wiring for multi-skill jobs with `pipeline.json`, `priorSkillCostUsd` for dashboard cost tracking, crash recovery stats in `formatDashboard`, and `notifyJobResumed` for recovery notifications. 27 tests in `job-runner-resume.test.ts` + 11 regression tests from QA review.
+
+## P3: Oracle Session Reuse (Latency Optimization — Approach A)
+
+**What:** Maintain a persistent Oracle conversation per ask-handler instance. First decision sends full 43K context (principles + memory + history), subsequent decisions resume with just ~1K (the new question). Expected 50% latency reduction across ALL Oracle calls, not just multi-question batches.
+
+**Why:** Oracle batching (COMPLETE) only helps when multiple questions arrive in the same AskUserQuestion call. In practice, most questions arrive individually (1 per tool call). Session reuse would give 50% reduction on ALL Oracle calls by amortizing the 43K prompt across the session.
+
+**Approach:** SDK resume with `maxTurns:1` Oracle-style queries. First call builds full prompt, subsequent calls resume the same conversation with just the new question. Requires a spike to verify SDK resume works with single-turn Oracle queries.
+
+**Pros:** 50% latency reduction on every Oracle call. Compounds with batching (batching helps multi-question, session reuse helps single-question).
+
+**Cons:** Requires spike to verify SDK resume behavior. Session state management adds complexity. If the session context grows unbounded, may need periodic reset.
+
+**Context:** Recommended by /plan-eng-review on 2026-03-29 as the primary optimization. Batching was the secondary optimization (now COMPLETE). Session reuse is the bigger win because it applies to all calls.
+
+**Effort:** S (human: ~3 days / CC: ~30 min)
+**Depends on:** Oracle batching (COMPLETE), spike to verify SDK resume with maxTurns:1
+**Added by:** /plan-eng-review on 2026-03-29
+
+## P4: Extract Shared Oracle Prompt Prefix (DRY Fix)
+
+**What:** `buildOraclePrompt()` and `buildBatchOraclePrompt()` share ~40 lines of identical code: system header, memory injection, decision history. Also, `parseBatchOracleResponse`'s happy path duplicates field extraction from `parseOracleResponse`. Extract `buildOraclePromptPrefix()` and a shared field extractor.
+
+**Why:** Two copies of the same prompt-building logic. When memory injection changes (e.g., adding a new memory section), both functions must be updated in sync. DRY violation, small blast radius but guaranteed to cause a bug eventually.
+
+**Pros:** Single source of truth for Oracle prompt structure. Easier to add new memory sections. Reduces test surface (test prefix once, not twice).
+
+**Cons:** Minor refactor, no functional change. Low urgency.
+
+**Context:** Accepted by /plan-eng-review on 2026-03-29 during architecture review of Oracle batching implementation.
+
+**Effort:** XS (human: ~30 min / CC: ~5 min)
+**Depends on:** Nothing
+**Added by:** /plan-eng-review on 2026-03-29
