@@ -493,6 +493,8 @@ export function markTodoCompleteInFile(
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     // Match ## headings (any depth 2+)
+    // COUPLING: parseTodoItems() in prioritize.ts uses /^## P\d/ for the same
+    // conceptual operation. Both assume TODOS.md uses ## (not #) for items.
     if (!line.match(/^#{2,}\s/)) continue;
 
     // Skip already-complete headings (contain ~~)
