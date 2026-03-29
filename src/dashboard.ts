@@ -400,7 +400,18 @@ export function buildDashboard(
   // Default to empty until we have a persistence path for enrichment events.
   const bootstrapEnrichment = aggregateBootstrapEnrichmentStats([]);
 
-  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, instances });
+  // Merge health: default empty until aggregateMergeStats is wired in Step 5
+  const mergeHealth = {
+    totalAttempts: 0,
+    merged: 0,
+    blocked: 0,
+    successRate: 100,
+    avgTestDurationMs: 0,
+    testFailures: 0,
+    rebaseConflicts: 0,
+  };
+
+  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, mergeHealth, instances });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -411,6 +422,7 @@ export function buildDashboard(
     budget,
     adaptiveTurns,
     bootstrapEnrichment,
+    mergeHealth,
     instances,
   };
 }

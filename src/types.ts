@@ -256,6 +256,11 @@ export interface DaemonConfig {
     level: "debug" | "info" | "warn" | "error";
     retainDays: number;
   };
+  merge?: {
+    testCommand?: string;       // default: "npm test"
+    testTimeout?: number;       // default: 120000 (2 min)
+    skipValidation?: boolean;   // default: false
+  };
   autoResearch?: AutoResearchConfig;
 }
 
@@ -402,6 +407,7 @@ export type FailureCategory =
   | "auth-issue"      // Authentication/token expiry
   | "infra-issue"     // Disk, network, OOM, timeout
   | "budget-exceeded" // Per-job or daily cost limit hit
+  | "merge-failed"    // Pre-merge test failure or rebase conflict
   | "unknown";        // Unclassifiable — conservative fallback
 
 export interface FailureRecord {
@@ -497,6 +503,15 @@ export interface DashboardData {
   bootstrapEnrichment: {
     triggered: number;             // Number of enrichments triggered today
     avgScoreImprovement: number;   // Average quality score delta (enriched - original)
+  };
+  mergeHealth: {
+    totalAttempts: number;
+    merged: number;
+    blocked: number;              // test failure or rebase conflict
+    successRate: number;          // 0-100
+    avgTestDurationMs: number;
+    testFailures: number;         // subset of blocked where testsPassed === false
+    rebaseConflicts: number;      // subset of blocked where reason contains "conflicts"
   };
   instances: string[];           // Active instance names
 }

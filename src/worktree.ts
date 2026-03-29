@@ -9,8 +9,8 @@
  * Uses execFileSync exclusively (no shell injection).
  */
 
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { execFileSync, execSync } from "node:child_process";
+import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export interface WorktreeInfo {
@@ -23,6 +23,38 @@ export interface MergeResult {
   merged: boolean;
   reason?: string;
   commitCount?: number;
+  testsPassed?: boolean;       // undefined if tests not run, true/false otherwise
+  testOutput?: string;         // truncated stderr from test run (max 2000 chars)
+  testDurationMs?: number;     // how long tests took
+}
+
+export interface MergeValidationConfig {
+  /** Command to run for validation (default: "npm test") */
+  testCommand?: string;
+  /** Timeout in ms (default: 120000 = 2 min) */
+  testTimeout?: number;
+  /** Skip validation entirely (default: false) */
+  skipValidation?: boolean;
+}
+
+export interface MergeOptions {
+  validation?: MergeValidationConfig;
+  jobId?: string;          // For audit log attribution
+  auditDir?: string;       // Override audit log directory
+}
+
+export interface MergeAuditEntry {
+  timestamp: string;
+  instanceName: string;
+  branch: string;
+  baseBranch: string;
+  commitCount: number;
+  merged: boolean;
+  reason?: string;
+  testsPassed?: boolean;
+  testDurationMs?: number;
+  testOutput?: string;    // truncated to 2000 chars
+  jobId?: string;
 }
 
 /**
@@ -252,6 +284,7 @@ export function mergeWorktreeBranch(
   repoDir: string,
   instanceName: string,
   baseBranch: string,
+  options?: MergeOptions,
 ): MergeResult {
   const branch = branchName(instanceName);
 
@@ -334,9 +367,18 @@ export function mergeWorktreeBranch(
 
   // Rebase instance branch onto baseBranch, then fast-forward merge.
   // Acquire merge lock to prevent concurrent rebase/merge across instances.
-  if (!acquireMergeLock(repoDir)) {
+  // Dynamic lock timeout: testTimeout + 60s buffer (default: 180s if validation enabled)
+  const lockTimeout = options?.validation?.skipValidation
+    ? MERGE_LOCK_TIMEOUT_MS   // no tests = use default 60s
+    : options?.validation
+      ? (options.validation.testTimeout ?? 120_000) + 60_000
+      : MERGE_LOCK_TIMEOUT_MS;  // no validation config = default 60s
+
+  if (!acquireMergeLock(repoDir, lockTimeout)) {
+    const result: MergeResult = { merged: false, commitCount, reason: "Could not acquire merge lock (another instance merging)" };
+    appendMergeAudit(repoDir, instanceName, branch, baseBranch, result, options);
     restoreBranch(repoDir, originalBranch, baseBranch);
-    return { merged: false, commitCount, reason: "Could not acquire merge lock (another instance merging)" };
+    return result;
   }
 
   try {
@@ -353,15 +395,60 @@ export function mergeWorktreeBranch(
         // Rebase conflict — abort and bail
         try { execFileSync("git", ["rebase", "--abort"], { cwd: wtDir, stdio: "pipe" }); } catch { /* noop */ }
         restoreBranch(repoDir, originalBranch, baseBranch);
-        return {
+        const result: MergeResult = {
           merged: false,
           commitCount,
           reason: `Rebase of ${branch} onto ${baseBranch} had conflicts — needs manual resolution`,
         };
+        appendMergeAudit(repoDir, instanceName, branch, baseBranch, result, options);
+        return result;
+      }
+
+      // ── Pre-merge test gate ──────────────────────────────────────
+      // Run tests on the rebased branch BEFORE merging to main.
+      // Uses execSync (not execFileSync) to support compound commands like "npm run lint && npm test".
+      if (options?.validation && !options.validation.skipValidation) {
+        const testCommand = options.validation.testCommand ?? "npm test";
+        const testTimeout = options.validation.testTimeout ?? 120_000;
+        const testStart = Date.now();
+
+        try {
+          execSync(testCommand, {
+            cwd: wtDir,
+            timeout: testTimeout,
+            stdio: "pipe",
+            shell: "/bin/sh",
+          });
+          // Tests passed — continue to ff-only merge
+          const testDurationMs = Date.now() - testStart;
+          // Store test results on the eventual merge result (handled below)
+          Object.defineProperty(options, "_testResult", {
+            value: { testsPassed: true, testDurationMs },
+            configurable: true,
+          });
+        } catch (testErr: unknown) {
+          const testDurationMs = Date.now() - testStart;
+          const stderr = testErr instanceof Error && "stderr" in testErr
+            ? String((testErr as { stderr?: unknown }).stderr).slice(0, 2000)
+            : testErr instanceof Error
+              ? testErr.message.slice(0, 2000)
+              : "";
+          restoreBranch(repoDir, originalBranch, baseBranch);
+          const result: MergeResult = {
+            merged: false,
+            reason: "Pre-merge tests failed",
+            testsPassed: false,
+            testOutput: stderr,
+            testDurationMs,
+            commitCount,
+          };
+          appendMergeAudit(repoDir, instanceName, branch, baseBranch, result, options);
+          return result;
+        }
       }
     }
 
-    // After successful rebase (or no worktree), ff-only merge
+    // After successful rebase + tests (or no worktree), ff-only merge
     try {
       execFileSync("git", ["merge", "--ff-only", branch], {
         cwd: repoDir,
@@ -369,15 +456,27 @@ export function mergeWorktreeBranch(
       });
     } catch {
       restoreBranch(repoDir, originalBranch, baseBranch);
-      return {
+      const result: MergeResult = {
         merged: false,
         commitCount,
         reason: `Branch ${branch} has ${commitCount} commit(s) that cannot be fast-forwarded — needs manual merge or rebase`,
       };
+      appendMergeAudit(repoDir, instanceName, branch, baseBranch, result, options);
+      return result;
     }
 
     restoreBranch(repoDir, originalBranch, baseBranch);
-    return { merged: true, commitCount };
+    // Attach test results if we ran validation
+    const testResult = options && "_testResult" in options
+      ? (options as any)._testResult as { testsPassed: boolean; testDurationMs: number }
+      : undefined;
+    const result: MergeResult = {
+      merged: true,
+      commitCount,
+      ...(testResult ? { testsPassed: testResult.testsPassed, testDurationMs: testResult.testDurationMs } : {}),
+    };
+    appendMergeAudit(repoDir, instanceName, branch, baseBranch, result, options);
+    return result;
   } finally {
     releaseMergeLock(repoDir);
   }
@@ -450,6 +549,42 @@ export function getWorktreePath(repoDir: string, instanceName: string): string |
     return resolve(wtDir);
   }
   return null;
+}
+
+// ── Merge audit log ─────────────────────────────────────────────
+
+/**
+ * Append a merge audit entry to the instance's merge-audit.jsonl.
+ * Best-effort — never throws.
+ */
+export function appendMergeAudit(
+  repoDir: string,
+  instanceName: string,
+  branch: string,
+  baseBranch: string,
+  result: MergeResult,
+  options?: MergeOptions,
+): void {
+  try {
+    const auditDir = options?.auditDir ?? join(repoDir, ".garyclaw", "daemons", instanceName);
+    mkdirSync(auditDir, { recursive: true });
+    const entry: MergeAuditEntry = {
+      timestamp: new Date().toISOString(),
+      instanceName,
+      branch,
+      baseBranch,
+      commitCount: result.commitCount ?? 0,
+      merged: result.merged,
+      reason: result.reason,
+      testsPassed: result.testsPassed,
+      testDurationMs: result.testDurationMs,
+      testOutput: result.testOutput?.slice(0, 2000),
+      jobId: options?.jobId,
+    };
+    appendFileSync(join(auditDir, "merge-audit.jsonl"), JSON.stringify(entry) + "\n", "utf-8");
+  } catch {
+    // Best-effort — don't crash the merge flow if audit write fails
+  }
 }
 
 // ── Merge lock ──────────────────────────────────────────────────
