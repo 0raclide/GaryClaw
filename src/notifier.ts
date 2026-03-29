@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Job, DaemonConfig } from "./types.js";
+import type { MergeResult } from "./worktree.js";
 
 /**
  * Send a macOS notification for a completed job.
@@ -44,6 +45,22 @@ export function notifyJobResumed(job: Job, completedSkillCount: number, config: 
   const instanceLabel = config.name ? ` [${config.name}]` : "";
   const title = `GaryClaw${instanceLabel} Job Recovered`;
   const message = `Resuming /${job.skills.join(" → /")} from skill ${completedSkillCount + 1}/${job.skills.length} (attempt ${job.retryCount ?? 1}/2)`;
+  sendNotification(title, message);
+}
+
+/**
+ * Send a macOS notification when a merge is blocked (test failure or rebase conflict).
+ * Follows the same pattern as notifyJobError — gated by notifications.onError.
+ */
+export function notifyMergeBlocked(job: Job, result: MergeResult, config: DaemonConfig): void {
+  if (!config.notifications.enabled || !config.notifications.onError) return;
+
+  const instanceLabel = config.name ? ` [${config.name}]` : "";
+  const title = `GaryClaw${instanceLabel} Merge Blocked`;
+  const reason = result.testsPassed === false
+    ? "pre-merge tests failed"
+    : result.reason ?? "unknown reason";
+  const message = `/${job.skills.join(" → /")} completed but merge blocked: ${reason}`;
   sendNotification(title, message);
 }
 

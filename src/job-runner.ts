@@ -12,7 +12,7 @@ import { safeWriteJSON } from "./safe-json.js";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runPipeline, resumePipeline, readPipelineState } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
-import { notifyJobComplete, notifyJobError, notifyJobResumed, writeSummary } from "./notifier.js";
+import { notifyJobComplete, notifyJobError, notifyJobResumed, notifyMergeBlocked, writeSummary } from "./notifier.js";
 import { generateDashboard } from "./dashboard.js";
 import {
   readGlobalBudget,
@@ -21,6 +21,7 @@ import {
   getClaimedTodoTitles,
 } from "./daemon-registry.js";
 import { mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
+import type { MergeResult } from "./worktree.js";
 import { safeReadText } from "./safe-json.js";
 import { parseTodoItems } from "./prioritize.js";
 import {
@@ -67,6 +68,7 @@ export interface JobRunnerDeps {
   notifyJobComplete: typeof notifyJobComplete;
   notifyJobError: typeof notifyJobError;
   notifyJobResumed: typeof notifyJobResumed;
+  notifyMergeBlocked?: (job: Job, result: MergeResult, config: DaemonConfig) => void;
   writeSummary: typeof writeSummary;
   log: (level: string, message: string) => void;
 }
@@ -79,6 +81,7 @@ const defaultDeps: JobRunnerDeps = {
   notifyJobComplete,
   notifyJobError,
   notifyJobResumed,
+  notifyMergeBlocked,
   writeSummary,
   log: () => {},
 };
@@ -356,11 +359,40 @@ export function createJobRunner(
       if (jobConfig.worktreePath && resolvedInstanceName !== "default") {
         try {
           const baseBranch = resolveBaseBranch(jobConfig.projectDir);
-          const result = mergeWorktreeBranch(jobConfig.projectDir, resolvedInstanceName, baseBranch);
-          if (result.merged) {
-            d.log("info", `Auto-merge: merged ${result.commitCount ?? 0} commit(s) from garyclaw/${resolvedInstanceName} to ${baseBranch}`);
+          const mergeConfig = jobConfig.merge ?? {};
+          const mergeResult = mergeWorktreeBranch(
+            jobConfig.projectDir,
+            resolvedInstanceName,
+            baseBranch,
+            {
+              validation: mergeConfig.skipValidation
+                ? { skipValidation: true }
+                : {
+                    testCommand: mergeConfig.testCommand,
+                    testTimeout: mergeConfig.testTimeout,
+                  },
+              jobId: nextJob.id,
+            },
+          );
+
+          if (mergeResult.merged) {
+            d.log("info", `Auto-merge: merged ${mergeResult.commitCount ?? 0} commit(s) from garyclaw/${resolvedInstanceName} to ${baseBranch}` +
+              (mergeResult.testDurationMs ? ` (tests: ${Math.round(mergeResult.testDurationMs / 1000)}s)` : ""));
           } else {
-            d.log("warn", `Auto-merge failed: ${result.reason}`);
+            d.log("warn", `Auto-merge blocked: ${mergeResult.reason}` +
+              (mergeResult.testOutput ? `\n${mergeResult.testOutput.slice(0, 500)}` : ""));
+            // Notify on merge failure (not a job failure, but worth alerting)
+            d.notifyMergeBlocked?.(nextJob, mergeResult, jobConfig);
+
+            // Log merge failure to failures.jsonl for dashboard aggregation
+            if (mergeResult.testsPassed === false) {
+              const syntheticErr = Object.assign(
+                new Error(mergeResult.reason ?? "Pre-merge tests failed"),
+                { name: "MergeValidationError" },
+              );
+              const record = buildFailureRecord(syntheticErr, nextJob.id, nextJob.skills, resolvedInstanceName);
+              appendFailureRecord(record, checkpointDir);
+            }
           }
         } catch (err) {
           d.log("warn", `Auto-merge error: ${err instanceof Error ? err.message : String(err)}`);
