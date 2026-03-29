@@ -337,9 +337,23 @@ export function createJobRunner(
             }
           }
 
+          // Filter out items already complete via TODO state tracking (fail-open)
+          const preAssignStateDir = join(jobConfig.worktreePath ?? jobConfig.projectDir, ".garyclaw");
+          const stateFiltered = actionable.filter(item => {
+            try {
+              const slug = slugify(item.title);
+              const stored = readTodoState(preAssignStateDir, slug);
+              if (stored && (stored.state === "merged" || stored.state === "complete")) {
+                d.log("debug", `Pre-assignment: skipping "${item.title}" (state: ${stored.state})`);
+                return false;
+              }
+            } catch { /* fail-open: include item if state check errors */ }
+            return true;
+          });
+
           // Iterate through actionable items, pick first without file conflicts
           let picked = false;
-          for (const item of actionable) {
+          for (const item of stateFiltered) {
             // Extract predicted files from TODO description + optional design doc
             let designDocContent: string | undefined;
             const designDocMatch = item.description.match(/\*\*Design doc:\*\*\s*`([^`]+)`/);
@@ -407,9 +421,10 @@ export function createJobRunner(
           d.log("info", `TODO "${todoTitle}" already complete (${reconciledState.state}) — skipping`);
           nextJob.status = "complete";
           nextJob.completedAt = new Date().toISOString();
-          running = false;
           persistState(state, checkpointDir);
-          processNext();
+          // Continuous: re-enqueue — pre-assignment will skip this TODO via state check
+          enqueue(nextJob.skills, "continuous", "skip-completed re-enqueue", nextJob.designDoc);
+          running = false;
           return;
         }
 
@@ -423,8 +438,10 @@ export function createJobRunner(
           d.log("info", `TODO "${todoTitle}" at state "${reconciledState.state}" — all pipeline skills already complete`);
           nextJob.status = "complete";
           nextJob.completedAt = new Date().toISOString();
-          running = false;
           persistState(state, checkpointDir);
+          const reId2 = enqueue(nextJob.skills, "continuous", "all-skills-complete re-enqueue", nextJob.designDoc);
+          if (reId2) d.log("info", `Continuous: re-enqueued as ${reId2} after all skills complete`);
+          running = false;
           processNext();
           return;
         }
