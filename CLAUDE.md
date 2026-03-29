@@ -31,7 +31,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
-- 36 source modules + CLI, 137 test files, 2469 tests
+- 36 source modules + CLI, 139 test files, 2476 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -247,6 +247,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/oracle-batch-warn.test.ts` | 11 | parseBatchOracleResponse onWarn callback: happy path, 4 fallback paths, console.warn default, askOracleBatch threading |
 | `test/oracle-session-reuse.test.ts` | 16 | buildResumePrompt, ORACLE_QUESTION_MARKER, ORACLE_BATCH_MARKER, MAX_REUSE, OracleSessionEvent, formatEvent oracle_session |
 | `test/oracle-session-state.test.ts` | 20 | OracleSessionState: prepareCall, handleSuccess, handleError, batch reset, MAX_REUSE, resume fallback, cold-start error propagation |
+| `test/oracle-session-state.regression-1.test.ts` | 5 | SessionAction union narrowing: handleError discriminants, non-Error wrapping, all 3 variants discriminable |
 | `test/oracle-extended.test.ts` | 32 | Extended oracle edge cases, principle matching, response parsing |
 | `test/sdk-wrapper.test.ts` | 17 | env stripping, usage extraction, result parsing |
 | `test/sdk-wrapper-verifyauth.regression-1.test.ts` | 9 | verifyAuth error handling regression |
@@ -359,6 +360,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner.regression-5.test.ts` | 4 | Job runner regression: backward compat missing config.merge |
 | `test/job-runner.regression-6.test.ts` | 2 | Job runner regression: 'continuous' trigger source validity on Job.triggeredBy |
 | `test/job-runner.regression-7.test.ts` | 2 | Job runner regression: 'daemon-crash' must be valid FailureCategory |
+| `test/job-runner.regression-8.test.ts` | 2 | Job runner regression: readTodoState import resolves and round-trips state |
 | `test/merge-audit.test.ts` | 11 | Merge audit log: append, read, truncation, JSONL format |
 | `test/notifier.regression-1.test.ts` | 5 | Notifier regression: notifyJobResumed message format with notifications enabled |
 | `test/notifier.regression-2.test.ts` | 7 | Notifier regression: notifyMergeBlocked formatting, gating, instance labels |
