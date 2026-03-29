@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { runSkill } from "./orchestrator.js";
+import { runSkill, runSkillWithInitialPrompt } from "./orchestrator.js";
 import { buildReport } from "./report.js";
 import { readCheckpoint } from "./checkpoint.js";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
@@ -459,11 +459,6 @@ async function runSkillWithPrompt(
   callbacks: OrchestratorCallbacks,
   prompt: string,
 ): Promise<void> {
-  // We leverage the fact that runSkill constructs its prompt from config.skillName.
-  // To inject a custom prompt, we use a pipeline-aware version of runSkill.
-  // For now, we use runSkillWithInitialPrompt from orchestrator.
-  // Since orchestrator doesn't expose prompt override yet, we import and call it.
-  const { runSkillWithInitialPrompt } = await import("./orchestrator.js");
   return runSkillWithInitialPrompt(config, callbacks, prompt);
 }
 
