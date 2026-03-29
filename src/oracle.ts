@@ -219,6 +219,28 @@ Respond with ONLY a JSON object (no markdown fences, no explanation outside the 
   return prompt;
 }
 
+/**
+ * Extract the 5 standard oracle fields from a parsed JSON entry.
+ * Shared by parseOracleResponse and parseBatchOracleResponse to keep
+ * field extraction logic in one place.
+ */
+export function extractOracleFields(
+  entry: Record<string, unknown>,
+  options: { label: string; description: string }[],
+): Omit<OracleOutput, "isTaste" | "escalate"> {
+  const choice = resolveChoice(entry.choice, options);
+  const confidence = Math.max(1, Math.min(10, Number(entry.confidence) || 5));
+  const rationale = typeof entry.rationale === "string" ? entry.rationale : "No rationale provided";
+  const principle = typeof entry.principle === "string" ? entry.principle : "Bias toward action";
+
+  const otherProposal =
+    choice.toLowerCase() === "other" && typeof entry.otherProposal === "string"
+      ? entry.otherProposal
+      : undefined;
+
+  return { choice, confidence, rationale, principle, otherProposal };
+}
+
 export function parseOracleResponse(
   raw: string,
   options: { label: string; description: string }[],
@@ -231,18 +253,7 @@ export function parseOracleResponse(
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
-    const choice = resolveChoice(parsed.choice, options);
-    const confidence = Math.max(1, Math.min(10, Number(parsed.confidence) || 5));
-    const rationale = typeof parsed.rationale === "string" ? parsed.rationale : "No rationale provided";
-    const principle = typeof parsed.principle === "string" ? parsed.principle : "Bias toward action";
-
-    // Extract otherProposal when choice is "Other"
-    const otherProposal =
-      choice.toLowerCase() === "other" && typeof parsed.otherProposal === "string"
-        ? parsed.otherProposal
-        : undefined;
-
-    return { choice, confidence, rationale, principle, otherProposal };
+    return extractOracleFields(parsed, options);
   } catch {
     return fallbackChoice(options, "JSON parse error in oracle response");
   }
@@ -442,33 +453,35 @@ export function parseBatchOracleResponse(
       if (Array.isArray(parsed) && parsed.length >= questions.length) {
         return questions.map((q, i) => {
           const entry = parsed[i];
-          const choice = resolveChoice(entry?.choice, q.options);
-          const confidence = Math.max(1, Math.min(10, Number(entry?.confidence) || 5));
-          const rationale = typeof entry?.rationale === "string" ? entry.rationale : "No rationale provided";
-          const principle = typeof entry?.principle === "string" ? entry.principle : "Bias toward action";
-
-          const otherProposal =
-            choice.toLowerCase() === "other" && typeof entry?.otherProposal === "string"
-              ? entry.otherProposal
-              : undefined;
-
-          return { choice, confidence, rationale, principle, otherProposal };
+          return extractOracleFields(entry ?? {}, q.options);
         });
       }
+      // Array parsed but wrong length
+      console.warn(
+        `[oracle-batch] JSON array parsed but length mismatch: expected ${questions.length}, got ${Array.isArray(parsed) ? parsed.length : "non-array"}. Falling back to individual JSON extraction.`,
+      );
     } catch {
-      // Fall through to individual extraction
+      console.warn(
+        `[oracle-batch] JSON array parse failed. Falling back to individual JSON extraction.`,
+      );
     }
   }
 
   // Fallback: try to find individual JSON objects in the response
   const jsonObjects = raw.match(/\{[^{}]*\}/g);
   if (jsonObjects && jsonObjects.length >= questions.length) {
+    console.warn(
+      `[oracle-batch] Using individual JSON object fallback: found ${jsonObjects.length} objects for ${questions.length} questions.`,
+    );
     return questions.map((q, i) => {
       return parseOracleResponse(jsonObjects[i], q.options);
     });
   }
 
   // Complete fallback: return fallback choices for all questions
+  console.warn(
+    `[oracle-batch] Complete fallback: no parseable JSON for ${questions.length} questions. Returning default choices.`,
+  );
   return questions.map((q) => fallbackChoice(q.options, "Could not parse batch oracle response"));
 }
 
