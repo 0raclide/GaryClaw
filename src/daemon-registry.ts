@@ -296,15 +296,15 @@ export function getClaimedFiles(
     const state = safeReadJSON<DaemonState>(statePath, validateDaemonState);
     if (!state) continue;
 
-    const instanceFiles: string[] = [];
+    const instanceFiles = new Set<string>();
     for (const job of state.jobs) {
       if (job.status !== "queued" && job.status !== "running") continue;
       if (!job.claimedFiles || job.claimedFiles.length === 0) continue;
-      instanceFiles.push(...job.claimedFiles);
+      for (const f of job.claimedFiles) instanceFiles.add(f);
     }
 
-    if (instanceFiles.length > 0) {
-      result.set(name, instanceFiles);
+    if (instanceFiles.size > 0) {
+      result.set(name, [...instanceFiles]);
     }
   }
 
