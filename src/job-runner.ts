@@ -47,6 +47,7 @@ import { readOracleMemory, defaultMemoryConfig } from "./oracle-memory.js";
 import {
   slugify,
   findTodoState,
+  writeTodoState,
   detectArtifacts,
   reconcileState,
   getStartSkill,
@@ -522,6 +523,28 @@ export function createJobRunner(
           if (mergeResult.merged) {
             d.log("info", `Auto-merge: merged ${mergeResult.commitCount ?? 0} commit(s) from garyclaw/${resolvedInstanceName} to ${baseBranch}` +
               (mergeResult.testDurationMs ? ` (tests: ${Math.round(mergeResult.testDurationMs / 1000)}s)` : ""));
+
+            // Advance TODO state to "merged" after successful auto-merge
+            if (nextJob.claimedTodoTitle) {
+              try {
+                const todoSlug = slugify(nextJob.claimedTodoTitle);
+                const stateCheckpointDir = parentCheckpointDir ?? checkpointDir;
+                const existingState = findTodoState(stateCheckpointDir, nextJob.claimedTodoTitle);
+                writeTodoState(stateCheckpointDir, todoSlug, {
+                  title: nextJob.claimedTodoTitle,
+                  slug: todoSlug,
+                  state: "merged",
+                  designDocPath: existingState?.designDocPath,
+                  branch: existingState?.branch,
+                  instanceName: resolvedInstanceName,
+                  lastJobId: nextJob.id,
+                  updatedAt: new Date().toISOString(),
+                });
+                d.log("info", `TODO "${nextJob.claimedTodoTitle}" advanced to "merged"`);
+              } catch {
+                // Fail-open: state write failure should never break post-merge
+              }
+            }
           } else {
             d.log("warn", `Auto-merge blocked: ${mergeResult.reason}` +
               (mergeResult.testOutput ? `\n${mergeResult.testOutput.slice(0, 500)}` : ""));

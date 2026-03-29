@@ -351,6 +351,24 @@ export function getCompletedTodoTitles(
     }
   }
 
+  // Also scan todo-state/ for merged/complete items (survives instance cleanup)
+  const todoStateDir = join(checkpointDir, "todo-state");
+  if (existsSync(todoStateDir)) {
+    try {
+      const stateFiles = readdirSync(todoStateDir).filter(f => f.endsWith(".json"));
+      for (const file of stateFiles) {
+        const todoState = safeReadJSON<{ title?: string; state?: string }>(
+          join(todoStateDir, file),
+        );
+        if (todoState?.title && (todoState.state === "merged" || todoState.state === "complete")) {
+          titles.add(todoState.title);
+        }
+      }
+    } catch {
+      // Fail-open: if todo-state scan fails, we still have job-based titles
+    }
+  }
+
   return titles;
 }
 
