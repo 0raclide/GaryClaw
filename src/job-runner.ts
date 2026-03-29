@@ -292,10 +292,11 @@ export function createJobRunner(
       d.log("info", "Rate limit hold expired — resuming job processing");
       d.notifyRateLimitResume?.(resolvedInstanceName, currentConfig);
       state.rateLimitResetAt = undefined;
-      // Re-queue any rate_limited jobs
+      // Re-queue any rate_limited jobs (reset costUsd to avoid double-counting)
       for (const job of state.jobs) {
         if (job.status === "rate_limited") {
           job.status = "queued";
+          job.costUsd = 0;
           d.log("info", `Re-queued rate-limited job ${job.id}`);
         }
       }
