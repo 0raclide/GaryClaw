@@ -14,6 +14,7 @@ import { readdirSync, readFileSync, statSync, existsSync, realpathSync, openSync
 import { join, relative, extname, basename } from "node:path";
 
 import { estimateTokens, readCheckpoint, generateRelayPrompt } from "./checkpoint.js";
+import { analyzeBootstrapQuality } from "./evaluate.js";
 import type { GaryClawConfig, PipelineSkillEntry } from "./types.js";
 
 // ── Constants ────────────────────────────────────────────────────
@@ -801,11 +802,35 @@ export async function buildEnrichedBootstrapPrompt(
   // Format codebase analysis
   const fileTree = analysis.fileTree;
 
+  // Run claim verification to surface factual errors for the enrichment prompt
+  let failedClaimsSection = "";
+  try {
+    const evaluation = analyzeBootstrapQuality(projectDir);
+    const failedClaims = (evaluation.claims ?? []).filter((c) => !c.verified);
+    if (failedClaims.length > 0) {
+      const claimLines = failedClaims.map((c) => {
+        switch (c.type) {
+          case "tech_stack":
+            return `- Claimed "${c.claimed}" but ${c.evidence}`;
+          case "file_path":
+            return `- Referenced "${c.claimed}" but ${c.evidence}`;
+          case "test_framework":
+            return `- Claimed test framework "${c.claimed}" but ${c.evidence}`;
+          case "entry_point":
+            return `- Claimed entry point "${c.claimed}" but ${c.evidence}`;
+        }
+      });
+      failedClaimsSection = `\n## Factual Errors Found\nThe previous CLAUDE.md contained these factual errors:\n${claimLines.join("\n")}\nPlease correct these in the new version.\n`;
+    }
+  } catch {
+    // Claim verification failure should not block enrichment
+  }
+
   return `You are improving a CLAUDE.md that scored below the quality threshold.
 
 ## Current CLAUDE.md (needs improvement)
 ${existingClaudeMd || "(empty — bootstrap produced no output)"}
-
+${failedClaimsSection}
 ## QA Pre-Scan Findings
 ${qaFindings}
 
@@ -820,7 +845,7 @@ Rewrite CLAUDE.md to address the quality gaps. Include:
 - All 4 required sections: Architecture, Tech Stack, Test Strategy, Usage
 - Every framework/library found in package.json
 - Specific file paths and module descriptions
-- Any issues found by the QA pre-scan
+- Any issues found by the QA pre-scan${failedClaimsSection ? "\n- Correct all factual errors listed above" : ""}
 
 Also update TODOS.md to include QA findings as backlog items with proper P1-P5 priorities.
 

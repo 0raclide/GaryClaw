@@ -187,8 +187,9 @@ describe("bootstrap quality gate", () => {
 
   it("emits bootstrap_quality_recheck after enrichment", async () => {
     mockAnalyze
-      .mockReturnValueOnce(lowQualityEval(25))
-      .mockReturnValueOnce({
+      .mockReturnValueOnce(lowQualityEval(25))       // 1st: quality gate check
+      .mockReturnValueOnce(lowQualityEval(25))        // 2nd: claim verification inside buildEnrichedBootstrapPrompt
+      .mockReturnValueOnce({                          // 3rd: recheck after enrichment
         ...highQualityEval(),
         qualityScore: 72,
       });
