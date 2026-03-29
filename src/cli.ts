@@ -350,6 +350,9 @@ export function formatEvent(event: OrchestratorEvent): string {
 
     case "bootstrap_quality_recheck":
       return `${GREEN}[Quality Gate]${RESET} Re-check: ${event.previousScore} → ${event.qualityScore}/100`;
+
+    case "oracle_session":
+      return `${DIM}  Oracle session: ${event.event.type} (call #${event.event.callCount})${RESET}`;
   }
 }
 

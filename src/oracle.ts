@@ -15,7 +15,7 @@
  * call instead of N serial calls, reducing latency by 50-70%.
  */
 
-import type { Decision, OracleMemoryFiles } from "./types.js";
+import type { Decision, OracleMemoryFiles, OracleSessionEvent } from "./types.js";
 import { extractResultData } from "./sdk-wrapper.js";
 
 // ── The 7 Decision Principles ───────────────────────────────────
@@ -225,6 +225,34 @@ Respond with ONLY a JSON object (no markdown fences, no explanation outside the 
 }`;
 
   return prompt;
+}
+
+// ── Session reuse constants ──────────────────────────────────────
+
+/** Shared constant — must match the heading in buildOraclePrompt(). */
+export const ORACLE_QUESTION_MARKER = "## Question\n";
+
+/** Batch prompt marker — used to detect batch calls that bypass session reuse. */
+export const ORACLE_BATCH_MARKER = "## Questions";
+
+/** Maximum number of Oracle calls before resetting the session to bound context growth. */
+export const MAX_REUSE = 25;
+
+/**
+ * Build a resume prompt by stripping the prefix (principles/memory/context/history)
+ * and keeping only the question + options + format instructions.
+ *
+ * On resume, the prefix is already in the session context from the first call.
+ * This avoids duplication and keeps the resume prompt at ~700 tokens.
+ */
+export function buildResumePrompt(fullPrompt: string): string {
+  const idx = fullPrompt.indexOf(ORACLE_QUESTION_MARKER);
+  if (idx === -1) {
+    // Can't find the question section — send the full prompt (safe fallback).
+    // This is invisible but safe: the model just gets a redundant prefix.
+    return fullPrompt;
+  }
+  return "New decision needed:\n\n" + fullPrompt.slice(idx);
 }
 
 /**
@@ -499,36 +527,111 @@ export function parseBatchOracleResponse(
 
 /**
  * Create an oracle query function that uses the SDK.
- * This wraps a simple 1-turn query.
+ *
+ * **Session reuse:** The first call creates a fresh SDK session with the full
+ * oracle prompt (~43K tokens). Subsequent calls resume the same session with
+ * only the question portion (~700 tokens), cutting input token cost by ~95%
+ * for decisions 2-N. The session is reset after MAX_REUSE calls to bound
+ * context growth, or when resume fails (graceful fallback to cold start).
+ *
+ * Batch calls (containing ORACLE_BATCH_MARKER) bypass session reuse and
+ * always start fresh, since batch prompts have a structurally different
+ * format that would confuse a resumed single-question session.
+ *
+ * @param env - Environment variables for SDK (ANTHROPIC_API_KEY stripped)
+ * @param onSessionEvent - Optional callback for observability (session lifecycle events)
  */
 export function createSdkOracleQueryFn(
   env: Record<string, string>,
+  onSessionEvent?: (event: OracleSessionEvent) => void,
 ): (prompt: string) => Promise<string> {
+  let sessionId: string | null = null;
+  let callCount = 0;
+
   return async (prompt: string): Promise<string> => {
     // Dynamic import to avoid loading SDK in tests
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
 
-    let result = "";
-    const gen = query({
-      prompt,
-      options: {
-        maxTurns: 1,
-        env,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-        canUseTool: async (_toolName: string, _input: Record<string, unknown>, _options: { signal: AbortSignal }) => ({ behavior: "deny" as const, message: "Oracle sub-query does not allow tool use" }),
-      },
-    });
-
-    for await (const msg of gen) {
-      if (msg.type === "result") {
-        const resultData = extractResultData(msg);
-        if (resultData && resultData.subtype === "success") {
-          result = resultData.resultText;
-        }
-      }
+    // Batch calls bypass session reuse — different prompt structure
+    if (prompt.includes(ORACLE_BATCH_MARKER) && sessionId !== null) {
+      sessionId = null;
+      callCount = 0;
+      onSessionEvent?.({ type: "session_reset", callCount: 0, sessionId: undefined });
     }
 
-    return result;
+    // Reset session periodically to bound context growth
+    if (callCount >= MAX_REUSE) {
+      onSessionEvent?.({ type: "session_reset", callCount, sessionId: sessionId ?? undefined });
+      sessionId = null;
+      callCount = 0;
+    }
+
+    let retried = false;
+    while (true) {
+      const isResume = sessionId !== null;
+      const effectivePrompt = isResume ? buildResumePrompt(prompt) : prompt;
+
+      let result = "";
+      let newSessionId: string | null = null;
+
+      try {
+        const gen = query({
+          prompt: effectivePrompt,
+          options: {
+            maxTurns: 1,
+            env,
+            permissionMode: "bypassPermissions",
+            allowDangerouslySkipPermissions: true,
+            canUseTool: async (_toolName: string, _input: Record<string, unknown>, _options: { signal: AbortSignal }) => ({ behavior: "deny" as const, message: "Oracle sub-query does not allow tool use" }),
+            ...(isResume && sessionId ? { resume: sessionId } : {}),
+          },
+        });
+
+        for await (const msg of gen) {
+          if (msg.type === "result") {
+            const resultData = extractResultData(msg);
+            if (resultData) {
+              newSessionId = resultData.sessionId || null;
+              if (resultData.subtype === "success") {
+                result = resultData.resultText;
+              }
+            }
+          }
+        }
+
+        // Update session tracking on success
+        if (result && newSessionId) {
+          if (isResume) {
+            onSessionEvent?.({ type: "session_resumed", callCount: callCount + 1, sessionId: newSessionId });
+          } else {
+            onSessionEvent?.({ type: "session_created", callCount: 1, sessionId: newSessionId });
+          }
+          sessionId = newSessionId;
+          callCount++;
+          return result;
+        } else if (isResume && !retried) {
+          // Resume produced no result — reset and retry cold
+          onSessionEvent?.({ type: "resume_fallback", callCount, sessionId: sessionId ?? undefined });
+          sessionId = null;
+          callCount = 0;
+          retried = true;
+          continue;
+        }
+
+        // Cold start with no result — return empty (existing behavior)
+        return result;
+      } catch {
+        if (isResume && !retried) {
+          // Resume error — reset and retry cold
+          onSessionEvent?.({ type: "resume_fallback", callCount, sessionId: sessionId ?? undefined });
+          sessionId = null;
+          callCount = 0;
+          retried = true;
+          continue;
+        }
+        // Cold start also failed — propagate
+        throw new Error("Oracle query failed");
+      }
+    }
   };
 }

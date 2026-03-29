@@ -168,7 +168,8 @@ export type OrchestratorEvent =
   | { type: "pipeline_complete"; totalSkills: number; totalCostUsd: number }
   | { type: "adaptive_turns"; maxTurns: number; reason: string; sessionIndex: number; segmentIndex: number }
   | { type: "bootstrap_quality_check"; qualityScore: number; missingSections: string[]; notes: string[] }
-  | { type: "bootstrap_quality_recheck"; qualityScore: number; previousScore: number };
+  | { type: "bootstrap_quality_recheck"; qualityScore: number; previousScore: number }
+  | { type: "oracle_session"; event: OracleSessionEvent };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;
@@ -401,6 +402,14 @@ export const ORACLE_MEMORY_BUDGETS = {
   decisionOutcomes: 12_000,
   memoryMd: 6_000,
 } as const;
+
+// ── Oracle Session Reuse ─────────────────────────────────────────
+
+export interface OracleSessionEvent {
+  type: "session_created" | "session_resumed" | "session_reset" | "resume_fallback";
+  callCount: number;
+  sessionId?: string;
+}
 
 // ── Failure Taxonomy ─────────────────────────────────────────────
 

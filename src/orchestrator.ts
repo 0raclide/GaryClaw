@@ -279,7 +279,9 @@ async function runSkillInternal(
               askOracle,
               askOracleBatch,
               config: {
-                queryFn: createSdkOracleQueryFn(config.env),
+                queryFn: createSdkOracleQueryFn(config.env, (event) =>
+                  callbacks.onEvent({ type: "oracle_session", event }),
+                ),
                 escalateThreshold: 6,
               },
               skillName: config.skillName,
