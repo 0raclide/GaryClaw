@@ -35,6 +35,7 @@ function makeDashboardData(jobOverrides: Partial<DashboardData["jobs"]> = {}): D
     oracle: { totalDecisions: 50, accuracyPercent: 100, confidenceAvg: 9.5, circuitBreakerTripped: false },
     budget: { dailyLimitUsd: 25, dailySpentUsd: 20, dailyRemaining: 5, jobCount: 10, maxJobsPerDay: 20, byInstance: {} },
     adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },
+    bootstrapEnrichment: { triggered: 0, avgScoreImprovement: 0 },
     instances: ["default"],
   };
 }

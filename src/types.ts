@@ -490,6 +490,10 @@ export interface DashboardData {
     maxTurns: number;               // Highest maxTurns seen today
     adaptiveRate: number;           // % of segments using adaptive (0-100)
   };
+  bootstrapEnrichment: {
+    triggered: number;             // Number of enrichments triggered today
+    avgScoreImprovement: number;   // Average quality score delta (enriched - original)
+  };
   instances: string[];           // Active instance names
 }
 

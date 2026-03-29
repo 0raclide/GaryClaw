@@ -177,6 +177,31 @@ export function aggregateAdaptiveTurnsStats(
 }
 
 /**
+ * Aggregate bootstrap enrichment statistics.
+ * Reads pipeline state files from job checkpoint directories to find
+ * enrichment triggers and quality score deltas.
+ *
+ * Pure function — takes enrichment records as input (extracted from pipeline events).
+ */
+export function aggregateBootstrapEnrichmentStats(
+  enrichmentRecords: Array<{ previousScore: number; enrichedScore: number }>,
+): DashboardData["bootstrapEnrichment"] {
+  if (enrichmentRecords.length === 0) {
+    return { triggered: 0, avgScoreImprovement: 0 };
+  }
+
+  const totalDelta = enrichmentRecords.reduce(
+    (sum, r) => sum + (r.enrichedScore - r.previousScore),
+    0,
+  );
+
+  return {
+    triggered: enrichmentRecords.length,
+    avgScoreImprovement: totalDelta / enrichmentRecords.length,
+  };
+}
+
+/**
  * Compute health score (0-100) and top concern.
  *
  * Weights:
@@ -304,6 +329,20 @@ export function formatDashboard(data: DashboardData): string {
     );
   }
 
+  // Bootstrap Enrichment section (only when enrichments have triggered)
+  if (data.bootstrapEnrichment.triggered > 0) {
+    const delta = data.bootstrapEnrichment.avgScoreImprovement;
+    lines.push(
+      "",
+      "## Bootstrap Enrichment",
+      "",
+      `| Metric | Value |`,
+      `|--------|-------|`,
+      `| Enrichments Triggered | ${data.bootstrapEnrichment.triggered} |`,
+      `| Avg Score Improvement | ${delta >= 0 ? "+" : ""}${delta.toFixed(0)} pts |`,
+    );
+  }
+
   // Budget section
   const remainingPct =
     data.budget.dailyLimitUsd > 0
@@ -356,7 +395,12 @@ export function buildDashboard(
   const adaptiveTurns = aggregateAdaptiveTurnsStats(state.jobs, todayStr);
   const instances = Object.keys(globalBudget.byInstance ?? {});
 
-  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, instances });
+  // Bootstrap enrichment: no enrichment records available from daemon state alone.
+  // Records are populated by pipeline events during job execution.
+  // Default to empty until we have a persistence path for enrichment events.
+  const bootstrapEnrichment = aggregateBootstrapEnrichmentStats([]);
+
+  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, instances });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -366,6 +410,7 @@ export function buildDashboard(
     oracle,
     budget,
     adaptiveTurns,
+    bootstrapEnrichment,
     instances,
   };
 }
