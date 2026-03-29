@@ -31,7 +31,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
-- 36 source modules + CLI, 139 test files, 2476 tests
+- 36 source modules + CLI, 142 test files, 2512 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -337,6 +337,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/daemon-registry-file-conflict.test.ts` | 7 | getClaimedFiles: cross-instance scanning, self-exclusion, status filtering, aggregation |
 | `test/job-runner-file-conflict.test.ts` | 8 | File conflict integration: skip conflicting items, fall-through, fail-open, custom dep map, idle on all blocked |
 | `test/todo-state.test.ts` | 58 | slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation truth table, getStartSkill, findNextSkill, skillToTodoState |
+| `test/todo-state-automark.test.ts` | 10 | markTodoCompleteInFile: heading match, strikethrough, case sensitivity, no-match safety |
 | `test/job-runner-todo-state.test.ts` | 10 | TODO state integration: skip complete, trim pipeline, design doc passthrough, fail-open, single-skill bypass |
 | `test/auto-research.regression-3.test.ts` | 7 | Auto-research regression: extractTopicKeywords numeric-only token filtering |
 | `test/cli.regression-2.test.ts` | 5 | CLI regression: formatEvent missing bootstrap_quality_check/recheck cases |
@@ -353,8 +354,10 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/evaluate-claims.regression-1.test.ts` | 5 | Evaluate claims regression: double-counting, no-claims fallback, P1-P5 mismatch |
 | `test/evaluate-semantic-validation.test.ts` | 43 | Semantic bootstrap validation: extractCommandClaims, extractTestDirectoryClaims, command + test_directory claim verification |
 | `test/evaluate.regression-5.test.ts` | 4 | Evaluate regression: stale improvement-candidates.md duplicate TODOs |
+| `test/job-runner-auto-mark.test.ts` | 9 | Job runner auto-mark: catchUpCompletedTodos marks TODOS.md headings for merged items |
 | `test/job-runner-cross-cycle-dedup.test.ts` | 4 | Job runner cross-cycle dedup: pre-assignment skips completed TODOs |
 | `test/job-runner-merge.test.ts` | 10 | Job runner merge integration: auto-merge with validation config |
+| `test/job-runner-rate-limit.test.ts` | 17 | Job runner rate limit: isRateLimitError detection, parseRateLimitResetTime parsing, RATE_LIMIT_FALLBACK_MS |
 | `test/job-runner-resume.regression-1.test.ts` | 2 | Job runner resume regression: abandoned job FailureRecord retryable flag |
 | `test/job-runner.regression-4.test.ts` | 7 | Job runner regression: parsePriorityPickTitle edge cases |
 | `test/job-runner.regression-5.test.ts` | 4 | Job runner regression: backward compat missing config.merge |
