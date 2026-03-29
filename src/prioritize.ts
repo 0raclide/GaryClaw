@@ -503,7 +503,19 @@ export async function buildPrioritizePrompt(
     lines.push("");
   }
 
-  // Claimed items from parallel daemon instances
+  // Pre-assigned item (from parallel daemon pre-claim) or claimed items
+  if (config.preAssignedTodoTitle) {
+    lines.push("### Pre-Assigned Item");
+    lines.push("");
+    lines.push(`**You are assigned to work on: "${config.preAssignedTodoTitle}"**`);
+    lines.push("");
+    lines.push("This item was pre-assigned by the daemon to avoid duplicate work across parallel instances.");
+    lines.push("Score this item using the rubric below and write it as your Top Pick in priority.md.");
+    lines.push("If this item is genuinely blocked or already complete, explain why and pick the next best item instead.");
+    lines.push("");
+  }
+
+  // Claimed items from parallel daemon instances (fallback if no pre-assignment)
   const claimedItems = config.claimedTodoItems;
   if (claimedItems && claimedItems.length > 0) {
     lines.push("### Already Claimed by Other Instances");

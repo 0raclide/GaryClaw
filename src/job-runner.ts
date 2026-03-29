@@ -22,6 +22,7 @@ import {
 } from "./daemon-registry.js";
 import { mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
 import { safeReadText } from "./safe-json.js";
+import { parseTodoItems } from "./prioritize.js";
 import {
   PerJobCostExceededError,
 } from "./types.js";
@@ -251,20 +252,48 @@ export function createJobRunner(
     const claimCtx = nextJob.skills.includes("prioritize") ? { state, checkpointDir } : undefined;
     const callbacks = buildCallbacks(nextJob, jobConfig, d, claimCtx);
 
-    // Compute claimed items for priority claiming (if this job runs prioritize)
+    // Pre-assign TODO item before prioritize runs (instant claim, no race window)
     let claimedItems: Array<{ title: string; instanceName: string }> | undefined;
-    if (parentCheckpointDir && nextJob.skills.includes("prioritize")) {
+    let preAssignedTitle: string | undefined;
+    if (nextJob.skills.includes("prioritize")) {
       try {
-        claimedItems = getClaimedTodoTitles(parentCheckpointDir, resolvedInstanceName);
-        if (claimedItems.length > 0) {
-          d.log("info", `Priority claiming: ${claimedItems.length} item(s) already claimed by other instances`);
+        // Read other instances' claims
+        if (parentCheckpointDir) {
+          claimedItems = getClaimedTodoTitles(parentCheckpointDir, resolvedInstanceName);
+        }
+        const claimedTitles = new Set((claimedItems ?? []).map(c => c.title));
+
+        // Parse TODOS.md and pick top unclaimed item
+        const todosPath = join(jobConfig.worktreePath ?? jobConfig.projectDir, "TODOS.md");
+        const todosContent = safeReadText(todosPath);
+        if (todosContent) {
+          const items = parseTodoItems(todosContent);
+          // Filter: not completed (~~), not claimed, has effort ≤ M, deps met
+          const actionable = items.filter(item =>
+            !item.title.startsWith("~~") &&
+            !claimedTitles.has(item.title) &&
+            item.effort && ["XS", "S", "M"].includes(item.effort.toUpperCase()) &&
+            (item.dependencies.length === 0 ||
+             item.dependencies.every(dep => dep.toLowerCase() === "nothing"))
+          );
+          // Sort by priority (P2 > P3 > P4), then file order
+          actionable.sort((a, b) => a.priority - b.priority);
+
+          if (actionable.length > 0) {
+            preAssignedTitle = actionable[0].title;
+            nextJob.claimedTodoTitle = preAssignedTitle;
+            persistState(state, checkpointDir);
+            d.log("info", `Pre-assigned TODO: "${preAssignedTitle}" (${claimedTitles.size} item(s) claimed by others)`);
+          } else {
+            d.log("info", `No unclaimed TODO items — prioritize will free-pick or report exhausted`);
+          }
         }
       } catch (err) {
-        d.log("warn", `Priority claiming failed: ${err instanceof Error ? err.message : String(err)}`);
+        d.log("warn", `Pre-assignment failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
-    const clawConfig = buildGaryClawConfig(jobConfig, nextJob, jobDir, d, claimedItems);
+    const clawConfig = buildGaryClawConfig(jobConfig, nextJob, jobDir, d, claimedItems, preAssignedTitle);
 
     // Detect if this is a pipeline resume (retry with existing pipeline.json)
     let isPipelineResume = (nextJob.retryCount ?? 0) > 0 && nextJob.skills.length > 1;
@@ -464,6 +493,7 @@ function buildGaryClawConfig(
   jobDir: string,
   deps: JobRunnerDeps,
   claimedTodoItems?: Array<{ title: string; instanceName: string }>,
+  preAssignedTodoTitle?: string,
 ): GaryClawConfig {
   // Named instances use worktree path; default uses main repo
   const projectDir = config.worktreePath ?? config.projectDir;
@@ -483,6 +513,7 @@ function buildGaryClawConfig(
     // Oracle memory always reads from the main repo, not the worktree
     mainRepoDir: config.worktreePath ? config.projectDir : undefined,
     claimedTodoItems,
+    preAssignedTodoTitle,
   };
 }
 

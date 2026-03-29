@@ -136,6 +136,8 @@ export interface GaryClawConfig {
   mainRepoDir?: string;
   /** TODO items claimed by other daemon instances (injected into prioritize prompt). */
   claimedTodoItems?: Array<{ title: string; instanceName: string }>;
+  /** Pre-assigned TODO title for this instance (bypasses free-choice prioritize). */
+  preAssignedTodoTitle?: string;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────
