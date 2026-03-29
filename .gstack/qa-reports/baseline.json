@@ -1,19 +1,14 @@
 {
   "date": "2026-03-29",
-  "url": "CLI (test suite)",
-  "healthScore": 98,
+  "url": "cli-tool",
+  "healthScore": 95,
+  "testFiles": 128,
+  "tests": 2343,
+  "testsPassing": 2343,
+  "typescriptErrors": 0,
   "issues": [
-    { "id": "ISSUE-001", "title": "continuous not in Job.triggeredBy union type", "severity": "high", "category": "functional", "status": "verified" },
-    { "id": "ISSUE-002", "title": "daemon_crash assigned via as-any to FailureCategory", "severity": "medium", "category": "functional", "status": "verified" }
-  ],
-  "categoryScores": {
-    "console": 100,
-    "links": 100,
-    "visual": 100,
-    "functional": 90,
-    "ux": 100,
-    "performance": 100,
-    "content": 90,
-    "accessibility": 100
-  }
+    { "id": "ISSUE-001", "title": "CLAUDE.md stale test file count and test counts", "severity": "medium", "category": "content", "status": "fixed" },
+    { "id": "ISSUE-002", "title": "doctor.ts module comment says 6 checks but there are 7", "severity": "low", "category": "content", "status": "fixed" },
+    { "id": "ISSUE-003", "title": "checkOrphanedTodoState has zero test coverage", "severity": "medium", "category": "functional", "status": "fixed" }
+  ]
 }

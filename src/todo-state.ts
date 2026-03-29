@@ -13,6 +13,7 @@
 
 import { join } from "node:path";
 import { readdirSync, existsSync } from "node:fs";
+import { normalizedLevenshtein } from "./reflection.js";
 import { execFileSync } from "node:child_process";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
 import { readPidFile, isPidAlive } from "./pid-utils.js";
@@ -140,41 +141,6 @@ export function readTodoState(checkpointDir: string, slug: string): TodoState | 
  */
 export function writeTodoState(checkpointDir: string, slug: string, state: TodoState): void {
   safeWriteJSON(statePath(checkpointDir, slug), state);
-}
-
-// ── Levenshtein (inline, minimal) ────────────────────────────────
-
-const MAX_LEVENSHTEIN_LENGTH = 500;
-
-function levenshteinDistance(a: string, b: string): number {
-  const m = a.length;
-  const n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-  if (m > MAX_LEVENSHTEIN_LENGTH || n > MAX_LEVENSHTEIN_LENGTH) {
-    return Math.max(m, n);
-  }
-
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost,
-      );
-    }
-  }
-  return dp[m][n];
-}
-
-function normalizedLevenshtein(a: string, b: string): number {
-  if (a.length === 0 && b.length === 0) return 0;
-  return levenshteinDistance(a, b) / Math.max(a.length, b.length);
 }
 
 // ── Find state by title ──────────────────────────────────────────
