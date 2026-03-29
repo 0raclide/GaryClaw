@@ -33,7 +33,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
-- 37 source modules + CLI, 153 test files, 2748 tests
+- 38 source modules + CLI, 156 test files, 2707 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -180,6 +180,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/pid-utils.ts` | PID liveness check, process-name verification, stale PID detection |
 | `src/file-conflict.ts` | File-level conflict prevention: predicted file extraction, dependency expansion, overlap detection for parallel instances |
 | `src/pipeline-compose.ts` | Adaptive pipeline composition: static lookup table mapping (effort, priority, hasDesignDoc) to minimal skill sequences, intersection with requestedSkills |
+| `src/pipeline-history.ts` | Pipeline outcome history: JSONL I/O, skip-risk scoring with exponential decay, circuit breaker for Oracle composition, failure rate computation |
 | `src/todo-state.ts` | TODO lifecycle state tracking: slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation, pipeline skill trimming |
 | `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon/dashboard`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
 
@@ -264,6 +265,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
 | `test/pipeline-compose.test.ts` | 44 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
 | `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
+| `test/pipeline-history.test.ts` | 37 | readPipelineOutcomes, appendPipelineOutcome, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
 | `test/bootstrap.test.ts` | 52 | walkFileTree, detectTechStack, filePriority, safeReadFile, findCiConfig, findTestDir, buildFileTreeString, truncateToTokenBudget, analyzeCodebase, buildBootstrapPrompt |
 | `test/pipeline-bootstrap.test.ts` | 4 | bootstrap skill dispatch, idempotency, pipeline chaining |
@@ -358,6 +360,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/dashboard-merge.test.ts` | 18 | Dashboard merge health: aggregation, health score reweighting |
 | `test/dashboard.regression-3.test.ts` | 4 | Dashboard regression: formatDashboard crash recovery row format |
 | `test/dashboard.regression-4.test.ts` | 4 | Dashboard regression: computeHealthScore/formatDashboard crash on undefined mergeHealth |
+| `test/dashboard-composition-intelligence.test.ts` | 9 | aggregateCompositionIntelligence: oracle active/tripped, skip-risk scores, failure rates, empty outcomes |
 | `test/dashboard-rate-limit.test.ts` | 5 | Dashboard rate limit display: rate_limited job aggregation, formatting |
 | `test/doctor.regression-1.test.ts` | 10 | Doctor regression: checkOrphanedTodoState coverage |
 | `test/doctor-injection.test.ts` | 11 | Doctor injection: hasInjectionPatterns via checkOracleMemory, all 8 patterns, false positives, corrupt metrics, circuit breaker, --fix |
