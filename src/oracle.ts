@@ -714,7 +714,9 @@ export function createSdkOracleQueryFn(
           resumeSessionId = null;
           continue;
         }
-        throw action.error;
+        if (action.action === "throw") throw action.error;
+        // "return" should not happen in catch path, but satisfy TS narrowing
+        throw err;
       }
     }
   };
