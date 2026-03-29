@@ -556,7 +556,9 @@ export function createJobRunner(
             if (pipelineOutcomeCount >= ORACLE_PIPELINE_THRESHOLD) {
               // Intersect with requestedSkills (oracle can only remove, never add)
               const oracleComposed = originalSkills.filter(s => oracleRecommendation.includes(s));
-              if (oracleComposed.length > 0 && oracleComposed.length !== nextJob.skills.length) {
+              const isDifferentFromCurrent = oracleComposed.length !== nextJob.skills.length
+                || oracleComposed.some(s => !nextJob.skills.includes(s));
+              if (oracleComposed.length > 0 && isDifferentFromCurrent) {
                 d.log("info", `Oracle pipeline override: [${nextJob.skills.join(", ")}] -> [${oracleComposed.join(", ")}] (${pipelineOutcomeCount} outcomes)`);
                 nextJob.skills = oracleComposed;
                 nextJob.composedFrom = nextJob.composedFrom ?? originalSkills;
