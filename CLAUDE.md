@@ -30,7 +30,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Decision Batching: COMPLETE** (2026-03-29) — Multi-question batching into single API call, 50-70% latency reduction, per-question escalation, fallback chain parsing
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
-- 36 source modules + CLI, 130 test files, 2354 tests
+- 36 source modules + CLI, 132 test files, 2376 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -287,6 +287,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
 | `test/prioritize.test.ts` | 42 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
+| `test/prioritize-review-findings.test.ts` | 11 | loadUnresolvedReviewFindings: flat/instance layouts, action keywords, skip filters, review skill gating, job dir limit, error handling |
 | `test/worktree.test.ts` | 28 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
 | `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
 | `test/auto-research.test.ts` | 33 | extractTopicKeywords, groupDecisionsByTopic, getResearchTopics, defaults |
@@ -340,6 +341,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/dashboard.regression-3.test.ts` | 4 | Dashboard regression: formatDashboard crash recovery row format |
 | `test/dashboard.regression-4.test.ts` | 4 | Dashboard regression: computeHealthScore/formatDashboard crash on undefined mergeHealth |
 | `test/doctor.regression-1.test.ts` | 10 | Doctor regression: checkOrphanedTodoState coverage |
+| `test/doctor-injection.test.ts` | 11 | Doctor injection: hasInjectionPatterns via checkOracleMemory, all 8 patterns, false positives, corrupt metrics, circuit breaker, --fix |
 | `test/evaluate-claims.test.ts` | 26 | Claim verification: extractClaudeMdClaims, verifyClaudeMdClaims |
 | `test/evaluate-claims.regression-1.test.ts` | 5 | Evaluate claims regression: double-counting, no-claims fallback, P1-P5 mismatch |
 | `test/evaluate.regression-5.test.ts` | 4 | Evaluate regression: stale improvement-candidates.md duplicate TODOs |
