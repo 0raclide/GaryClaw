@@ -13,7 +13,7 @@
 import { readdirSync, readFileSync, statSync, existsSync, realpathSync, openSync, readSync, closeSync } from "node:fs";
 import { join, relative, extname, basename } from "node:path";
 
-import { estimateTokens } from "./checkpoint.js";
+import { estimateTokens, readCheckpoint, generateRelayPrompt } from "./checkpoint.js";
 import type { GaryClawConfig, PipelineSkillEntry } from "./types.js";
 
 // ── Constants ────────────────────────────────────────────────────
@@ -757,4 +757,72 @@ export async function buildBootstrapPrompt(
   lines.push("");
 
   return lines.join("\n");
+}
+
+// ── Enriched bootstrap prompt (quality gate re-bootstrap) ────────
+
+/** Max tokens for existing CLAUDE.md content in enriched prompt. */
+const ENRICHED_CLAUDE_MD_BUDGET = 5_000;
+
+/**
+ * Build an enriched bootstrap prompt for re-bootstrap after quality gate failure.
+ *
+ * Combines:
+ * 1. Fresh codebase analysis (via analyzeCodebase)
+ * 2. The existing (failed) CLAUDE.md content
+ * 3. QA pre-scan findings from checkpoint
+ *
+ * All helper functions used already exist in bootstrap.ts and checkpoint.ts.
+ */
+export async function buildEnrichedBootstrapPrompt(
+  config: GaryClawConfig,
+  qaCheckpointDir: string,
+  projectDir: string,
+): Promise<string> {
+  const analysis = await analyzeCodebase(projectDir);
+
+  // Read existing CLAUDE.md (the one that failed the quality gate)
+  let existingClaudeMd = "";
+  try {
+    existingClaudeMd = readFileSync(join(projectDir, "CLAUDE.md"), "utf-8");
+  } catch { /* missing file is fine */ }
+
+  // Truncate to budget if large
+  if (existingClaudeMd && estimateTokens(existingClaudeMd) > ENRICHED_CLAUDE_MD_BUDGET) {
+    existingClaudeMd = truncateToTokenBudget(existingClaudeMd, ENRICHED_CLAUDE_MD_BUDGET);
+  }
+
+  // Read QA findings from checkpoint (issues, findings from the pre-scan)
+  const qaCheckpoint = readCheckpoint(qaCheckpointDir);
+  const qaFindings = qaCheckpoint
+    ? generateRelayPrompt(qaCheckpoint, { maxTokens: 5_000 })
+    : "No QA findings captured.";
+
+  // Format codebase analysis
+  const fileTree = analysis.fileTree;
+
+  return `You are improving a CLAUDE.md that scored below the quality threshold.
+
+## Current CLAUDE.md (needs improvement)
+${existingClaudeMd || "(empty — bootstrap produced no output)"}
+
+## QA Pre-Scan Findings
+${qaFindings}
+
+## File Tree
+${fileTree}
+
+## Package Dependencies
+${analysis.packageJson ?? "No package.json found."}
+
+## Instructions
+Rewrite CLAUDE.md to address the quality gaps. Include:
+- All 4 required sections: Architecture, Tech Stack, Test Strategy, Usage
+- Every framework/library found in package.json
+- Specific file paths and module descriptions
+- Any issues found by the QA pre-scan
+
+Also update TODOS.md to include QA findings as backlog items with proper P1-P5 priorities.
+
+Write the updated files now.`;
 }
