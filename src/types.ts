@@ -320,6 +320,7 @@ export interface Job {
   claimedTodoTitle?: string;  // TODO item title claimed by this job's prioritize skill
   claimedFiles?: string[];    // Predicted files this job will modify (for conflict prevention)
   composedFrom?: string[];    // Original skills before adaptive composition (undefined if no composition happened)
+  compositionMethod?: "static" | "oracle";  // How pipeline was composed: static table or oracle recommendation
 }
 
 export interface DaemonState {
