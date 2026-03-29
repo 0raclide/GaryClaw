@@ -180,9 +180,13 @@ Implemented in commit 923c08a. Aggregates avg/min/max adaptive turns per job, se
 **Depends on:** Nothing
 **Added by:** Session 3 retrospective on 2026-03-29
 
-## P2: Adaptive Pipeline Composition — Oracle-Driven Skill Selection
+## ~~P2: Adaptive Pipeline Composition — Rule-Based~~ — COMPLETE (2026-03-29)
 
-**What:** Let the Oracle decide which pipeline skills each TODO needs, instead of running the same 5-skill pipeline for everything. Currently a 4-line P5 fix gets the same 30-minute treatment as a multi-file P2 feature.
+Implemented by default daemon. Rule-based skill sequence selection based on effort/priority. Skips prioritize (already picked) and eng-review for low-risk items. Saves ~$0.90 per cycle on small items.
+
+## P2: Upgrade Pipeline Composition to Oracle-Driven Skill Selection
+
+**What:** Replace the rule-based pipeline composition (currently live: skips skills based on effort/priority heuristics) with Oracle-driven selection. Let the Oracle decide which skills each TODO needs by reasoning about risk, novelty, scope, and history — not just size labels.
 
 **Approach: Bundle skill selection into prioritize.** Prioritize already evaluates each TODO's priority, effort, risk, and context. Extend its output in `priority.md` to include a "Recommended Pipeline" section:
 
