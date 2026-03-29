@@ -10,7 +10,7 @@
 
 import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { runSkill, runSkillWithInitialPrompt } from "./orchestrator.js";
@@ -18,6 +18,7 @@ import { buildReport } from "./report.js";
 import { readCheckpoint } from "./checkpoint.js";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
 import { buildImplementPrompt } from "./implement.js";
+import { slugify, writeTodoState, skillToTodoState } from "./todo-state.js";
 
 import type {
   GaryClawConfig,
@@ -480,6 +481,53 @@ async function executePipelineFrom(
     entry.report = skillReport;
     state.totalCostUsd += skillReport.estimatedCostUsd;
     writePipelineState(state, config.checkpointDir);
+
+    // ── Advance TODO state after skill completion ────────────────
+    if (config.todoTitle) {
+      try {
+        const todoSlug = slugify(config.todoTitle);
+        const newTodoState = skillToTodoState(skillName);
+        if (newTodoState) {
+          // Extract design doc path after office-hours
+          let designDocPath: string | undefined;
+          if (skillName === "office-hours") {
+            const designDir = join(config.projectDir, "docs", "designs");
+            try {
+              const files = readdirSync(designDir)
+                .filter(f => f.includes(todoSlug) || f.includes(todoSlug.slice(0, 20)))
+                .sort();
+              if (files.length > 0) {
+                designDocPath = join("docs", "designs", files[files.length - 1]);
+              }
+            } catch { /* docs/designs/ may not exist yet */ }
+          }
+
+          const currentBranch = (() => {
+            try {
+              return execFileSync("git", ["branch", "--show-current"], {
+                cwd: config.projectDir, encoding: "utf-8",
+              }).trim();
+            } catch { return undefined; }
+          })();
+
+          // Write to parent checkpoint dir (not skill-specific subdir)
+          // so state survives across pipeline runs
+          const stateDir = config.checkpointDir.replace(/\/jobs\/[^/]+$/, "").replace(/\/skill-\d+-[^/]+$/, "");
+          writeTodoState(stateDir, todoSlug, {
+            title: config.todoTitle,
+            slug: todoSlug,
+            state: newTodoState,
+            designDocPath,
+            branch: currentBranch,
+            instanceName: config.instanceName,
+            lastJobId: state.pipelineId,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch {
+        // Fail-open: state write failure should never break the pipeline
+      }
+    }
 
     callbacks.onEvent({
       type: "pipeline_skill_complete",
