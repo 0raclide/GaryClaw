@@ -53,6 +53,7 @@ import {
   reconcileState,
   getStartSkill,
   findNextSkill,
+  markTodoCompleteInFile,
 } from "./todo-state.js";
 import type {
   BudgetConfig,
@@ -158,6 +159,25 @@ export function createJobRunner(
     }
   }
   persistState(state, checkpointDir);
+
+  // Catch-up: mark any TODO items that reached "merged"/"complete" in todo-state
+  // but whose TODOS.md headings are still open (e.g., daemon crashed after merge
+  // but before auto-mark, or auto-mark failed).
+  try {
+    const catchUpDir = parentCheckpointDir ?? checkpointDir;
+    const catchUpCount = catchUpCompletedTodos(
+      catchUpDir,
+      config.projectDir,
+      resolvedInstanceName,
+      parentCheckpointDir,
+      d,
+    );
+    if (catchUpCount > 0) {
+      d.log("info", `Catch-up: marked ${catchUpCount} TODO heading(s) complete in TODOS.md`);
+    }
+  } catch (err) {
+    d.log("warn", `Catch-up failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   function enqueue(
     skills: string[],
@@ -559,6 +579,18 @@ export function createJobRunner(
                   updatedAt: new Date().toISOString(),
                 });
                 d.log("info", `TODO "${nextJob.claimedTodoTitle}" advanced to "merged"`);
+
+                // Auto-mark TODOS.md — defense-in-depth + human readability
+                try {
+                  const todosPath = join(jobConfig.projectDir, "TODOS.md"); // main repo, not worktree
+                  const summary = `${mergeResult.commitCount ?? 0} commit(s) auto-merged from garyclaw/${resolvedInstanceName}.`;
+                  const marked = markTodoCompleteInFile(todosPath, nextJob.claimedTodoTitle!, summary);
+                  if (marked) {
+                    d.log("info", `Auto-marked TODO "${nextJob.claimedTodoTitle}" complete in TODOS.md`);
+                  }
+                } catch (markErr) {
+                  d.log("warn", `Auto-mark TODOS.md failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`);
+                }
               } catch {
                 // Fail-open: state write failure should never break post-merge
               }
@@ -902,6 +934,71 @@ function loadState(checkpointDir: string): DaemonState {
 function persistState(state: DaemonState, checkpointDir: string): void {
   mkdirSync(checkpointDir, { recursive: true });
   safeWriteJSON(join(checkpointDir, STATE_FILE), state);
+}
+
+// ── Auto-mark catch-up ──────────────────────────────────────────
+
+/**
+ * Scan todo-state/ for items that reached "merged" or "complete"
+ * but whose TODOS.md heading is still open. Marks them complete.
+ * Runs once on daemon start to catch items completed before a crash.
+ */
+export function catchUpCompletedTodos(
+  checkpointDir: string,
+  projectDir: string,
+  resolvedInstanceName: string,
+  parentCheckpointDir?: string,
+  deps?: { log: (level: string, message: string) => void },
+): number {
+  const todoStateDir = join(checkpointDir, "todo-state");
+  if (!existsSync(todoStateDir)) return 0;
+
+  let stateFiles: string[];
+  try {
+    stateFiles = readdirSync(todoStateDir).filter(f => f.endsWith(".json"));
+  } catch {
+    return 0;
+  }
+
+  // Guard: skip titles currently claimed by running instances
+  const claimedTitles = new Set<string>();
+  if (parentCheckpointDir) {
+    try {
+      const claimed = getClaimedTodoTitles(parentCheckpointDir);
+      for (const c of claimed) claimedTitles.add(c.title);
+    } catch {
+      // Fail-open
+    }
+  }
+
+  const todosPath = join(projectDir, "TODOS.md");
+  let count = 0;
+
+  for (const file of stateFiles) {
+    try {
+      const filePath = join(todoStateDir, file);
+      const stateData = safeReadJSON<{ title?: string; state?: string; instanceName?: string; lastJobId?: string }>(filePath);
+      if (!stateData?.title || !stateData?.state) continue;
+      if (stateData.state !== "merged" && stateData.state !== "complete") continue;
+
+      // Skip if currently claimed by a running instance
+      if (claimedTitles.has(stateData.title)) continue;
+
+      const summary = stateData.instanceName
+        ? `Completed by ${stateData.instanceName}${stateData.lastJobId ? `, job ${stateData.lastJobId}` : ""}.`
+        : "Completed.";
+
+      const marked = markTodoCompleteInFile(todosPath, stateData.title, summary);
+      if (marked) {
+        count++;
+        deps?.log("debug", `Catch-up: marked "${stateData.title}" complete`);
+      }
+    } catch {
+      // Skip individual state files that fail — continue with others
+    }
+  }
+
+  return count;
 }
 
 // ── Rate limit helpers ───────────────────────────────────────────
