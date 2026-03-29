@@ -56,6 +56,11 @@ export function aggregateJobStats(jobs: Job[], todayStr?: string): DashboardData
     failureBreakdown[j.failureCategory!] = (failureBreakdown[j.failureCategory!] ?? 0) + 1;
   }
 
+  // Crash recovery stats: completed jobs that were retried
+  const recoveredJobs = todayJobs.filter(j => j.status === "complete" && (j.retryCount ?? 0) > 0);
+  const crashRecoveries = recoveredJobs.length;
+  const crashRecoverySavedUsd = recoveredJobs.reduce((sum, j) => sum + (j.priorSkillCostUsd ?? 0), 0);
+
   return {
     total,
     complete,
@@ -67,6 +72,8 @@ export function aggregateJobStats(jobs: Job[], todayStr?: string): DashboardData
     avgCostPerJob,
     avgDurationSec,
     failureBreakdown,
+    crashRecoveries,
+    crashRecoverySavedUsd,
   };
 }
 
@@ -245,6 +252,11 @@ export function formatDashboard(data: DashboardData): string {
     `| Avg Cost/Job | $${data.jobs.avgCostPerJob.toFixed(2)} |`,
     `| Avg Duration | ${formatDuration(data.jobs.avgDurationSec)} |`,
   ];
+
+  // Crash recovery stats (only if there are recoveries)
+  if (data.jobs.crashRecoveries > 0) {
+    lines.push(`| Crash Recoveries | ${data.jobs.crashRecoveries} ($${data.jobs.crashRecoverySavedUsd.toFixed(2)} saved) |`);
+  }
 
   // Failure breakdown (only if there are failures)
   const failureEntries = Object.entries(data.jobs.failureBreakdown);

@@ -331,8 +331,9 @@ describe("Job Runner — Extended", () => {
 
       const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
       const currentState = runner.getState();
-      expect(currentState.jobs[0].status).toBe("failed");
-      expect(currentState.jobs[0].error).toContain("restarted");
+      expect(currentState.jobs[0].status).toBe("queued");
+      expect(currentState.jobs[0].retryCount).toBe(1);
+      expect(currentState.jobs[0].costUsd).toBe(0);
     });
   });
 
