@@ -892,7 +892,7 @@ export function createJobRunner(
       if (nextJob.status === "complete" && currentConfig.autoResearch?.enabled) {
         try {
           // Read decisions from top-level AND pipeline skill subdirs
-          const decisions = collectAllDecisions(jobDir);
+          const decisions = collectAllDecisions(jobDir, (msg) => d.log("warn", msg));
           const memConfig = defaultMemoryConfig(currentConfig.projectDir);
           const memoryFiles = readOracleMemory(memConfig, currentConfig.projectDir);
           const topics = getResearchTopics(
