@@ -535,30 +535,13 @@ describe("reflection", () => {
   });
 
   describe("warn routing", () => {
-    it("routes lock timeout warning through onWarn callback", () => {
-      // Create a config pointing to a directory where the lock is pre-held
-      const lockDir = join(BASE_DIR, "warn-lock-test", "oracle-memory");
-      mkdirSync(lockDir, { recursive: true });
-
-      // Pre-create the lock directory so acquireReflectionLock fails immediately
-      const lockPath = join(lockDir, "reflection-lock");
-      mkdirSync(lockPath, { recursive: true });
-      // Write a PID file with our own PID so stale detection doesn't recover it
-      writeFileSync(join(lockPath, "pid"), String(process.pid));
-
-      const onWarn = vi.fn();
-
-      // Use a very short timeout to trigger the lock failure quickly
-      // The lock is held by our own PID (reentrant), so it will succeed.
-      // Instead, use a different PID that's alive.
-      // Actually, the simplest test: just check that onWarn is passed through
-      // and used by runReflection for other error paths.
-
+    it("routes corrupt JSONL warning through onWarn callback (readDecisionsFromLog)", () => {
       // Test corrupt JSONL warning in readDecisionsFromLog
       const jsonlPath = join(BASE_DIR, "warn-lock-test", "corrupt.jsonl");
       mkdirSync(join(BASE_DIR, "warn-lock-test"), { recursive: true });
       writeFileSync(jsonlPath, "not valid json\n", "utf-8");
 
+      const onWarn = vi.fn();
       const decisions = readDecisionsFromLog(jsonlPath, onWarn);
       expect(decisions).toHaveLength(0);
       expect(onWarn).toHaveBeenCalledWith(

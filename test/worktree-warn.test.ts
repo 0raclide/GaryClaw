@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   listWorktrees,
+  createWorktree,
+  mergeWorktreeBranch,
 } from "../src/worktree.js";
 
 /** Create a temp git repo with an initial commit. */
@@ -49,5 +51,60 @@ describe("listWorktrees onWarn", () => {
     const result = listWorktrees(repoDir, onWarn);
     expect(result).toEqual([]);
     expect(onWarn).not.toHaveBeenCalled();
+  });
+});
+
+describe("mergeWorktreeBranch onWarn", () => {
+  it("routes stash pop failure through onWarn callback", () => {
+    const repoDir = createTestRepo();
+    const info = createWorktree(repoDir, "warn-test", "main");
+
+    // Worktree modifies README.md (will be merged to main)
+    writeFileSync(join(info.path, "README.md"), "# Worktree version\n");
+    execFileSync("git", ["add", "README.md"], { cwd: info.path, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Modify README in worktree"], { cwd: info.path, stdio: "pipe" });
+
+    // Main has uncommitted change to same file (will conflict on stash pop)
+    writeFileSync(join(repoDir, "README.md"), "# Dirty local version\n");
+
+    const onWarn = vi.fn();
+    const result = mergeWorktreeBranch(repoDir, "warn-test", "main", { onWarn });
+
+    // The merge itself should succeed (stash clears the dirty state)
+    expect(result.merged).toBe(true);
+
+    // Stash pop should fail because both modified README.md, triggering onWarn
+    expect(onWarn).toHaveBeenCalledWith(
+      expect.stringContaining("[worktree] Stash pop failed after merge"),
+    );
+
+    // Cleanup
+    try {
+      execFileSync("git", ["worktree", "prune"], { cwd: repoDir, stdio: "pipe" });
+    } catch { /* ignore */ }
+  });
+
+  it("does not call onWarn when stash pop succeeds", () => {
+    const repoDir = createTestRepo();
+    const info = createWorktree(repoDir, "warn-clean", "main");
+
+    // Worktree adds a new file (won't conflict with stash)
+    writeFileSync(join(info.path, "feature.txt"), "feature content");
+    execFileSync("git", ["add", "feature.txt"], { cwd: info.path, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "Add feature"], { cwd: info.path, stdio: "pipe" });
+
+    // Main has uncommitted change to a different file (no conflict on pop)
+    writeFileSync(join(repoDir, "README.md"), "# Dirty but safe\n");
+
+    const onWarn = vi.fn();
+    const result = mergeWorktreeBranch(repoDir, "warn-clean", "main", { onWarn });
+
+    expect(result.merged).toBe(true);
+    expect(onWarn).not.toHaveBeenCalled();
+
+    // Cleanup
+    try {
+      execFileSync("git", ["worktree", "prune"], { cwd: repoDir, stdio: "pipe" });
+    } catch { /* ignore */ }
   });
 });

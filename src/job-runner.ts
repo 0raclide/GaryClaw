@@ -45,6 +45,7 @@ import {
 import {
   PerJobCostExceededError,
 } from "./types.js";
+import type { WarnFn } from "./types.js";
 import {
   classifyError,
   buildFailureRecord,
@@ -956,13 +957,13 @@ export function createJobRunner(
  * Reads top-level decisions.jsonl AND any in pipeline skill subdirs
  * (e.g., skill-0-qa/decisions.jsonl, skill-1-design-review/decisions.jsonl).
  */
-export function collectAllDecisions(jobDir: string): Decision[] {
+export function collectAllDecisions(jobDir: string, onWarn?: WarnFn): Decision[] {
   const decisions: Decision[] = [];
 
   // Top-level decisions.jsonl (single-skill jobs)
   const topLevel = join(jobDir, "decisions.jsonl");
   if (existsSync(topLevel)) {
-    decisions.push(...readDecisionsFromLog(topLevel));
+    decisions.push(...readDecisionsFromLog(topLevel, onWarn));
   }
 
   // Pipeline skill subdirs: skill-{i}-{name}/decisions.jsonl
@@ -972,7 +973,7 @@ export function collectAllDecisions(jobDir: string): Decision[] {
       if (entry.isDirectory() && entry.name.startsWith("skill-")) {
         const subLog = join(jobDir, entry.name, "decisions.jsonl");
         if (existsSync(subLog)) {
-          decisions.push(...readDecisionsFromLog(subLog));
+          decisions.push(...readDecisionsFromLog(subLog, onWarn));
         }
       }
     }

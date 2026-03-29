@@ -16,6 +16,7 @@
  */
 
 import type { Decision, OracleMemoryFiles, OracleSessionEvent } from "./types.js";
+import { resolveWarnFn } from "./types.js";
 import { extractResultData } from "./sdk-wrapper.js";
 
 // ── The 7 Decision Principles ───────────────────────────────────
@@ -598,7 +599,7 @@ export function parseBatchOracleResponse(
   questions: OracleBatchQuestion[],
   onWarn?: (msg: string) => void,
 ): Array<Omit<OracleOutput, "isTaste" | "escalate">> {
-  const warn = onWarn ?? console.warn;
+  const warn = resolveWarnFn(onWarn);
 
   // Try to extract a JSON array
   const arrayMatch = raw.match(/\[[\s\S]*\]/);
