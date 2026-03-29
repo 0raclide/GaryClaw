@@ -158,7 +158,11 @@ async function handleOracleBatch(
     const batchInput: OracleBatchInput = {
       questions: batchQuestions,
       skillName: oracle.skillName,
-      decisionHistory: [...decisions],  // Snapshot: don't share mutable reference
+      // Snapshot: all batch questions arrive simultaneously, so they all see the
+      // same history frozen at this point. The serial path below passes the mutable
+      // `decisions` array instead, so each question sees decisions from prior questions
+      // in the same canUseTool call. Both behaviors are intentional.
+      decisionHistory: [...decisions],
       projectContext: oracle.projectContext,
       memory: oracle.memory,
     };
@@ -179,7 +183,9 @@ async function handleOracleBatch(
       processOracleResult(q, oracleResult, answers, decisions, config);
     }
   } else {
-    // Serial fallback: single question or no batch function
+    // Serial fallback: single question or no batch function.
+    // Unlike the batch path above, we pass the mutable `decisions` array so each
+    // question accumulates context from prior questions in this same call.
     for (const q of questions) {
       const oracleResult = await oracle.askOracle(
         {
