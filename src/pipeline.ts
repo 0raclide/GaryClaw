@@ -410,7 +410,7 @@ async function executePipelineFrom(
     const skillReport = buildSkillReport(
       checkpoint,
       skillName,
-      entry.startTime!,
+      entry.startTime ?? state.startTime, // fallback to pipeline startTime if somehow unset
       skillEndTime,
     );
 
