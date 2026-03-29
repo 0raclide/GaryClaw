@@ -196,26 +196,28 @@ Fixed by /qa ISSUE-002/003: added `costUsd` to `ResearchResult`, extract `total_
 
 **Added by:** /qa on 2026-03-27
 
-## P5: Low-Severity QA Findings (deferred)
+## ~~P5: Low-Severity QA Findings (deferred)~~ — COMPLETE (2026-03-29)
+
+All 15 items resolved. Last 4 fixed by worker-5 instance on 2026-03-29: isTaste JSDoc documentation, parseDomainSections edge case test, pipeline startTime default fallback, pipeline static import conversion.
 
 **What:** 15 low-severity issues found by /qa deep audit (run 5, 2026-03-27). None are bugs that affect correctness today, but are code quality / robustness improvements.
 
 **Items:**
-- [ ] `isTaste` field in oracle.ts mirrors confidence threshold, not taste semantics — rename or document
+- [x] `isTaste` field in oracle.ts mirrors confidence threshold, not taste semantics — rename or document — Documented with JSDoc on OracleOutput.isTaste, 2026-03-29
 - [x] Oracle ESCALATION_PHRASES "delete" matches benign strings like "deleted" — use word boundary — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-003)
 - [x] `(msg as any)` type assertions in `createSdkOracleQueryFn` — add runtime shape validation — Fixed by /qa Run 11 on main, 2026-03-28 (ISSUE-001): replaced with extractResultData
 - [x] `INJECTION_PATTERNS` in oracle-memory.ts bypassable with leading whitespace — trim before matching — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-001)
 - [x] Shallow copy in `updateMetricsWithOutcome` shares `confidenceTrend` array reference — deep copy array — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-001)
 - [x] `readDecisionsFromLog` silently drops corrupt JSONL lines — add warning log — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-002)
-- [ ] `parseDomainSections` edge case with adjacent sections without body text — add test
+- [x] `parseDomainSections` edge case with adjacent sections without body text — add test — Added 2 edge case tests, 2026-03-29
 - [x] `createResearchCanUseTool` sync return used where async expected — align signatures — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-003)
 - [x] Research cost extraction uses `(msg as any).total_cost_usd` — use extractResultData instead — Fixed by /qa Run 10 on main, 2026-03-28 (ISSUE-002)
 - [x] `extractTopicKeywords` doesn't filter numeric-only tokens — add isNaN guard — Fixed by /qa Run 11 on main, 2026-03-28 (ISSUE-002): added `/^\d+$/` filter
 - [x] `isTopicGroupFresh` brittle to topic naming variations — consider fuzzy matching — Fixed by /qa Run 11 on main, 2026-03-28 (ISSUE-003): checks all matching sections, not just first
 - [x] `branchName` doesn't sanitize `instanceName` for illegal git branch chars — add validation — Fixed by /qa Run 6 on main, 2026-03-27 (ISSUE-002)
 - [x] `listWorktrees` swallows all git errors silently — log warning on error — Fixed by /qa Run 8 on main, 2026-03-27 (ISSUE-004)
-- [ ] Pipeline `startTime!` non-null assertion — use explicit default
-- [ ] Pipeline dynamic import of orchestrator creates circular dependency — extract shared interface
+- [x] Pipeline `startTime!` non-null assertion — use explicit default — Replaced with `?? state.startTime` fallback, 2026-03-29
+- [x] Pipeline dynamic import of orchestrator creates circular dependency — extract shared interface — No circular dep exists; converted to static import, 2026-03-29
 
 **Effort:** XS each (human: ~30 min each / CC: ~5 min each)
 **Depends on:** Nothing
