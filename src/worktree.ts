@@ -315,28 +315,6 @@ export function mergeWorktreeBranch(
     return { merged: true, commitCount: 0, reason: "Already up to date" };
   }
 
-  // Check for dirty working tree before switching branches — never disrupt user's work.
-  // Use git diff --quiet (not status --porcelain) to ignore untracked files like .garyclaw/
-  try {
-    // Staged changes to tracked files
-    execFileSync("git", ["diff", "--cached", "--quiet"], {
-      cwd: repoDir,
-      stdio: "pipe",
-    });
-    // Unstaged changes to tracked files
-    execFileSync("git", ["diff", "--quiet"], {
-      cwd: repoDir,
-      stdio: "pipe",
-    });
-  } catch {
-    // diff --quiet exits non-zero when tracked files have changes
-    return {
-      merged: false,
-      commitCount,
-      reason: `Working tree has uncommitted changes — cannot checkout ${baseBranch} for merge`,
-    };
-  }
-
   // Save current branch so we can restore it after merge
   let originalBranch: string | null = null;
   try {
@@ -379,6 +357,21 @@ export function mergeWorktreeBranch(
     appendMergeAudit(repoDir, instanceName, branch, baseBranch, result, options);
     restoreBranch(repoDir, originalBranch, baseBranch);
     return result;
+  }
+
+  // Stash dirty working tree state inside the merge lock (same pattern as relay.ts).
+  // In daemon mode, main repo may have uncommitted tracked file changes from other
+  // instances or relay artifacts. Stash before checkout, pop after merge.
+  let stashed = false;
+  try {
+    const stashOutput = execFileSync(
+      "git", ["stash", "push", "--include-untracked", "-m", "garyclaw-merge-stash"],
+      { cwd: repoDir, stdio: "pipe", encoding: "utf-8" },
+    ).trim();
+    // "No local changes to save" means nothing was stashed
+    stashed = !stashOutput.includes("No local changes");
+  } catch {
+    // Stash failed — continue anyway (best-effort)
   }
 
   try {
@@ -482,6 +475,16 @@ export function mergeWorktreeBranch(
     appendMergeAudit(repoDir, instanceName, branch, baseBranch, result, options);
     return result;
   } finally {
+    // Pop stash if we pushed one (before releasing merge lock)
+    if (stashed) {
+      try {
+        execFileSync("git", ["stash", "pop"], { cwd: repoDir, stdio: "pipe" });
+      } catch {
+        // Pop conflict — leave stash in place for manual resolution.
+        // User can inspect with `git stash list` and resolve with `git stash drop`.
+        console.warn("[worktree] Stash pop failed after merge — stash left in place for manual resolution");
+      }
+    }
     releaseMergeLock(repoDir);
   }
 }
