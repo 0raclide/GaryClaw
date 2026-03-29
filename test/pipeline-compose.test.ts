@@ -353,3 +353,115 @@ describe("composePipeline — result shape", () => {
     expect(r.reason.length).toBeGreaterThan(0);
   });
 });
+
+// ── Oracle skip-risk restoration ─────────────────────────────────
+
+describe("composePipeline — Oracle skip-risk restoration", () => {
+  it("no skipRiskScores → no Oracle adjustment", () => {
+    const r = compose({ effort: "XS" });
+    expect(r.oracleRestoredSkills).toBeUndefined();
+    expect(r.skills).toEqual(["implement", "qa"]);
+  });
+
+  it("empty skipRiskScores → no Oracle adjustment", () => {
+    const r = compose({ effort: "XS", skipRiskScores: new Map() });
+    expect(r.oracleRestoredSkills).toBeUndefined();
+  });
+
+  it("low skip-risk scores → no restoration", () => {
+    const scores = new Map([["office-hours", 0.1], ["plan-eng-review", 0.05]]);
+    const r = compose({ effort: "XS", skipRiskScores: scores });
+    expect(r.skills).toEqual(["implement", "qa"]);
+    expect(r.oracleRestoredSkills).toBeUndefined();
+  });
+
+  it("high skip-risk restores skill", () => {
+    const scores = new Map([["plan-eng-review", 0.5]]);
+    const r = compose({ effort: "XS", skipRiskScores: scores });
+    expect(r.skills).toContain("plan-eng-review");
+    expect(r.oracleRestoredSkills).toEqual(["plan-eng-review"]);
+  });
+
+  it("restored skills maintain original order from requestedSkills", () => {
+    const scores = new Map([
+      ["office-hours", 0.4],
+      ["plan-eng-review", 0.6],
+    ]);
+    const r = compose({ effort: "XS", skipRiskScores: scores });
+    // XS removes everything except implement+qa. Both restored.
+    // Original order: prioritize, office-hours, implement, plan-eng-review, qa
+    expect(r.skills).toEqual(["office-hours", "implement", "plan-eng-review", "qa"]);
+    expect(r.oracleRestoredSkills).toEqual(["office-hours", "plan-eng-review"]);
+  });
+
+  it("reason includes Oracle restoration detail", () => {
+    const scores = new Map([["office-hours", 0.45]]);
+    const r = compose({ effort: "XS", skipRiskScores: scores });
+    expect(r.reason).toContain("Oracle restored");
+    expect(r.reason).toContain("office-hours");
+    expect(r.reason).toContain("45%");
+  });
+
+  it("respects custom skipRiskThreshold", () => {
+    const scores = new Map([["office-hours", 0.25]]);
+    // Default threshold is 0.3, so 0.25 would NOT trigger
+    const r1 = compose({ effort: "XS", skipRiskScores: scores });
+    expect(r1.oracleRestoredSkills).toBeUndefined();
+
+    // With lower threshold of 0.2, 0.25 SHOULD trigger
+    const r2 = compose({ effort: "XS", skipRiskScores: scores, skipRiskThreshold: 0.2 });
+    expect(r2.oracleRestoredSkills).toEqual(["office-hours"]);
+  });
+
+  it("only restores skills that static rules removed (not already-included skills)", () => {
+    // S/P2/no design doc → office-hours, implement, qa (plan-eng-review removed)
+    const scores = new Map([
+      ["office-hours", 0.9],     // already included — should NOT appear in restored
+      ["plan-eng-review", 0.5],  // was removed — should be restored
+    ]);
+    const r = compose({ effort: "S", priority: 2, hasDesignDoc: false, skipRiskScores: scores });
+    expect(r.skills).toContain("plan-eng-review");
+    expect(r.oracleRestoredSkills).toEqual(["plan-eng-review"]);
+  });
+
+  it("skip-risk at exactly threshold is NOT restored (> not >=)", () => {
+    const scores = new Map([["office-hours", 0.3]]);
+    const r = compose({ effort: "XS", skipRiskScores: scores });
+    expect(r.oracleRestoredSkills).toBeUndefined();
+  });
+
+  it("savings recalculated after Oracle restoration", () => {
+    // XS normally saves $1.70 (skips prioritize, office-hours, plan-eng-review)
+    // Restoring office-hours ($0.80) reduces savings to $0.90
+    const scores = new Map([["office-hours", 0.5]]);
+    const r = compose({ effort: "XS", skipRiskScores: scores });
+    expect(r.savings).toBe("$0.90");
+  });
+
+  it("Oracle cannot restore skills not in requestedSkills", () => {
+    // requestedSkills only has implement+qa, skip-risk for office-hours irrelevant
+    const scores = new Map([["office-hours", 0.9]]);
+    const r = compose({
+      effort: "XS",
+      requestedSkills: ["implement", "qa"],
+      skipRiskScores: scores,
+    });
+    expect(r.skills).toEqual(["implement", "qa"]);
+    expect(r.oracleRestoredSkills).toBeUndefined();
+  });
+
+  it("single skill bypasses Oracle restoration", () => {
+    const scores = new Map([["qa", 0.9]]);
+    const r = compose({ effort: "XS", requestedSkills: ["qa"], skipRiskScores: scores });
+    expect(r.skills).toEqual(["qa"]);
+    expect(r.oracleRestoredSkills).toBeUndefined();
+  });
+
+  it("full pipeline has nothing to restore", () => {
+    const scores = new Map([["office-hours", 0.9]]);
+    const r = compose({ effort: "L", skipRiskScores: scores });
+    // L effort → full pipeline, nothing was removed
+    expect(r.skills).toEqual(FULL_PIPELINE);
+    expect(r.oracleRestoredSkills).toBeUndefined();
+  });
+});

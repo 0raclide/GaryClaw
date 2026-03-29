@@ -15,12 +15,15 @@ export interface ComposeInput {
   priority: number;            // from TodoItem.priority: 1-5 (1 = highest)
   hasDesignDoc: boolean;       // design doc already exists
   requestedSkills: string[];   // original trigger skills (the "maximum")
+  skipRiskScores?: Map<string, number>;  // from pipeline-history: skill -> risk score 0-1
+  skipRiskThreshold?: number;            // default: 0.3 (from DEFAULT_SKIP_RISK_THRESHOLD)
 }
 
 export interface ComposeResult {
   skills: string[];            // composed skill sequence
   reason: string;              // human-readable explanation for logging
   savings: string;             // estimated savings vs full pipeline
+  oracleRestoredSkills?: string[];  // skills restored by Oracle skip-risk (undefined if no Oracle adjustments)
 }
 
 // ── Full pipeline (reference) ─────────────────────────────────────
@@ -106,8 +109,11 @@ function selectSkills(effort: string | null, priority: number, hasDesignDoc: boo
  * - requestedSkills has 0 or 1 skills (nothing to compose)
  * - Composition produces the same or longer skill list
  */
+/** Default skip-risk threshold for Oracle restoration. */
+const DEFAULT_SKIP_RISK_THRESHOLD = 0.3;
+
 export function composePipeline(input: ComposeInput): ComposeResult {
-  const { effort, priority, hasDesignDoc, requestedSkills } = input;
+  const { effort, priority, hasDesignDoc, requestedSkills, skipRiskScores, skipRiskThreshold } = input;
 
   // Nothing to compose with 0 or 1 skills
   if (requestedSkills.length <= 1) {
@@ -132,6 +138,48 @@ export function composePipeline(input: ComposeInput): ComposeResult {
       reason: "composition produced empty set — using original",
       savings: "$0.00",
     };
+  }
+
+  // ── Oracle skip-risk restoration ─────────────────────────────────
+  // After static rules, check if any removed skills have high skip-risk.
+  // Oracle can only ADD skills back that static rules removed — never remove
+  // skills that static rules kept. This makes the system strictly safer.
+  const oracleRestoredSkills: string[] = [];
+  if (skipRiskScores && skipRiskScores.size > 0) {
+    const threshold = skipRiskThreshold ?? DEFAULT_SKIP_RISK_THRESHOLD;
+    const removedSkills = requestedSkills.filter(s => !composed.includes(s));
+
+    for (const skill of removedSkills) {
+      const risk = skipRiskScores.get(skill);
+      if (risk !== undefined && risk > threshold) {
+        oracleRestoredSkills.push(skill);
+      }
+    }
+
+    // Re-insert restored skills in their original order from requestedSkills
+    if (oracleRestoredSkills.length > 0) {
+      const finalSkills: string[] = [];
+      for (const s of requestedSkills) {
+        if (composed.includes(s) || oracleRestoredSkills.includes(s)) {
+          finalSkills.push(s);
+        }
+      }
+
+      const restoredDetail = oracleRestoredSkills
+        .map(s => `${s}(${(skipRiskScores.get(s)! * 100).toFixed(0)}%)`)
+        .join(", ");
+
+      const originalCost = requestedSkills.reduce((sum, s) => sum + (SKILL_COST_USD[s] ?? 0.50), 0);
+      const finalCost = finalSkills.reduce((sum, s) => sum + (SKILL_COST_USD[s] ?? 0.50), 0);
+      const savings = Math.max(0, originalCost - finalCost);
+
+      return {
+        skills: finalSkills,
+        reason: `${reason} + Oracle restored [${restoredDetail}]`,
+        savings: `$${savings.toFixed(2)}`,
+        oracleRestoredSkills,
+      };
+    }
   }
 
   // Calculate estimated savings
