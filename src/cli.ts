@@ -356,6 +356,9 @@ export function formatEvent(event: OrchestratorEvent): string {
 
     case "pipeline_composed":
       return `${YELLOW}[Composition]${RESET} [${event.originalSkills.join(", ")}] → [${event.composedSkills.join(", ")}] (${event.reason})`;
+
+    case "pipeline_oracle_adjustment":
+      return `${YELLOW}[Oracle Composition]${RESET} ${event.action === "restored" ? "Restored" : "Kept skipped"} ${event.skill} (skip-risk: ${(event.skipRisk * 100).toFixed(0)}%)`;
   }
 }
 

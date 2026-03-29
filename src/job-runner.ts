@@ -518,6 +518,7 @@ export function createJobRunner(
           d.log("info", `Adaptive composition: [${originalSkills.join(", ")}] -> [${composed.skills.join(", ")}] (${composed.reason}, saves ${composed.savings})`);
           nextJob.composedFrom = originalSkills;
           nextJob.skills = composed.skills;
+          nextJob.compositionMethod = composed.oracleRestoredSkills?.length ? "oracle" : "static";
           callbacks.onEvent({
             type: "pipeline_composed",
             originalSkills,
