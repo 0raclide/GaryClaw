@@ -31,7 +31,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
 **TODO State Tracking: COMPLETE** (2026-03-29) — Persistent lifecycle state per TODO item, artifact detection (design docs, branches, commits), reconciliation with self-healing, pipeline skill trimming, doctor check #7
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
-- 36 source modules + CLI, 148 test files, 2549 tests
+- 36 source modules + CLI, 150 test files, 2554 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -346,6 +346,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/daemon-registry.regression-1.test.ts` | 8 | Daemon registry regression: getClaimedTodoTitles cross-instance coordination |
 | `test/daemon-registry.regression-2.test.ts` | 7 | Daemon registry regression: getCompletedTodoTitles todo-state/ directory scan |
 | `test/daemon-registry-rate-limit.test.ts` | 5 | Cross-instance rate limit coordination: setGlobalRateLimitHold, readGlobalBudget |
+| `test/daemon-registry-rate-limit.regression-1.test.ts` | 3 | clearGlobalRateLimitHold: clear expired hold, no-op, preserve byInstance |
 | `test/dashboard-merge.test.ts` | 18 | Dashboard merge health: aggregation, health score reweighting |
 | `test/dashboard.regression-3.test.ts` | 4 | Dashboard regression: formatDashboard crash recovery row format |
 | `test/dashboard.regression-4.test.ts` | 4 | Dashboard regression: computeHealthScore/formatDashboard crash on undefined mergeHealth |
@@ -363,6 +364,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-rate-limit-wiring.test.ts` | 11 | Rate limit wiring: time-gate in processNext, error handler detection, rate_limited dedup, cross-instance coordination |
 | `test/job-runner-rate-limit.regression-1.test.ts` | 1 | Job runner rate limit regression: costUsd reset on re-queue after hold expiry |
 | `test/job-runner-resume.regression-1.test.ts` | 2 | Job runner resume regression: abandoned job FailureRecord retryable flag |
+| `test/job-runner-resume.regression-2.test.ts` | 2 | Job runner resume regression: rate_limited crash recovery, costUsd reset |
 | `test/job-runner.regression-4.test.ts` | 7 | Job runner regression: parsePriorityPickTitle edge cases |
 | `test/job-runner.regression-5.test.ts` | 4 | Job runner regression: backward compat missing config.merge |
 | `test/job-runner.regression-6.test.ts` | 2 | Job runner regression: 'continuous' trigger source validity on Job.triggeredBy |
