@@ -170,7 +170,8 @@ export type OrchestratorEvent =
   | { type: "bootstrap_quality_check"; qualityScore: number; missingSections: string[]; notes: string[] }
   | { type: "bootstrap_quality_recheck"; qualityScore: number; previousScore: number }
   | { type: "oracle_session"; event: OracleSessionEvent }
-  | { type: "pipeline_composed"; originalSkills: string[]; composedSkills: string[]; reason: string };
+  | { type: "pipeline_composed"; originalSkills: string[]; composedSkills: string[]; reason: string }
+  | { type: "pipeline_oracle_adjustment"; skill: string; skipRisk: number; action: "restored" | "kept_skipped" };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;
@@ -539,6 +540,14 @@ export interface DashboardData {
     avgSkillsAfter: number;         // Average skill count after composition
     estimatedSavingsUsd: number;    // Estimated cost savings from fewer skills
   };
+  compositionIntelligence: {
+    oracleActive: boolean;            // Whether Oracle adjustments are active
+    oracleAdjustedJobs: number;       // Jobs where Oracle restored skipped skills
+    oracleFailureRate: number;        // Failure rate for Oracle-adjusted jobs (0-100)
+    staticFailureRate: number;        // Failure rate for static-only jobs (0-100)
+    skipRiskScores: Record<string, number>;  // skill name -> skip risk score (0-1)
+    circuitBreaker: "ok" | "tripped";
+  };
   instances: string[];           // Active instance names
 }
 
@@ -585,6 +594,26 @@ export interface SegmentResult {
   modelUsage: Record<string, SdkModelUsageEntry> | null;
   totalCostUsd: number;
   numTurns: number;
+}
+
+// ── Pipeline Outcome History (Oracle-driven composition) ─────────
+
+export interface PipelineOutcomeRecord {
+  jobId: string;
+  timestamp: string;
+  todoTitle: string;
+  effort: string | null;
+  priority: number;
+  skills: string[];           // skills that actually ran
+  skippedSkills: string[];    // skills removed by composition
+  composedFrom?: string[];    // original skill list before composition
+  qaFailureCount: number;     // issues with severity critical/high from QA
+  reopenedCount: number;      // reopened issues detected by reflection
+  outcome: "success" | "partial" | "failure";
+  // Derivation: "failure" if qaFailureCount > 0 || reopenedCount > 0,
+  //             "partial" if job completed but had non-critical issues,
+  //             "success" if no failures and no reopens
+  oracleAdjusted: boolean;    // true if Oracle restored any skills beyond static rules
 }
 
 // ── Evaluation (dogfood campaign evaluator) ──────────────────────
