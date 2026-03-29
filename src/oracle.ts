@@ -37,6 +37,13 @@ Conflict resolution hierarchy:
 
 // ── Types ───────────────────────────────────────────────────────
 
+export interface OraclePromptPrefixInput {
+  skillName: string;
+  projectContext?: string;
+  memory?: OracleMemoryFiles;
+  decisionHistory: Decision[];
+}
+
 export interface OracleInput {
   question: string;
   options: { label: string; description: string }[];
@@ -134,7 +141,11 @@ export async function askOracle(
   };
 }
 
-export function buildOraclePrompt(input: OracleInput): string {
+/**
+ * Build the shared prompt prefix used by both single and batch oracle prompts.
+ * Contains: system preamble, Decision Principles, Current Context, Oracle Memory, Recent Decisions.
+ */
+export function buildOraclePromptPrefix(input: OraclePromptPrefixInput): string {
   let prompt = `You are a decision-making oracle for GaryClaw, an autonomous development tool.
 
 ## Decision Principles
@@ -146,7 +157,7 @@ ${input.projectContext ? `- Project: ${input.projectContext.slice(0, 500)}` : ""
 
 `;
 
-  // Phase 5a: Inject oracle memory between principles and recent decisions
+  // Inject oracle memory between principles and recent decisions
   if (input.memory) {
     const { taste, domainExpertise, decisionOutcomes, memoryMd } = input.memory;
 
@@ -175,6 +186,12 @@ ${input.projectContext ? `- Project: ${input.projectContext.slice(0, 500)}` : ""
     }
     prompt += "\n";
   }
+
+  return prompt;
+}
+
+export function buildOraclePrompt(input: OracleInput): string {
+  let prompt = buildOraclePromptPrefix(input);
 
   const hasOtherOption = input.options.some(
     (o) => o.label.toLowerCase() === "other",
@@ -367,46 +384,7 @@ export async function askOracleBatch(
 }
 
 export function buildBatchOraclePrompt(input: OracleBatchInput): string {
-  let prompt = `You are a decision-making oracle for GaryClaw, an autonomous development tool.
-
-## Decision Principles
-${DECISION_PRINCIPLES}
-
-## Current Context
-- Skill: /${input.skillName}
-${input.projectContext ? `- Project: ${input.projectContext.slice(0, 500)}` : ""}
-
-`;
-
-  // Inject oracle memory (same as single prompt)
-  if (input.memory) {
-    const { taste, domainExpertise, decisionOutcomes, memoryMd } = input.memory;
-
-    if (taste) {
-      prompt += `## Taste Profile (personal preferences)\n${taste}\n\n`;
-    }
-
-    if (domainExpertise) {
-      prompt += `## Domain Expertise (researched knowledge)\n${domainExpertise}\n\n`;
-    }
-
-    if (decisionOutcomes) {
-      prompt += `## Decision Outcomes (what worked and what didn't — P7 applies here)\n${decisionOutcomes}\n\n`;
-    }
-
-    if (memoryMd) {
-      prompt += `## Project Memory (MEMORY.md)\n${memoryMd}\n\n`;
-    }
-  }
-
-  if (input.decisionHistory.length > 0) {
-    const recent = input.decisionHistory.slice(-5);
-    prompt += `## Recent Decisions (last ${recent.length})\n`;
-    for (const d of recent) {
-      prompt += `- Q: "${d.question}" → A: "${d.chosen}" [${d.principle}]\n`;
-    }
-    prompt += "\n";
-  }
+  let prompt = buildOraclePromptPrefix(input);
 
   // List all questions
   prompt += `## Questions (answer ALL ${input.questions.length} questions)\n\n`;

@@ -147,7 +147,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/sdk-wrapper.ts` | SDK isolation layer: `startSegment`, `extractTurnUsage`, `buildSdkEnv` |
 | `src/relay.ts` | Git stash + fresh relay segment + stash pop |
 | `src/report.ts` | Merge issues/findings/decisions, markdown report |
-| `src/oracle.ts` | Decision Oracle — 7 Principles, confidence scoring, escalation, memory injection, batch decisions |
+| `src/oracle.ts` | Decision Oracle — 7 Principles, confidence scoring, escalation, memory injection, batch decisions, shared prompt prefix |
 | `src/issue-extractor.ts` | Hybrid issue extraction from SDK stream + git log |
 | `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state, git HEAD tracking, text accumulation for post-skill analysis |
 | `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
@@ -234,6 +234,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/ask-handler-batch.test.ts` | 11 | Batch wiring: multi-question batching, decision log, escalation per-question, serial fallback, human mode unaffected |
 | `test/ask-handler-batch.regression-1.test.ts` | 4 | Guard clause: batchResults length mismatch, fallback low-confidence escalation, empty array, escalated log |
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
+| `test/oracle-prompt-prefix.test.ts` | 11 | buildOraclePromptPrefix: preamble, principles, memory injection, recent decisions, projectContext truncation |
 | `test/oracle-batch.test.ts` | 32 | askOracleBatch: single delegation, multi-question batching, batch prompt, parseBatchOracleResponse, fallback chain, otherProposal |
 | `test/oracle-extended.test.ts` | 32 | Extended oracle edge cases, principle matching, response parsing |
 | `test/sdk-wrapper.test.ts` | 12 | env stripping, usage extraction, result parsing |
