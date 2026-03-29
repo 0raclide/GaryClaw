@@ -402,6 +402,158 @@ export function extractClaudeMdClaims(claudeMdContent: string): ClaudeMdClaim[] 
   return claims;
 }
 
+// ── Claim verification ───────────────────────────────────────────
+
+/**
+ * Verify extracted claims against the filesystem and package.json.
+ *
+ * For tech_stack claims: checks if the framework's packages exist in deps.
+ * For file_path claims: checks existsSync relative to projectDir.
+ * For test_framework claims: checks devDeps or config file presence.
+ * For entry_point claims: checks existsSync relative to projectDir.
+ *
+ * V1 scope: tech stack verification is Node-only (package.json).
+ * Non-Node repos get claims marked verified with deferred evidence.
+ */
+export function verifyClaudeMdClaims(
+  claims: ClaudeMdClaim[],
+  projectDir: string,
+  deps: string[],
+): ClaudeMdClaim[] {
+  const depSet = new Set(deps.map((d) => d.toLowerCase()));
+  const hasPackageJson = existsSync(join(projectDir, "package.json"));
+
+  return claims.map((claim) => {
+    const verified = { ...claim };
+
+    switch (claim.type) {
+      case "tech_stack": {
+        if (!hasPackageJson) {
+          // Non-Node repo — defer verification
+          verified.verified = true;
+          verified.evidence = "non-Node repo, verification deferred";
+          break;
+        }
+
+        const frameworkPackages = KNOWN_FRAMEWORKS.get(claim.claimed);
+        if (!frameworkPackages) {
+          verified.evidence = `unknown framework "${claim.claimed}"`;
+          verified.verified = false;
+          break;
+        }
+
+        const found = frameworkPackages.filter((pkg) => depSet.has(pkg.toLowerCase()));
+        if (found.length > 0) {
+          verified.verified = true;
+          verified.evidence = `found in deps: ${found.join(", ")}`;
+        } else {
+          verified.verified = false;
+          verified.evidence = `not found in any dependency field (checked: ${frameworkPackages.join(", ")})`;
+        }
+        break;
+      }
+
+      case "file_path": {
+        // Handle tree listing claims: "tree:[path1,path2,...]"
+        if (claim.claimed.startsWith("tree:[")) {
+          const inner = claim.claimed.slice(6, -1); // strip "tree:[" and "]"
+          const paths = inner.split(",").map((p) => p.trim()).filter(Boolean);
+          const existing = paths.filter((p) => existsSync(join(projectDir, p)));
+
+          // 80% threshold: pass if >= 4/5 sampled paths exist
+          const threshold = Math.ceil(paths.length * 0.8);
+          verified.verified = existing.length >= threshold;
+          verified.evidence = `${existing.length}/${paths.length} tree paths exist (threshold: ${threshold})`;
+          break;
+        }
+
+        // Regular file path
+        if (existsSync(join(projectDir, claim.claimed))) {
+          verified.verified = true;
+          verified.evidence = "file exists";
+        } else {
+          verified.verified = false;
+          verified.evidence = "file does not exist";
+        }
+        break;
+      }
+
+      case "test_framework": {
+        const runner = TEST_RUNNERS.get(claim.claimed.toLowerCase());
+        if (!runner) {
+          verified.verified = false;
+          verified.evidence = `unknown test runner "${claim.claimed}"`;
+          break;
+        }
+
+        // Check packages in deps
+        const foundPkg = runner.packages.filter((pkg) => depSet.has(pkg.toLowerCase()));
+        if (foundPkg.length > 0) {
+          verified.verified = true;
+          verified.evidence = `found in deps: ${foundPkg.join(", ")}`;
+          break;
+        }
+
+        // Check config file presence
+        const foundConfig = runner.configFiles.filter((cf) => existsSync(join(projectDir, cf)));
+        if (foundConfig.length > 0) {
+          verified.verified = true;
+          verified.evidence = `config file found: ${foundConfig.join(", ")}`;
+          break;
+        }
+
+        verified.verified = false;
+        verified.evidence = `no packages (${runner.packages.join(", ")}) or config files (${runner.configFiles.join(", ")}) found`;
+        break;
+      }
+
+      case "entry_point": {
+        if (existsSync(join(projectDir, claim.claimed))) {
+          verified.verified = true;
+          verified.evidence = "file exists";
+        } else {
+          verified.verified = false;
+          verified.evidence = "file does not exist";
+        }
+        break;
+      }
+    }
+
+    return verified;
+  });
+}
+
+/**
+ * Generate reverse coverage claims: major frameworks in deps that CLAUDE.md never mentions.
+ * These feed into the claim verification sub-score, not the framework coverage sub-score.
+ */
+export function generateReverseCoverageClaims(
+  deps: string[],
+  claudeMdContent: string,
+): ClaudeMdClaim[] {
+  const lowerContent = claudeMdContent.toLowerCase();
+  const depSet = new Set(deps.map((d) => d.toLowerCase()));
+  const claims: ClaudeMdClaim[] = [];
+
+  for (const [frameworkName, packageNames] of KNOWN_FRAMEWORKS) {
+    // Check if any of the framework's packages are in deps
+    const inDeps = packageNames.some((pkg) => depSet.has(pkg.toLowerCase()));
+    if (!inDeps) continue;
+
+    // Check if the framework name is mentioned in CLAUDE.md (case-insensitive)
+    if (!lowerContent.includes(frameworkName.toLowerCase())) {
+      claims.push({
+        type: "tech_stack",
+        claimed: frameworkName,
+        evidence: `present in deps but not mentioned in CLAUDE.md`,
+        verified: false,
+      });
+    }
+  }
+
+  return claims;
+}
+
 // ── Bootstrap evaluation ─────────────────────────────────────────
 
 /**
