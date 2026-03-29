@@ -377,3 +377,42 @@ export function readDecisionsFromLog(decisionLogPath: string): Decision[] {
 // call with createReflectionCanUseTool(). The algorithmic approach in runReflection()
 // is better: deterministic, no API cost, no latency. The sandboxed canUseTool was
 // built and tested but never wired into production, so it was removed as dead code.
+
+// ── Pipeline outcome tracking (for Oracle-driven composition) ────
+
+/**
+ * Build a human-readable pipeline outcome summary line for decision-outcomes.md.
+ *
+ * Outcome classification:
+ * - "success": 0 QA issues
+ * - "acceptable": 1-2 QA issues (minor, not worth restoring skipped skills)
+ * - "failure": 3+ QA issues (skipping a skill likely caused problems)
+ */
+export function buildPipelineOutcome(
+  job: { skills: string[]; composedFrom?: string[]; compositionMethod?: string },
+  qaIssueCount: number,
+  totalCostUsd: number,
+): string {
+  const skippedSkills = (job.composedFrom ?? []).filter(s => !job.skills.includes(s));
+  const outcome = qaIssueCount === 0 ? "success" : qaIssueCount <= 2 ? "acceptable" : "failure";
+
+  return [
+    `Pipeline: [${job.skills.join(" -> ")}]`,
+    skippedSkills.length > 0 ? `Skipped: [${skippedSkills.join(", ")}]` : null,
+    `Method: ${job.compositionMethod ?? "none"}`,
+    `QA issues: ${qaIssueCount}`,
+    `Cost: $${totalCostUsd.toFixed(2)}`,
+    `Outcome: ${outcome}`,
+  ].filter(Boolean).join(" | ");
+}
+
+/**
+ * Count pipeline outcome entries in decision-outcomes.md content.
+ * Used for the cold-start gate: oracle recommendations require 10+ outcomes.
+ *
+ * Pipeline outcomes are identified by lines starting with "Pipeline: [".
+ */
+export function countPipelineOutcomes(decisionOutcomes: string | null): number {
+  if (!decisionOutcomes) return 0;
+  return (decisionOutcomes.match(/^Pipeline: \[/gm) || []).length;
+}
