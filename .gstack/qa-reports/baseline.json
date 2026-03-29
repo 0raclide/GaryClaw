@@ -1,13 +1,22 @@
 {
   "date": "2026-03-29",
-  "url": "cli-tool",
+  "target": "garyclaw-test-suite",
   "healthScore": 100,
-  "testFiles": 137,
-  "tests": 2469,
-  "testsPassing": 2469,
-  "typescriptErrors": 0,
-  "issues": [
-    { "id": "ISSUE-001", "title": "Missing readTodoState import in job-runner.ts", "severity": "critical", "category": "functional", "status": "verified" },
-    { "id": "ISSUE-002", "title": "TS narrowing failure for SessionAction union in oracle.ts", "severity": "critical", "category": "functional", "status": "verified" }
-  ]
+  "issues": [],
+  "categoryScores": {
+    "console": 100,
+    "functional": 100,
+    "typeSafety": 100,
+    "testCoverage": 100,
+    "links": 100,
+    "content": 100,
+    "ux": 100
+  },
+  "testResults": {
+    "files": 139,
+    "total": 2476,
+    "passed": 2476,
+    "failed": 0,
+    "duration": "8.12s"
+  }
 }
