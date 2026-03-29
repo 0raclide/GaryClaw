@@ -29,7 +29,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Pipeline Resume After Crash: COMPLETE** (2026-03-29) — Re-queue interrupted jobs, retry limit (3 crashes = abandon), pipeline resume from last completed skill, dashboard crash recovery stats
 **Oracle Decision Batching: COMPLETE** (2026-03-29) — Multi-question batching into single API call, 50-70% latency reduction, per-question escalation, fallback chain parsing
 **Bootstrap Quality Gate: COMPLETE** (2026-03-29) — Self-healing quality gate after bootstrap: analyzeBootstrapQuality check, QA pre-scan + enriched re-bootstrap on score < 50, retry cap, fail-open, dashboard enrichment stats
-- 34 source modules + CLI, 102+ test files, 2046+ tests
+- 35 source modules + CLI, 122 test files, 2259 tests
 - All 4 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing)
 
 ---
@@ -174,6 +174,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/evaluate.ts` | Dogfood campaign evaluator: bootstrap quality, oracle performance, pipeline health, improvement extraction, post-evaluate deterministic analysis |
 | `src/failure-taxonomy.ts` | 8-category failure classification, failures.jsonl persistence, notification integration |
 | `src/pid-utils.ts` | PID liveness check, process-name verification, stale PID detection |
+| `src/file-conflict.ts` | File-level conflict prevention: predicted file extraction, dependency expansion, overlap detection for parallel instances |
 | `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon/dashboard`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
 
 ### Key Design Decisions
@@ -322,6 +323,9 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/qa-regressions.regression-1.test.ts` | 9 | QA regression: issue extraction edge cases |
 | `test/qa-regressions.regression-2.test.ts` | 10 | QA regression: report formatting edge cases |
 | `test/bootstrap.regression-1.test.ts` | 14 | Bootstrap regression: walkFileTree permission errors, detectTechStack edge cases, safeReadFile edge cases, budget edge cases |
+| `test/file-conflict.test.ts` | 31 | extractPredictedFiles, expandWithDependencies, hasFileOverlap, DEFAULT_FILE_DEPS validation |
+| `test/daemon-registry-file-conflict.test.ts` | 7 | getClaimedFiles: cross-instance scanning, self-exclusion, status filtering, aggregation |
+| `test/job-runner-file-conflict.test.ts` | 8 | File conflict integration: skip conflicting items, fall-through, fail-open, custom dep map, idle on all blocked |
 
 ---
 
