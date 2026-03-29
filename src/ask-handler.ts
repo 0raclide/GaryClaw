@@ -165,10 +165,17 @@ async function handleOracleBatch(
 
     const batchResults = await oracle.askOracleBatch(batchInput, oracle.config);
 
-    // Process each result
+    // Process each result — guard against length mismatch from partial parse failures
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
-      const oracleResult = batchResults[i];
+      const oracleResult = batchResults[i] ?? {
+        choice: q.options[0]?.label ?? "Unknown",
+        confidence: 1,
+        rationale: "Batch result missing for this question (length mismatch)",
+        principle: "Bias toward action",
+        isTaste: true,
+        escalate: true,
+      };
       processOracleResult(q, oracleResult, answers, decisions, config);
     }
   } else {
