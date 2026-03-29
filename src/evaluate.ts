@@ -40,6 +40,9 @@ import type {
 /** Expected sections in a well-formed CLAUDE.md */
 export const EXPECTED_SECTIONS = ["Architecture", "Tech Stack", "Test Strategy", "Usage"];
 
+/** Minimum bootstrap quality score (0-100) to proceed without enrichment */
+export const BOOTSTRAP_QUALITY_THRESHOLD = 50;
+
 /** Canonical framework names → dependency package names (case-insensitive match) */
 export const KNOWN_FRAMEWORKS: ReadonlyMap<string, readonly string[]> = new Map([
   ["React", ["react", "react-dom", "@types/react"]],
@@ -512,7 +515,7 @@ export function extractObviousImprovements(report: EvaluationReport): Improvemen
   }
 
   // Low bootstrap quality → P2
-  if (report.bootstrap.claudeMdExists && report.bootstrap.qualityScore < 50) {
+  if (report.bootstrap.claudeMdExists && report.bootstrap.qualityScore < BOOTSTRAP_QUALITY_THRESHOLD) {
     candidates.push({
       title: "Bootstrap quality below threshold",
       priority: "P2",

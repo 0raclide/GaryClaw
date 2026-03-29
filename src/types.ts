@@ -136,6 +136,8 @@ export interface GaryClawConfig {
   mainRepoDir?: string;
   /** TODO items claimed by other daemon instances (injected into prioritize prompt). */
   claimedTodoItems?: Array<{ title: string; instanceName: string }>;
+  /** Enable quality gate after bootstrap skill (default: undefined = enabled). */
+  bootstrapQualityGate?: boolean;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────
@@ -208,6 +210,8 @@ export interface PipelineState {
   startTime: string;
   totalCostUsd: number;
   autonomous: boolean;
+  /** Set to true after bootstrap enrichment has been attempted (prevents infinite loops). */
+  bootstrapEnriched?: boolean;
 }
 
 export interface PipelineReport {
