@@ -1,13 +1,24 @@
 {
   "date": "2026-03-29",
-  "target": "GaryClaw CLI test suite",
-  "healthScore": 98,
-  "issues": [
-    { "id": "ISSUE-001", "title": "Noisy stderr in test output", "severity": "medium", "category": "test-noise", "status": "verified" },
-    { "id": "ISSUE-002", "title": "Missing aggregateCompositionStats tests", "severity": "low", "category": "coverage-gap", "status": "verified" },
-    { "id": "ISSUE-003", "title": "origin/HEAD symbolic ref not configured", "severity": "low", "category": "infra", "status": "verified" }
-  ],
-  "testFiles": 152,
-  "testCount": 2608,
-  "duration": "8.68s"
+  "url": "cli://garyclaw",
+  "healthScore": 100,
+  "issues": [],
+  "categoryScores": {
+    "console": 100,
+    "links": 100,
+    "visual": 100,
+    "functional": 100,
+    "ux": 100,
+    "performance": 100,
+    "content": 100,
+    "accessibility": 100
+  },
+  "testResults": {
+    "files": 157,
+    "total": 2711,
+    "passed": 2711,
+    "failed": 0,
+    "skipped": 0,
+    "duration": "8.42s"
+  }
 }
