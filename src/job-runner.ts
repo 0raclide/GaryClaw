@@ -904,6 +904,63 @@ function persistState(state: DaemonState, checkpointDir: string): void {
   safeWriteJSON(join(checkpointDir, STATE_FILE), state);
 }
 
+// ── Rate limit helpers ───────────────────────────────────────────
+
+/** Check if an error message indicates a rate limit. */
+export function isRateLimitError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("rate limit") ||
+    lower.includes("status 429") ||
+    lower.includes("http 429") ||
+    lower.includes("too many requests");
+}
+
+/**
+ * Parse rate limit reset time from error message.
+ * Claude Max format: "resets at 2:42 PM" or "try again in 23 minutes"
+ * Returns null if unparseable.
+ */
+export function parseRateLimitResetTime(message: string, now?: Date): Date | null {
+  // Pattern 1: "resets at HH:MM AM/PM"
+  const atMatch = message.match(/resets?\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (atMatch) {
+    const ref = now ?? new Date();
+    let hours = parseInt(atMatch[1], 10);
+    const minutes = parseInt(atMatch[2], 10);
+    const ampm = atMatch[3].toUpperCase();
+    if (ampm === "PM" && hours < 12) hours += 12;
+    if (ampm === "AM" && hours === 12) hours = 0;
+    const reset = new Date(ref);
+    reset.setHours(hours, minutes, 0, 0);
+    // If reset time is in the past, assume next day
+    if (reset.getTime() < ref.getTime()) {
+      reset.setDate(reset.getDate() + 1);
+    }
+    return reset;
+  }
+
+  // Pattern 2: "try again in N minutes"
+  const inMatch = message.match(/(?:try again|wait|retry)\s+in\s+(\d+)\s*min/i);
+  if (inMatch) {
+    const ref = now ?? new Date();
+    const mins = parseInt(inMatch[1], 10);
+    return new Date(ref.getTime() + mins * 60 * 1000);
+  }
+
+  // Pattern 3: "Retry-After: N" (seconds)
+  const retryAfter = message.match(/retry-after:\s*(\d+)/i);
+  if (retryAfter) {
+    const ref = now ?? new Date();
+    const secs = parseInt(retryAfter[1], 10);
+    return new Date(ref.getTime() + secs * 1000);
+  }
+
+  return null; // Unparseable — caller uses 30-min fallback
+}
+
+/** Default rate limit hold duration when reset time cannot be parsed (30 minutes). */
+export const RATE_LIMIT_FALLBACK_MS = 30 * 60 * 1000;
+
 /**
  * Validate a FileDependencyMap loaded from .garyclaw/file-deps.json.
  * Must be an object where every key maps to a string array.
