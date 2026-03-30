@@ -327,7 +327,7 @@ describe("composePipeline — invariants", () => {
     }
   });
 
-  it("composed skills is always a subset of requestedSkills", () => {
+  it("composed skills is always a subset of requestedSkills (known skills only)", () => {
     const efforts = ["XS", "S", "M", "L", "XL", null];
     const priorities = [1, 2, 3, 4, 5];
     for (const effort of efforts) {
@@ -335,6 +335,20 @@ describe("composePipeline — invariants", () => {
         const r = compose({ effort, priority });
         for (const skill of r.skills) {
           expect(FULL_PIPELINE).toContain(skill);
+        }
+      }
+    }
+  });
+
+  it("composed skills is always a subset of requestedSkills (with unknown skills)", () => {
+    const efforts = ["XS", "S", "M", "L", "XL", null];
+    const priorities = [1, 2, 3, 4, 5];
+    const requested = [...FULL_PIPELINE, "design-review", "plan-design-review"];
+    for (const effort of efforts) {
+      for (const priority of priorities) {
+        const r = compose({ effort, priority, requestedSkills: requested });
+        for (const skill of r.skills) {
+          expect(requested).toContain(skill);
         }
       }
     }

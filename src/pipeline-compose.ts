@@ -103,7 +103,8 @@ function selectSkills(effort: string | null, priority: number, hasDesignDoc: boo
  *
  * The composed list is intersected with requestedSkills to ensure we
  * never ADD skills the trigger didn't request. Composition can only
- * remove skills, never add them.
+ * remove known skills (those in FULL_PIPELINE), never add them.
+ * Unknown skills (not in FULL_PIPELINE) pass through untouched.
  *
  * Returns the original requestedSkills unchanged if:
  * - requestedSkills has 0 or 1 skills (nothing to compose)
