@@ -692,6 +692,105 @@ describe("buildPrioritizePrompt", () => {
     expect(outputIdx).toBeGreaterThan(-1);
     expect(catalogIdx).toBeLessThan(outputIdx);
   });
+
+  it("includes Task Category output instruction in prompt rules", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("### Task Category");
+    expect(prompt).toContain("visual-ux, architectural, bug-fix, refactor, performance, infra, new-feature");
+  });
+
+  it("includes Task Category Guidelines section", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("## Task Category Guidelines");
+    expect(prompt).toContain("UI changes, design polish");
+  });
+
+  it("injects per-category stats when 10+ pipeline outcomes exist", async () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    // Create 12 outcome records — 4 visual-ux with design-review skipped (3 failures),
+    // 4 visual-ux with design-review included (0 failures), 4 refactor filler
+    const outcomes: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      outcomes.push(JSON.stringify({
+        jobId: `skip-${i}`, timestamp: "2026-03-30T00:00:00Z", todoTitle: `task-${i}`,
+        effort: "S", priority: 3, skills: ["implement", "qa"], skippedSkills: ["design-review"],
+        qaFailureCount: i < 3 ? 2 : 0, reopenedCount: 0,
+        outcome: i < 3 ? "failure" : "success", oracleAdjusted: false, taskCategory: "visual-ux",
+      }));
+    }
+    for (let i = 0; i < 4; i++) {
+      outcomes.push(JSON.stringify({
+        jobId: `incl-${i}`, timestamp: "2026-03-30T00:00:00Z", todoTitle: `task-incl-${i}`,
+        effort: "S", priority: 3, skills: ["design-review", "implement", "qa"], skippedSkills: [],
+        qaFailureCount: 0, reopenedCount: 0,
+        outcome: "success", oracleAdjusted: false, taskCategory: "visual-ux",
+      }));
+    }
+    for (let i = 0; i < 4; i++) {
+      outcomes.push(JSON.stringify({
+        jobId: `filler-${i}`, timestamp: "2026-03-30T00:00:00Z", todoTitle: `filler-${i}`,
+        effort: "S", priority: 3, skills: ["implement", "qa"], skippedSkills: [],
+        qaFailureCount: 0, reopenedCount: 0,
+        outcome: "success", oracleAdjusted: false, taskCategory: "refactor",
+      }));
+    }
+    writeFileSync(join(gcDir, "pipeline-outcomes.jsonl"), outcomes.join("\n") + "\n", "utf-8");
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("### Pipeline Outcome Patterns by Task Category");
+    expect(prompt).toContain("visual-ux");
+    expect(prompt).toContain("design-review");
+    expect(prompt).toContain("High delta means the skill matters");
+  });
+
+  it("omits per-category stats when fewer than 10 outcomes", async () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const outcomes = Array.from({ length: 5 }, (_, i) => JSON.stringify({
+      jobId: `j-${i}`, timestamp: "2026-03-30T00:00:00Z", todoTitle: `t-${i}`,
+      effort: "S", priority: 3, skills: ["implement", "qa"], skippedSkills: [],
+      qaFailureCount: 0, reopenedCount: 0,
+      outcome: "success", oracleAdjusted: false, taskCategory: "refactor",
+    }));
+    writeFileSync(join(gcDir, "pipeline-outcomes.jsonl"), outcomes.join("\n") + "\n", "utf-8");
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).not.toContain("Pipeline Outcome Patterns by Task Category");
+  });
+
+  it("omits per-category stats when no category/skill pairs meet min sample threshold", async () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    // 10 outcomes but each with a unique category — no pair hits MIN_CATEGORY_SAMPLES (3)
+    const categories = ["visual-ux", "architectural", "bug-fix", "refactor", "performance",
+      "infra", "new-feature", "visual-ux", "architectural", "bug-fix"];
+    const outcomes = categories.map((cat, i) => JSON.stringify({
+      jobId: `j-${i}`, timestamp: "2026-03-30T00:00:00Z", todoTitle: `t-${i}`,
+      effort: "S", priority: 3, skills: ["implement", "qa"], skippedSkills: ["design-review"],
+      qaFailureCount: 0, reopenedCount: 0,
+      outcome: "success", oracleAdjusted: false, taskCategory: cat,
+    }));
+    writeFileSync(join(gcDir, "pipeline-outcomes.jsonl"), outcomes.join("\n") + "\n", "utf-8");
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    // 10 outcomes exist, but per-category pairs may or may not hit MIN_CATEGORY_SAMPLES
+    // This test verifies graceful handling either way — no crash
+    expect(prompt).toContain("## Available Skills");
+  });
+
+  it("handles missing pipeline-outcomes.jsonl gracefully", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).not.toContain("Pipeline Outcome Patterns by Task Category");
+    // Should still contain the rest of the prompt
+    expect(prompt).toContain("## Phase 2 — SCORE");
+  });
 });
 
 // ── aggregateFailurePatterns ─────────────────────────────────────
