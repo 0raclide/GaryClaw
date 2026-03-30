@@ -223,6 +223,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Oracle-driven pipeline composition** — Prioritize prompt outputs `### Recommended Pipeline` section. `parsePipelineRecommendation()` in job-runner parses it. Cold-start gate: `countPipelineOutcomes()` requires 10+ pipeline outcome entries in decision-outcomes.md before oracle overrides static table. `buildPipelineOutcome()` in reflection writes human-readable outcome lines (success/acceptable/failure based on QA issue count). `compositionMethod` on Job tracks "static" vs "oracle". Learning loop: composition → QA outcome → reflection → decision-outcomes.md → next prioritize reads outcomes.
 - **Daemon fleet command** — `daemon start --parallel N` creates `worker-1` through `worker-N` instances. Auto-cleanup via `runAutoCleanup()` extracted from doctor.ts runs before any fork (stale PIDs, orphaned worktrees, stuck locks, dead budget entries, orphaned TODO state). Budget pre-validation: `N * perJobCostLimitUsd` must fit within remaining daily budget. Staggered 1s delay between forks prevents git worktree race. PID file verification polls up to 3s per instance. IPC status enriched with `PipelineProgress` (current skill, skill index, claimed TODO, elapsed time, commit count). Commit count cached every 10s via async `getWorktreeCommitCount()`. Fleet table in `displayAllInstances()` queries running instances via parallel IPC with disk fallback for stopped instances. `--parallel` mutually exclusive with `--name`.
 - **GitHub PR workflow** — `merge.strategy: "pr"` in DaemonConfig routes post-job merge to `createPullRequest()` in worktree.ts instead of `mergeWorktreeBranch()`. Pre-merge tests still run in worktree before pushing. Branch rebased onto baseBranch, pushed with `--force-with-lease`, PR created via `gh pr create` with structured body (pipeline summary, oracle decisions, test results, issues). `gh pr merge --auto --squash` enables GitHub auto-merge (best-effort — non-fatal if repo setting disabled). Falls back to direct merge when `gh` CLI unavailable. New TODO state `"pr-created"` between `qa-complete` and `merged`. PR body hard-capped at 60K chars (GitHub limit 65536). `notifyPrCreated()` sends macOS notification. Dashboard tracks PRs created via merge-audit.jsonl pattern matching. Config options: `prAutoMerge`, `prMergeMethod`, `prLabels`, `prReviewers`, `prDraft`. Named instances only (default instance has no branch to PR from).
+- **Segment-level transient error retry** — Transient SDK/infra errors (ECONNRESET, protocol errors, stream disconnects, 429s, 503s) trigger a single retry within the orchestrator's segment loop. `isTransientError()` in failure-taxonomy.ts wraps `classifyError()`, returning true only for retryable `sdk-bug` and `infra-issue` categories. `MAX_SEGMENT_RETRIES=1` per segment, `SEGMENT_RETRY_DELAY_MS=30000` abort-aware delay. All accumulated state (monitor, issue tracker, checkpoints, codebase summary observations) preserved across retry. `PerJobCostExceededError` always propagates immediately (never retried). `segment_retry` event emitted for observability. Non-transient errors and exhausted retries propagate normally.
 
 ---
 
@@ -233,10 +234,14 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 2. for sessionIndex in 0..maxRelaySessions:
 3.   for segmentIndex in 0..∞:
 3a.    adaptiveMaxTurns = computeAdaptiveMaxTurns(monitor, threshold, configuredMax)
-4.     segment = startSegment(prompt, maxTurns=adaptiveMaxTurns, ...)
-5.     for msg in segment:
-6.       if assistant → recordTurnUsage → check shouldRelay → set flag
-7.       if result → setContextWindow, recordCost
+4.     while !segmentSucceeded:
+4a.      segment = startSegment(prompt, maxTurns=adaptiveMaxTurns, ...)
+5.       for msg in segment:
+6.         if assistant → recordTurnUsage → check shouldRelay → set flag
+7.         if result → setContextWindow, recordCost
+7a.      if transient error + retries < MAX_SEGMENT_RETRIES → wait 30s → retry
+7b.      if PerJobCostExceeded → checkpoint → propagate
+7c.      if non-transient error → propagate
 8.     if relay flag → writeCheckpoint → prepareRelay → break to new session
 9.     if success → done
 10.    if maxTurns → resume same session with "Continue."
