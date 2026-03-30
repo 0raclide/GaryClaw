@@ -30,7 +30,7 @@ import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, Decision, Daemo
 export const PRIORITIZE_PROMPT_BUDGET = 40_000;
 
 /** Per-section token budgets for buildPrioritizePrompt().
- *  Total: ~36,300 tokens max, leaving headroom for Phase 2-4 instructions + overhead. */
+ *  Total: ~32,300 tokens max, leaving ~7,700 headroom for Phase 2-4 instructions + overhead. */
 export const PRIORITIZE_SECTION_BUDGETS = {
   todos:              12_000,
   capabilities:       3_500,
