@@ -478,11 +478,12 @@ Score each backlog item on these dimensions:
 
 | Dimension | Weight | Description |
 |-----------|--------|-------------|
-| Impact on autonomous run quality | 3x | How much does this improve GaryClaw's ability to run skills autonomously? |
+| Impact on autonomous run quality | 2x | How much does this improve GaryClaw's ability to run skills autonomously? |
+| Wow factor | 2x | Would this make someone say "holy shit" or just "that's tidy"? Would someone star the repo for this? Genuine new capabilities and user-visible features score high. Internal plumbing and refactoring score low. |
 | Unblocks other work | 2x | Does completing this enable other high-value items? |
 | Effort efficiency | 1x | XS/S items score higher (quick wins); M items acceptable; L/XL score low |
 | Dependency readiness | 2x | All dependencies must be met (0 if any dep is unmet) |
-| Alignment with overnight goal | 2x | If an overnight goal exists, how well does this align? (0 if no goal) |
+| Alignment with overnight goal | 1x | If an overnight goal exists, how well does this align? (0 if no goal) |
 
 Weighted average = sum(score × weight) / sum(weights)
 
@@ -657,12 +658,13 @@ daemon reliability for production use. Quick win that clears the only remaining 
 ### Scoring Breakdown
 | Dimension | Score | Weight | Weighted |
 |-----------|-------|--------|----------|
-| Autonomous run quality | 7 | 3x | 21 |
+| Autonomous run quality | 7 | 2x | 14 |
+| Wow factor | 4 | 2x | 8 |
 | Unblocks other work | 6 | 2x | 12 |
 | Effort efficiency | 10 | 1x | 10 |
 | Dependency readiness | 10 | 2x | 20 |
-| Overnight goal alignment | 5 | 2x | 10 |
-| **Total** | | | **73/100 = 7.3** |
+| Overnight goal alignment | 5 | 1x | 5 |
+| **Total** | | | **69/100 = 6.9** |
 
 ## Alternatives
 
