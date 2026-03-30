@@ -359,7 +359,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/daemon-registry-file-conflict.test.ts` | 7 | getClaimedFiles: cross-instance scanning, self-exclusion, status filtering, aggregation |
 | `test/job-runner-file-conflict.test.ts` | 8 | File conflict integration: skip conflicting items, fall-through, fail-open, custom dep map, idle on all blocked |
 | `test/todo-state.test.ts` | 66 | slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation truth table, getStartSkill, findNextSkill, skillToTodoState |
-| `test/todo-state-automark.test.ts` | 10 | markTodoCompleteInFile: heading match, strikethrough, case sensitivity, no-match safety |
+| `test/todo-state-automark.test.ts` | 12 | markTodoCompleteInFile: heading match, strikethrough, case sensitivity, no-match safety |
 | `test/types-warn.test.ts` | 3 | resolveWarnFn: callback passthrough, console.warn fallback, undefined handling |
 | `test/job-runner-todo-state.test.ts` | 10 | TODO state integration: skip complete, trim pipeline, design doc passthrough, fail-open, single-skill bypass |
 | `test/job-runner-todo-state.regression-2.test.ts` | 5 | Default instance qa-complete → complete promotion, no-promote for merged, auto-mark TODOS.md, worktree guard, fail-open |
@@ -369,7 +369,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/cli.regression-2.test.ts` | 5 | CLI regression: formatEvent missing bootstrap_quality_check/recheck cases |
 | `test/cli.regression-3.test.ts` | 3 | CLI regression: formatEvent pipeline_oracle_adjustment kept_skipped variant |
 | `test/daemon-ipc-todo.test.ts` | 4 | buildIPCHandler todoTitle passthrough: skipComposition, claimedTodoTitle, designDoc combo, absent |
-| `test/daemon-merge-config.test.ts` | 13 | Daemon merge config validation |
+| `test/daemon-merge-config.test.ts` | 31 | Daemon merge config validation |
 | `test/daemon-registry-file-conflict.regression-1.test.ts` | 2 | Daemon registry regression: getClaimedFiles duplicate file entries per instance |
 | `test/daemon-registry.regression-1.test.ts` | 8 | Daemon registry regression: getClaimedTodoTitles cross-instance coordination |
 | `test/daemon-registry.regression-2.test.ts` | 7 | Daemon registry regression: getCompletedTodoTitles todo-state/ directory scan |
@@ -435,7 +435,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/daemon-ipc-progress.regression-1.test.ts` | 3 | Commit count cache timestamp ordering, getWorktreeCommitCount edge cases |
 | `test/cli-parallel.regression-1.test.ts` | 3 | --parallel + --name mutual exclusivity: both specified, parallel-only, name-only |
 | `test/cli-parallel-instances.test.ts` | 9 | startParallelInstances: N-launch, budget insufficient, missing config, skip running, fork failure, cleanup ordering, exact budget, config fallback, mixed fleet |
-| `test/job-runner-pr.test.ts` | 9 | PR strategy routing, PR creation, TODO state advancement to pr-created, fallback to direct merge, notification |
+| `test/job-runner-pr.test.ts` | 10 | PR strategy routing, PR creation, TODO state advancement to pr-created, fallback to direct merge, notification |
 | `test/job-runner-pr.regression-1.test.ts` | 4 | PR fallback post-merge verification, rebase conflict failure record, smart-skip bypass |
 | `test/todo-state-pr.test.ts` | 4 | TODO state pr-created lifecycle: position between qa-complete and merged, getStartSkill skip |
 | `test/worktree-pr.test.ts` | 26 | createPullRequest via mocked gh, buildPrBody formatting, truncation, isGhAvailable, malformed URL guard, edge cases |
