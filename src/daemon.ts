@@ -389,6 +389,15 @@ export function buildIPCHandler(
           return { ok: false, error: "skills must be a non-empty array" };
         }
         const jobId = runner.enqueue(skills, "manual", "CLI trigger", request.designDoc);
+        if (jobId && request.todoTitle) {
+          // Deterministic override: set claimed title + skip composition
+          const state = runner.getState();
+          const job = state.jobs.find(j => j.id === jobId);
+          if (job) {
+            job.claimedTodoTitle = request.todoTitle;
+            job.skipComposition = true;
+          }
+        }
         if (jobId) {
           return { ok: true, data: { jobId } };
         }

@@ -619,7 +619,9 @@ export function createJobRunner(
     // ── Adaptive pipeline composition ────────────────────────────
     let oracleAdjustedComposition = false;
     const todoTitle = nextJob.claimedTodoTitle ?? preAssignedTitle;
-    if (todoTitle && nextJob.skills.length > 1) {
+    if (nextJob.skipComposition) {
+      d.log("info", `Deterministic override: skipping composition for [${nextJob.skills.join(", ")}]`);
+    } else if (todoTitle && nextJob.skills.length > 1) {
       try {
         const todosPath = join(jobConfig.worktreePath ?? jobConfig.projectDir, "TODOS.md");
         const todosContent = safeReadText(todosPath);
