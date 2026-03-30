@@ -305,4 +305,21 @@ describe("createPullRequest", () => {
     expect(result.created).toBe(false);
     expect(result.reason).toContain("PR creation failed");
   });
+
+  // Regression: ISSUE-001 — malformed gh output returning prNumber=0
+  // Found by /qa on 2026-03-30
+  // Report: .gstack/qa-reports/qa-report-garyclaw-2026-03-30.md
+  it("returns failure when gh output has no /pull/ URL pattern", () => {
+    mockExec.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === "gh" && args[0] === "auth") return "";
+      if (cmd === "git" && args[0] === "push") return "";
+      if (cmd === "gh" && args[0] === "pr" && args[1] === "list") return "[]";
+      // gh returns something unexpected (no /pull/N pattern)
+      if (cmd === "gh" && args[0] === "pr" && args[1] === "create") return "https://github.com/owner/repo/issues/42";
+      return "";
+    });
+    const result = createPullRequest("/repo", "worker-1", baseOptions);
+    expect(result.created).toBe(false);
+    expect(result.reason).toContain("Could not parse PR number");
+  });
 });
