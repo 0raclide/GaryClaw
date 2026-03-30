@@ -1292,12 +1292,22 @@ export function createJobRunner(
             : nextJob.status === "failed" ? "failure"
             : "success";
 
+          // Read priority.md for task category, effort, and priority
+          const outcomePriorityDir = jobConfig.worktreePath ?? jobConfig.projectDir;
+          const outcomePriorityPath = join(outcomePriorityDir, ".garyclaw", "priority.md");
+          const outcomePriorityContent = safeReadText(outcomePriorityPath);
+          const taskCategory = outcomePriorityContent
+            ? parseTaskCategory(outcomePriorityContent)
+            : "unknown";
+          const effortMatch = outcomePriorityContent?.match(/Effort[\s:*]*\b(XS|S|M|L|XL)\b/i);
+          const priorityMatch = outcomePriorityContent?.match(/Priority[\s:*]*P(\d)/i);
+
           appendPipelineOutcome(outcomeHistoryPath, {
             jobId: nextJob.id,
             timestamp: new Date().toISOString(),
             todoTitle: nextJob.claimedTodoTitle ?? "unknown",
-            effort: null, // TODO: could read from todo-state
-            priority: 3,  // default; could be enriched
+            effort: effortMatch?.[1]?.toUpperCase() ?? null,
+            priority: priorityMatch ? parseInt(priorityMatch[1], 10) : 3,
             skills: nextJob.skills,
             skippedSkills,
             composedFrom: nextJob.composedFrom,
@@ -1305,6 +1315,7 @@ export function createJobRunner(
             reopenedCount,
             outcome,
             oracleAdjusted: oracleAdjustedComposition,
+            taskCategory,
           });
         } catch (err) {
           d.log("warn", `Pipeline outcome recording failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1457,6 +1468,26 @@ export function parsePriorityPickTitle(content: string): string | null {
 
 /** Minimum pipeline outcome count before oracle recommendations override static table. */
 export const ORACLE_PIPELINE_THRESHOLD = 10;
+
+/**
+ * Valid task categories for pipeline outcome tracking.
+ * "unknown" is a code-level fallback — not offered to the LLM.
+ */
+export const VALID_TASK_CATEGORIES = [
+  "visual-ux", "architectural", "bug-fix", "refactor",
+  "performance", "infra", "new-feature", "unknown",
+] as const;
+
+/**
+ * Parse the "### Task Category" section from priority.md content.
+ * Returns one of VALID_TASK_CATEGORIES, defaulting to "unknown" if missing or invalid.
+ */
+export function parseTaskCategory(content: string): string {
+  const match = content.match(/^###\s*Task Category\s*\n+(\S+)/m);
+  if (!match) return "unknown";
+  const raw = match[1].toLowerCase().trim();
+  return (VALID_TASK_CATEGORIES as readonly string[]).includes(raw) ? raw : "unknown";
+}
 
 /**
  * Parse the "### Recommended Pipeline" section from priority.md content.
