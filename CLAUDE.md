@@ -431,6 +431,9 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/daemon-ipc-progress.regression-1.test.ts` | 3 | Commit count cache timestamp ordering, getWorktreeCommitCount edge cases |
 | `test/cli-parallel.regression-1.test.ts` | 3 | --parallel + --name mutual exclusivity: both specified, parallel-only, name-only |
 | `test/cli-parallel-instances.test.ts` | 9 | startParallelInstances: N-launch, budget insufficient, missing config, skip running, fork failure, cleanup ordering, exact budget, config fallback, mixed fleet |
+| `test/job-runner-pr.test.ts` | 9 | PR strategy routing, PR creation, TODO state advancement to pr-created, fallback to direct merge, notification |
+| `test/todo-state-pr.test.ts` | 4 | TODO state pr-created lifecycle: position between qa-complete and merged, getStartSkill skip |
+| `test/worktree-pr.test.ts` | 25 | createPullRequest via mocked gh, buildPrBody formatting, truncation, isGhAvailable, edge cases |
 
 ---
 
