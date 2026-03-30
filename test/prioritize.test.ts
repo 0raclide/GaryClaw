@@ -524,9 +524,27 @@ describe("buildPrioritizePrompt", () => {
     const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
     expect(prompt).toContain("Scoring Rubric");
     expect(prompt).toContain("Autonomous run quality");
+    expect(prompt).toContain("Wow factor");
     expect(prompt).toContain("Unblocks other work");
     expect(prompt).toContain("Effort efficiency");
     expect(prompt).toContain("Dependency readiness");
+  });
+
+  it("has correct scoring weights for all dimensions", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    // Autonomous run quality reduced from 3x to 2x
+    expect(prompt).toMatch(/Autonomous run quality\s*\|\s*2x/i);
+    // New Wow factor dimension at 2x
+    expect(prompt).toMatch(/Wow factor\s*\|\s*2x/i);
+    // Unblocks other work stays at 2x
+    expect(prompt).toMatch(/Unblocks other work\s*\|\s*2x/i);
+    // Effort efficiency stays at 1x
+    expect(prompt).toMatch(/Effort efficiency\s*\|\s*1x/i);
+    // Dependency readiness stays at 2x
+    expect(prompt).toMatch(/Dependency readiness\s*\|\s*2x/i);
+    // Overnight goal alignment reduced from 2x to 1x
+    expect(prompt).toMatch(/Alignment with overnight goal\s*\|\s*1x/i);
   });
 
   it("includes confidence gate instruction", async () => {
