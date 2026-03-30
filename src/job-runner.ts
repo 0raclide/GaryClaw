@@ -747,6 +747,39 @@ export function createJobRunner(
         const startSkill = getStartSkill(reconciledState);
         if (startSkill === "skip") {
           d.log("info", `TODO "${todoTitle}" already complete (${reconciledState.state}) — skipping`);
+
+          // Default instance promotion: qa-complete → complete
+          // Named instances go through auto-merge which promotes to "merged".
+          // Default instance has no merge step, so promote directly here.
+          // Check storedState (pre-reconciliation) because reconcileState may
+          // promote qa-complete → merged via artifact detection (commitsOnMain),
+          // masking the actual stored state we need to act on.
+          if (storedState && storedState.state === "qa-complete" && !jobConfig.worktreePath) {
+            try {
+              writeTodoState(stateCheckpointDir, slug, {
+                ...reconciledState,
+                state: "complete",
+                lastJobId: nextJob.id,
+                updatedAt: new Date().toISOString(),
+              });
+              d.log("info", `TODO "${todoTitle}" promoted qa-complete → complete (default instance, no merge step)`);
+
+              // Auto-mark TODOS.md
+              try {
+                const todosPath = join(jobConfig.projectDir, "TODOS.md");
+                const summary = `Completed by default instance (job ${nextJob.id}).`;
+                const marked = markTodoCompleteInFile(todosPath, todoTitle, summary);
+                if (marked) {
+                  d.log("info", `Auto-marked TODO "${todoTitle}" complete in TODOS.md`);
+                }
+              } catch (markErr) {
+                d.log("warn", `Auto-mark TODOS.md failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`);
+              }
+            } catch {
+              // Fail-open
+            }
+          }
+
           nextJob.status = "complete";
           nextJob.completedAt = new Date().toISOString();
           persistState(state, checkpointDir);
