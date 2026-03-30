@@ -37,7 +37,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
 **GitHub PR Workflow: COMPLETE** (2026-03-30) — Optional `merge.strategy: "pr"` creates structured GitHub PRs instead of direct merge. PR body includes pipeline summary, oracle decisions, test results. Auto-merge via `gh pr merge --auto`. Fallback to direct merge when `gh` unavailable. New "pr-created" TODO state. Dashboard PR stats.
 **Auto-Fix Loop After Revert: COMPLETE** (2026-03-30) — Post-merge revert triggers immediate `implement → qa` re-attempt. Retry cap (MAX_AUTO_FIX_RETRIES=2), budget cap (2x original job cost), enqueue-before-persist ordering, mkdir-based advisory lock, context file for implement skill discovery, doctor check #8 for stale auto-fix state, dashboard auto-fix stats.
-- 41 source modules, 199 test files, 3185 tests
+- 41 source modules, 200 test files, 3203 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -332,13 +332,14 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
 | `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
 | `test/doctor.test.ts` | 59 | 9 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state, stale budget locks, stale auto-fix state |
-| `test/failure-taxonomy.test.ts` | 71 | 10 failure categories, table-driven classification, failures.jsonl, notification integration |
+| `test/failure-taxonomy.test.ts` | 77 | 10 failure categories, table-driven classification, failures.jsonl, notification integration, isTransientError |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
 | `test/orchestrator.test.ts` | 47 | auth, success, maxTurns, errors, abort, relay, adaptive turns, heavy tool tracking, --no-adaptive config, codebase summary extraction |
 | `test/orchestrator-helpers.test.ts` | 38 | orchestrator helper functions, prompt building |
 | `test/orchestrator-helpers.regression-1.test.ts` | 6 | orchestrator helpers regression |
+| `test/orchestrator-segment-retry.test.ts` | 10 | Segment retry: transient error retry, non-transient propagation, budget error bypass, retry exhaustion, session resume, delay timing, abort cancellation, constants |
 | `test/orchestrator.regression-1.test.ts` | 4 | Multi-tool heavy detection: non-first block, middle position, no false positive |
-| `test/cli.test.ts` | 88 | CLI arg parsing, subcommands, daemon commands, --name/--all, --no-adaptive, adaptive_turns event, pipeline_oracle_adjustment event |
+| `test/cli.test.ts` | 90 | CLI arg parsing, subcommands, daemon commands, --name/--all, --no-adaptive, adaptive_turns event, pipeline_oracle_adjustment event, segment_retry event |
 | `test/cli-main.test.ts` | 25 | CLI main entry point, error handling |
 | `test/cli.regression-1.test.ts` | 2 | CLI regression: edge cases in arg parsing |
 | `test/cli-evaluate-hook.regression-1.test.ts` | 7 | CLI evaluate hook: append candidates, skip same project, skip missing, error handling |
