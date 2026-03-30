@@ -1,11 +1,9 @@
 {
   "date": "2026-03-30",
   "url": "cli-project",
-  "healthScore": 98,
+  "healthScore": 100,
   "issues": [
-    {"id": "ISSUE-001", "title": "CLAUDE.md stale test counts (169/2822 vs 170/2828)", "severity": "medium", "category": "content", "status": "fixed"},
-    {"id": "ISSUE-002", "title": "Missing test table entry for cli-fleet-display.regression-2.test.ts", "severity": "medium", "category": "content", "status": "fixed"},
-    {"id": "ISSUE-003", "title": "Unused projectDir parameter in displayAllInstances", "severity": "low", "category": "code-quality", "status": "deferred"}
+    {"id": "ISSUE-001", "title": "Stale per-file test counts in CLAUDE.md (3 files, 18-test gap)", "severity": "medium", "category": "content", "status": "fixed"}
   ],
   "categoryScores": {
     "console": 100,
@@ -14,7 +12,7 @@
     "functional": 100,
     "ux": 100,
     "performance": 100,
-    "content": 90,
+    "content": 100,
     "accessibility": 100
   },
   "testSuite": {
@@ -22,6 +20,6 @@
     "tests": 2828,
     "passed": 2828,
     "failed": 0,
-    "duration": "31.86s"
+    "duration": "31.94s"
   }
 }
