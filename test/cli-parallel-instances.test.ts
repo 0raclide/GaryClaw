@@ -81,11 +81,13 @@ describe("startParallelInstances", () => {
   });
 
   it("returns correct counts on successful launch of N workers", async () => {
-    // Make daemon dirs so instanceDir resolves
+    // Mock readPidFile to return a PID so the verification polling loop exits
+    // immediately instead of burning 3s of real time per worker.
+    // isPidAlive stays false so "already running" check still passes through.
+    vi.mocked(readPidFile).mockReturnValue(12345);
+
     for (let i = 1; i <= 3; i++) {
       mkdirSync(join(tmpDir, "daemons", `worker-${i}`), { recursive: true });
-      // Write PID file so verification loop succeeds
-      writeFileSync(join(tmpDir, "daemons", `worker-${i}`, "daemon.pid"), "12345");
     }
 
     const result = await startParallelInstances(3, tmpDir, tmpDir, configPath);
@@ -143,10 +145,11 @@ describe("startParallelInstances", () => {
       if (cleanupDone) budgetCalledSecond = true;
       return { totalUsd: 0, jobCount: 0, byInstance: {}, date: "2026-03-30" } as ReturnType<typeof readGlobalBudget>;
     });
+    // Return PID immediately so polling loop doesn't burn real seconds
+    vi.mocked(readPidFile).mockReturnValue(12345);
 
     for (let i = 1; i <= 2; i++) {
       mkdirSync(join(tmpDir, "daemons", `worker-${i}`), { recursive: true });
-      writeFileSync(join(tmpDir, "daemons", `worker-${i}`, "daemon.pid"), "12345");
     }
 
     await startParallelInstances(2, tmpDir, tmpDir, configPath);
@@ -159,10 +162,11 @@ describe("startParallelInstances", () => {
     vi.mocked(readGlobalBudget).mockReturnValue({
       totalUsd: 90, jobCount: 8, byInstance: {}, date: "2026-03-30",
     } as ReturnType<typeof readGlobalBudget>);
+    // Return PID immediately so polling loop doesn't burn real seconds
+    vi.mocked(readPidFile).mockReturnValue(12345);
 
     for (let i = 1; i <= 2; i++) {
       mkdirSync(join(tmpDir, "daemons", `worker-${i}`), { recursive: true });
-      writeFileSync(join(tmpDir, "daemons", `worker-${i}`, "daemon.pid"), "12345");
     }
 
     const result = await startParallelInstances(2, tmpDir, tmpDir, configPath);
@@ -174,9 +178,10 @@ describe("startParallelInstances", () => {
     writeFileSync(join(tmpDir, "daemon.json"), JSON.stringify({
       budget: { dailyCostLimitUsd: 100, perJobCostLimitUsd: 5 },
     }));
+    // Return PID immediately so polling loop doesn't burn real seconds
+    vi.mocked(readPidFile).mockReturnValue(12345);
 
     mkdirSync(join(tmpDir, "daemons", "worker-1"), { recursive: true });
-    writeFileSync(join(tmpDir, "daemons", "worker-1", "daemon.pid"), "12345");
 
     const result = await startParallelInstances(1, tmpDir, tmpDir);
     expect(result.launched).toBe(1);
@@ -184,15 +189,19 @@ describe("startParallelInstances", () => {
 
   it("mixes skipped and launched workers in a single fleet", async () => {
     // worker-1 already running, worker-2 not running
+    // Call 1: worker-1 "already running" check → 99999 (alive, skip)
+    // Call 2: worker-2 "already running" check → null (proceed to fork)
+    // Call 3+: worker-2 verification loop → 12345 (exits immediately)
     let callCount = 0;
     vi.mocked(readPidFile).mockImplementation(() => {
       callCount++;
-      return callCount === 1 ? 99999 : null;
+      if (callCount === 1) return 99999;
+      if (callCount === 2) return null;
+      return 12345;
     });
     vi.mocked(isPidAlive).mockImplementation((pid) => pid === 99999);
 
     mkdirSync(join(tmpDir, "daemons", "worker-2"), { recursive: true });
-    writeFileSync(join(tmpDir, "daemons", "worker-2", "daemon.pid"), "12345");
 
     const result = await startParallelInstances(2, tmpDir, tmpDir, configPath);
     expect(result.skipped).toBe(1);
