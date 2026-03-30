@@ -373,7 +373,6 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/qa-regressions.regression-1.test.ts` | 9 | QA regression: issue extraction edge cases |
 | `test/qa-regressions.regression-2.test.ts` | 10 | QA regression: report formatting edge cases |
 | `test/bootstrap.regression-1.test.ts` | 14 | Bootstrap regression: walkFileTree permission errors, detectTechStack edge cases, safeReadFile edge cases, budget edge cases |
-| `test/project-type.test.ts` | 34 | detectProjectType: tiered detection (CLAUDE.md, package.json, file patterns), loadProjectType, saveProjectType, ensureProjectType, formatProjectContext, hasWebUI, hasTestSuite, tier priority |
 | `test/file-conflict.test.ts` | 30 | extractPredictedFiles, expandWithDependencies, hasFileOverlap, DEFAULT_FILE_DEPS validation |
 | `test/daemon-registry-file-conflict.test.ts` | 7 | getClaimedFiles: cross-instance scanning, self-exclusion, status filtering, aggregation |
 | `test/job-runner-file-conflict.test.ts` | 8 | File conflict integration: skip conflicting items, fall-through, fail-open, custom dep map, idle on all blocked |
