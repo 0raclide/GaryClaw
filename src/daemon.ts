@@ -180,6 +180,18 @@ export function validateDaemonConfig(data: unknown): string | null {
     }
   }
 
+  // Validate oracleCache if provided (optional field)
+  if (d.oracleCache !== undefined) {
+    if (typeof d.oracleCache !== "object" || d.oracleCache === null) {
+      return "oracleCache must be an object";
+    }
+    const oc = d.oracleCache as Record<string, unknown>;
+    if (typeof oc.enabled !== "boolean") return "oracleCache.enabled must be a boolean";
+    if (typeof oc.minHits !== "number" || oc.minHits < 1) {
+      return "oracleCache.minHits must be a positive number";
+    }
+  }
+
   return null;
 }
 

@@ -158,6 +158,8 @@ export interface GaryClawConfig {
   rootCheckpointDir?: string;
   /** Original merge SHA that was reverted, for auto-fix context lookup. */
   autoFixMergeSha?: string;
+  /** Minimum identical answers before caching an Oracle decision (default: 5). Set to 0 to disable cache. */
+  oracleCacheMinHits?: number;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────

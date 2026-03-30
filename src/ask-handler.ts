@@ -15,6 +15,7 @@ import { dirname } from "node:path";
 import { resolveWarnFn } from "./types.js";
 import type { Decision, CanUseToolResult, OracleMemoryFiles, WarnFn } from "./types.js";
 import type { OracleOutput, OracleConfig, OracleInput, OracleBatchInput, OracleBatchQuestion } from "./oracle.js";
+import type { OracleCache } from "./oracle-cache.js";
 
 export interface AskHandlerConfig {
   onAskUser: (
@@ -35,8 +36,13 @@ export interface AskHandlerConfig {
     skillName: string;
     projectContext?: string;
     memory?: OracleMemoryFiles;
+    cache?: OracleCache;
   };
   escalatedLogPath?: string;
+
+  // Event callback for cache hit/miss events (wired to orchestrator event system)
+  onCacheEvent?: (event: { type: "oracle_cache_hit"; question: string; chosen: string; hitCount: number }
+    | { type: "oracle_cache_miss"; question: string }) => void;
 
   // Optional warning callback (routes warnings to event system in daemon mode)
   onWarn?: (msg: string) => void;
@@ -135,9 +141,13 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
 }
 
 /**
- * Handle Oracle decisions for all questions — uses batching when available
- * and multiple questions arrive, falls back to serial for single question
- * or when askOracleBatch is not provided.
+ * Handle Oracle decisions for all questions — uses cache + batching.
+ *
+ * Cache integration (partial-batch behavior):
+ * 1. Check each question against the cache individually
+ * 2. Questions with cache hits are resolved immediately (zero cost)
+ * 3. Remaining uncached questions are sent to Oracle (batch or serial)
+ * 4. Oracle answers are recorded in the cache for future hits
  */
 async function handleOracleBatch(
   questions: Array<{
@@ -151,13 +161,55 @@ async function handleOracleBatch(
   config: AskHandlerConfig,
 ): Promise<void> {
   const oracle = config.oracle!;
+  const cache = oracle.cache;
 
-  // Use batching when: batch function available AND multiple questions
-  if (oracle.askOracleBatch && questions.length > 1) {
-    const batchQuestions: OracleBatchQuestion[] = questions.map((q, i) => ({
+  // Phase 1: Check cache for each question, collect uncached ones
+  const cachedResults = new Map<number, import("./oracle-cache.js").CachedDecision>();
+  const uncachedQuestions: Array<{ originalIndex: number; q: typeof questions[number] }> = [];
+
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    const cached = cache?.lookup(q.question, q.options ?? []);
+    if (cached) {
+      cachedResults.set(i, cached);
+      // Build decision from cached result
+      const decision: Decision = {
+        timestamp: new Date().toISOString(),
+        sessionIndex: config.sessionIndex,
+        question: q.question,
+        options: q.options ?? [],
+        chosen: cached.chosen,
+        confidence: cached.confidence,
+        rationale: cached.rationale,
+        principle: cached.principle,
+      };
+      answers[q.question] = cached.chosen;
+      decisions.push(decision);
+      const processWarn = resolveWarnFn(config.onWarn);
+      if (config.decisionLogPath) {
+        writeDecisionLog(config.decisionLogPath, decision, processWarn);
+      }
+      config.onCacheEvent?.({
+        type: "oracle_cache_hit",
+        question: q.question,
+        chosen: cached.chosen,
+        hitCount: cached.hitCount,
+      });
+    } else {
+      uncachedQuestions.push({ originalIndex: i, q });
+      config.onCacheEvent?.({ type: "oracle_cache_miss", question: q.question });
+    }
+  }
+
+  // Phase 2: All questions cached — no Oracle call needed
+  if (uncachedQuestions.length === 0) return;
+
+  // Phase 3: Send uncached questions to Oracle (batch or serial)
+  if (oracle.askOracleBatch && uncachedQuestions.length > 1) {
+    const batchQuestions: OracleBatchQuestion[] = uncachedQuestions.map((item, i) => ({
       id: i + 1,
-      question: q.question,
-      options: q.options ?? [],
+      question: item.q.question,
+      options: item.q.options ?? [],
     }));
 
     const batchInput: OracleBatchInput = {
@@ -175,8 +227,8 @@ async function handleOracleBatch(
     const batchResults = await oracle.askOracleBatch(batchInput, oracle.config, config.onWarn);
 
     // Process each result — guard against length mismatch from partial parse failures
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
+    for (let i = 0; i < uncachedQuestions.length; i++) {
+      const { q } = uncachedQuestions[i];
       const oracleResult = batchResults[i] ?? {
         choice: q.options[0]?.label ?? "Unknown",
         confidence: 1,
@@ -186,12 +238,12 @@ async function handleOracleBatch(
         escalate: true,
       };
       processOracleResult(q, oracleResult, answers, decisions, config);
+      // Record in cache for future hits
+      cache?.record(q.question, q.options ?? [], oracleResult.choice, oracleResult.principle);
     }
   } else {
-    // Serial fallback: single question or no batch function.
-    // Unlike the batch path above, we pass the mutable `decisions` array so each
-    // question accumulates context from prior questions in this same call.
-    for (const q of questions) {
+    // Serial fallback: single uncached question or no batch function.
+    for (const { q } of uncachedQuestions) {
       const oracleResult = await oracle.askOracle(
         {
           question: q.question,
@@ -205,6 +257,8 @@ async function handleOracleBatch(
       );
 
       processOracleResult(q, oracleResult, answers, decisions, config);
+      // Record in cache for future hits
+      cache?.record(q.question, q.options ?? [], oracleResult.choice, oracleResult.principle);
     }
   }
 }

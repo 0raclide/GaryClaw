@@ -46,8 +46,10 @@ import { PerJobCostExceededError, type Issue } from "./types.js";
 import {
   defaultMemoryConfig,
   readOracleMemory,
+  readDecisionOutcomes,
   isCircuitBreakerTripped,
 } from "./oracle-memory.js";
+import { OracleCache } from "./oracle-cache.js";
 import { sendNotification } from "./notifier.js";
 import { runReflection } from "./reflection.js";
 
@@ -247,6 +249,25 @@ async function runSkillInternal(
         : "")
     : "";
 
+  // Oracle decision cache — initialized once per skill (same scope as oracle session reuse)
+  const oracleCache = (() => {
+    if (!config.autonomous || config.noMemory) return undefined;
+    const cacheMinHits = config.oracleCacheMinHits ?? 5;
+    if (cacheMinHits <= 0) return undefined;
+    try {
+      const cache = new OracleCache({ minHits: cacheMinHits });
+      const memConfig = defaultMemoryConfig(config.mainRepoDir ?? config.projectDir);
+      const outcomes = readDecisionOutcomes(memConfig);
+      if (outcomes.length > 0) {
+        cache.warmFromOutcomes(outcomes);
+      }
+      return cache;
+    } catch {
+      // Cache initialization failure is non-fatal — degrade to no-cache mode
+      return undefined;
+    }
+  })();
+
   // Initial prompt — use override if provided (pipeline context handoff), else default
   const basePrompt = initialPromptOverride
     ?? `Run the /${config.skillName} skill. Follow all SKILL.md instructions completely.`;
@@ -301,6 +322,7 @@ async function runSkillInternal(
       decisionLogPath,
       autonomous: config.autonomous,
       onWarn: (msg: string) => callbacks.onEvent({ type: "assistant_text", text: msg }),
+      onCacheEvent: (event) => callbacks.onEvent(event),
       ...(config.autonomous
         ? {
             oracle: {
@@ -315,6 +337,7 @@ async function runSkillInternal(
               skillName: config.skillName,
               projectContext: projectType ? formatProjectContext(projectType) : undefined,
               memory: oracleMemory,
+              cache: oracleCache,
             },
             escalatedLogPath: join(config.checkpointDir, "escalated.jsonl"),
           }
@@ -688,13 +711,29 @@ async function runSkillInternal(
           try {
             const allDecisions = checkpoint.decisions;
             const allIssues = checkpoint.issues;
-            runReflection({
+            const reflectionResult = runReflection({
               decisions: allDecisions,
               issues: allIssues,
               jobId: runId,
               projectDir: config.projectDir,
               onWarn: (msg) => callbacks.onEvent({ type: "assistant_text", text: msg }),
+              onCacheInvalidate: oracleCache
+                ? (question, options) => {
+                    oracleCache.invalidate(question, options);
+                    callbacks.onEvent({ type: "oracle_cache_invalidated", question });
+                  }
+                : undefined,
             });
+
+            // Invalidate cache entries for any failure outcomes
+            if (oracleCache) {
+              for (const outcome of reflectionResult.outcomes) {
+                if (outcome.outcome === "failure") {
+                  oracleCache.invalidate(outcome.question, []);
+                  callbacks.onEvent({ type: "oracle_cache_invalidated", question: outcome.question });
+                }
+              }
+            }
           } catch (err) {
             // Reflection failure is non-fatal — don't block completion.
             // Emit as event so daemon log captures it (console.warn is invisible in daemon mode).

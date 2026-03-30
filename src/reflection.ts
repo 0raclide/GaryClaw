@@ -271,6 +271,8 @@ export interface ReflectionInput {
   projectDir: string;
   memoryConfig?: OracleMemoryConfig;
   onWarn?: WarnFn;
+  /** Callback to invalidate a cached Oracle decision (e.g., on failure outcome). */
+  onCacheInvalidate?: (question: string, options: { label: string }[]) => void;
 }
 
 export interface ReflectionResult {
