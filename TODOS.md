@@ -588,3 +588,56 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Effort:** XS (human: ~1 hour / CC: ~5 min)
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-30 (ISSUE-004, deferred — not reproducible on retry)
+
+## P3: SDK Failure Segment Retry — Transient Error Recovery
+
+**What:** When an SDK error (sdk-bug failure category) occurs mid-segment, retry the segment once with a 30-second backoff instead of immediately failing the entire job. Currently, any SDK error kills the job and creates a failure record. A single retry would recover from transient API errors, network blips, and rate-limit edge cases that resolve themselves within seconds.
+
+**Why:** sdk-bug is the #1 failure category with 13 failures across prioritize (8), implement (3), and qa (2). Each failed job wastes the entire pipeline cost up to that point ($2-5) and creates a hole in the overnight run. A simple retry would recover the majority of these failures silently. The existing pipeline-resume-after-crash handles daemon-level crashes but not within-job transient SDK errors.
+
+**Implementation:**
+- In `src/orchestrator.ts`: wrap the `startSegment()` call in a try-catch. On SDK error, wait 30s, then retry the segment once (same prompt, same maxTurns).
+- Add `segmentRetryCount` to segment state. Cap at 1 retry per segment (not per job — each segment gets its own retry).
+- Emit `segment_retry` event for observability (dashboard + daemon log).
+- Track retry success rate in dashboard: "X of Y segment retries succeeded."
+- Do NOT retry on auth errors or budget exhaustion (check error type before retry).
+
+**Effort:** XS (human: ~2 hours / CC: ~10 min)
+**Depends on:** Nothing
+**Added by:** Invention Protocol on 2026-03-30 (addresses #1 failure category)
+
+## P3: Oracle Decision Cache — Sticky Answers for Repeated Questions
+
+**What:** When the Oracle answers the same question pattern 5+ times identically, cache the answer and auto-apply it without an API call. Recent evidence: 20+ decisions in the last 50 all answer "run test suite" to variations of "GaryClaw is a CLI tool with no web UI, what should QA do?" Each is a ~40K-token API call costing ~$0.05 + 2-5s latency.
+
+**Why:** Costs are trending up (+4%). Oracle session reuse helps but doesn't eliminate redundant decisions. A pattern-matching cache would save ~$1/run and 40-100s of serial Oracle overhead. The cached answers are already proven correct (100% accuracy, same answer every time).
+
+**Implementation:**
+- New module `src/oracle-cache.ts`: Maintains a Map of normalized question patterns → cached answers.
+- Pattern normalization: strip timestamps, branch names, file lists, and other variable content. Match on the semantic core of the question (e.g., "CLI tool no web UI" + "QA" → "run test suite").
+- Cache populated from decision-outcomes.md on startup (questions with 5+ identical answers).
+- Cache hit: return cached answer immediately, emit `oracle_cache_hit` event, log to decisions.jsonl with `source: "cache"`.
+- Cache miss: normal Oracle flow, result added to cache if it matches existing pattern.
+- Invalidation: clear cache entry if a cached answer gets a "failure" outcome in reflection.
+- Config flag: `oracleCache.enabled` (default: true), `oracleCache.minHits` (default: 5).
+
+**Effort:** S (human: ~3 days / CC: ~25 min)
+**Depends on:** Nothing
+**Added by:** Invention Protocol on 2026-03-30 (addresses cost trend + Oracle latency)
+
+## P3: Project Type Awareness — Skill Routing by Project Nature
+
+**What:** Auto-detect project type (CLI tool, web app, API server, library) from CLAUDE.md and package.json, then inject project type context into skill prompts so skills don't waste turns asking "is there a web UI?" The QA skill would automatically route to test-suite mode for CLI projects, browser mode for web apps.
+
+**Why:** Every QA run on GaryClaw wastes an Oracle decision asking/answering the same "no web UI" question. This is a symptom of a broader problem: skills don't know what kind of project they're operating on. Project type awareness eliminates an entire class of wasted decisions and makes the daemon smarter out of the box.
+
+**Implementation:**
+- New function `detectProjectType()` in `src/bootstrap.ts` or new `src/project-type.ts`: reads CLAUDE.md for keywords ("web app", "CLI", "API", "daemon"), checks package.json for framework deps (next, express, react → web; commander, yargs → CLI).
+- Store in `.garyclaw/project-type.json`: `{ type: "cli" | "web-app" | "api" | "library", confidence: number, evidence: string[] }`.
+- Inject into skill prompts via orchestrator: "This is a CLI tool. For QA, run the test suite — do not attempt browser testing."
+- QA skill reads project type and skips the "no web UI" question entirely.
+- Bootstrap skill auto-runs detection as part of analysis.
+
+**Effort:** S (human: ~3 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** Invention Protocol on 2026-03-30 (addresses repeated Oracle confusion pattern)

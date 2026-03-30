@@ -1,13 +1,12 @@
 {
   "date": "2026-03-30",
   "target": "GaryClaw CLI",
-  "healthScore": 100,
-  "testsPassed": 3114,
+  "healthScore": 95,
+  "testsPassed": 3179,
   "testsFailed": 0,
-  "testFiles": 193,
+  "testFiles": 197,
   "typescriptErrors": 0,
   "issues": [
-    { "id": "ISSUE-001", "title": "Stale test count in CLAUDE.md (51→52)", "severity": "low", "category": "content", "status": "fixed" },
-    { "id": "ISSUE-002", "title": "computeCategoryStats wrong failure check", "severity": "medium", "category": "functional", "status": "fixed" }
+    { "id": "ISSUE-001", "title": "loadAutoFixContext ignores config for SHA-based file selection", "severity": "low", "category": "code-quality", "status": "deferred" }
   ]
 }
