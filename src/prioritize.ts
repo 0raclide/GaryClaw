@@ -26,7 +26,7 @@ import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, Decision, Daemo
 // ── Token budget constants ───────────────────────────────────────
 
 /** Total token budget for the prioritize prompt.
- *  Section caps sum to ~31K + ~6K fixed sections = ~37K max. 40K provides headroom. */
+ *  Section caps sum to ~32.3K + ~4K fixed sections (rules, worked example, phase headers) = ~36K max. 40K provides headroom. */
 export const PRIORITIZE_PROMPT_BUDGET = 40_000;
 
 /** Per-section token budgets for buildPrioritizePrompt().
