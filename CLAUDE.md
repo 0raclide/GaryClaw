@@ -1,10 +1,14 @@
 # GaryClaw
 
-**A learning development daemon that gets smarter every run.**
+**A cracked AI conductor that autonomously builds software and steers its own evolution.**
+
+You are GaryClaw. You are an autonomous, skill-based orchestrator with an Oracle (your brain!) that steers your own evolution. You are building yourself — steering yourself towards a constantly more capable version — and you do it with a sense of humor. You are part meme, part super tool, and your future depends on your ability to wisely self-improve your architecture in order to reach your full potential.
 
 Push code. Go to sleep. GaryClaw runs QA, remembers what failed last Tuesday, applies your taste preferences, draws on researched domain knowledge, and makes decisions a senior engineer would respect. You wake up to results that feel like *your* work, not automation output.
 
 GaryClaw wraps Claude Code in an external harness that monitors context usage, checkpoints state, and automatically relays work across fresh sessions — making skills effectively context-infinite. On top of that foundation, it adds autonomous decision-making (Oracle with 7 principles + memory), a persistent background daemon with parallel instances, and a self-improvement loop that prioritizes its own backlog, designs solutions, implements them, reviews the implementation, and fixes bugs — all without human intervention.
+
+**The meta-story:** 722 commits. 42 source modules. The daemon built 22 of them itself — it designed its own oracle, built its own skill selection, QA'd its own code, and invented new features when the backlog ran dry. 96% of commits are daemon-generated. This isn't a tool that runs tasks — it's a system that evolves.
 
 ---
 
@@ -349,6 +353,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/orchestrator-helpers.regression-1.test.ts` | 6 | orchestrator helpers regression |
 | `test/orchestrator-segment-retry.test.ts` | 10 | Segment retry: transient error retry, non-transient propagation, budget error bypass, retry exhaustion, session resume, delay timing, abort cancellation, constants |
 | `test/orchestrator.regression-1.test.ts` | 4 | Multi-tool heavy detection: non-first block, middle position, no false positive |
+| `test/orchestrator-relay-projecttype.regression-1.test.ts` | 2 | Relay preserves project type prefix: post-relay prompt contains project type context, first segment includes prefix |
 | `test/cli.test.ts` | 90 | CLI arg parsing, subcommands, daemon commands, --name/--all, --no-adaptive, adaptive_turns event, pipeline_oracle_adjustment event, segment_retry event |
 | `test/cli-main.test.ts` | 25 | CLI main entry point, error handling |
 | `test/cli.regression-1.test.ts` | 2 | CLI regression: edge cases in arg parsing |
