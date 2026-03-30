@@ -149,10 +149,11 @@ describe("ISSUE-001: PR fallback path post-merge verification", () => {
 
   it("calls handlePostMergeVerification after fallback direct merge succeeds", async () => {
     // PR creation fails → fallback to direct merge → merge succeeds
+    // testsPassed: undefined so handlePostMergeVerification doesn't smart-skip
     mockCreatePullRequest.mockReturnValueOnce({ created: false, reason: "gh not available" });
-    mockMergeWorktreeBranch.mockReturnValueOnce({ merged: true, commitCount: 3, testsPassed: true });
+    mockMergeWorktreeBranch.mockReturnValueOnce({ merged: true, commitCount: 3 });
 
-    const config = createTestConfig({ merge: { strategy: "pr" } });
+    const config = createTestConfig({ merge: { strategy: "pr", skipValidation: true } });
     const deps = createMockDeps();
     const runner = createJobRunner(config, TEST_DIR, deps, "worker-1");
 
@@ -169,7 +170,7 @@ describe("ISSUE-001: PR fallback path post-merge verification", () => {
     mockCreatePullRequest.mockReturnValueOnce({ created: false, reason: "gh not available" });
     mockMergeWorktreeBranch.mockReturnValueOnce({ merged: false, reason: "diverged" });
 
-    const config = createTestConfig({ merge: { strategy: "pr" } });
+    const config = createTestConfig({ merge: { strategy: "pr", skipValidation: true } });
     const deps = createMockDeps();
     const runner = createJobRunner(config, TEST_DIR, deps, "worker-1");
 
@@ -184,6 +185,8 @@ describe("ISSUE-001: PR fallback path post-merge verification", () => {
 describe("ISSUE-003: Rebase conflict failure record", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset mockExecFileSync to default (return "") — mockImplementation persists across clearAllMocks
+    mockExecFileSync.mockReset().mockReturnValue("");
     mkdirSync(TEST_DIR, { recursive: true });
   });
 
@@ -192,16 +195,16 @@ describe("ISSUE-003: Rebase conflict failure record", () => {
   });
 
   it("writes FailureRecord when rebase has conflicts", async () => {
-    // execFileSync: pass for test command (sh -c ...), fail for rebase
+    // execFileSync: fail for rebase, succeed for everything else
     mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
-      if (cmd === "git" && Array.isArray(args) && args[0] === "rebase") {
+      if (cmd === "git" && Array.isArray(args) && args[0] === "rebase" && !args.includes("--abort")) {
         throw new Error("CONFLICT (content): Merge conflict in file.ts");
       }
-      // rebase --abort should succeed silently
+      // rebase --abort and everything else succeeds
       return "";
     });
 
-    const config = createTestConfig({ merge: { strategy: "pr" } });
+    const config = createTestConfig({ merge: { strategy: "pr", skipValidation: true } });
     const deps = createMockDeps();
     const runner = createJobRunner(config, TEST_DIR, deps, "worker-1");
 
@@ -222,8 +225,8 @@ describe("ISSUE-003: Rebase conflict failure record", () => {
   });
 
   it("does NOT write FailureRecord when rebase succeeds", async () => {
-    // All execFileSync calls succeed (default mock returns "")
-    const config = createTestConfig({ merge: { strategy: "pr" } });
+    // skipValidation to bypass pre-merge test execution, rebase succeeds (default mock returns "")
+    const config = createTestConfig({ merge: { strategy: "pr", skipValidation: true } });
     const deps = createMockDeps();
     const runner = createJobRunner(config, TEST_DIR, deps, "worker-1");
 
