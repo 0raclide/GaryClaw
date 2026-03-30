@@ -1,12 +1,21 @@
 {
-  "date": "2026-03-30",
-  "target": "GaryClaw CLI",
-  "healthScore": 98,
-  "testsPassed": 3185,
-  "testsFailed": 0,
-  "testFiles": 199,
-  "typescriptErrors": 0,
+  "date": "2026-03-31",
+  "url": "library-sdk",
+  "healthScore": 99,
   "issues": [
-    { "id": "ISSUE-001", "title": "loadAutoFixContext ignores config for SHA-based file selection", "severity": "low", "category": "code-quality", "status": "deferred" }
-  ]
+    {
+      "id": "ISSUE-001",
+      "title": "CLAUDE.md meta-story commit count stale (770 vs 771)",
+      "severity": "low",
+      "category": "content-accuracy",
+      "status": "deferred"
+    }
+  ],
+  "categoryScores": {
+    "testSuite": 100,
+    "typeSafety": 100,
+    "contentAccuracy": 95,
+    "codeQuality": 100,
+    "documentation": 97
+  }
 }
