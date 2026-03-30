@@ -223,6 +223,7 @@ export function aggregateMergeStats(
   entries: MergeAuditEntry[],
   todayStr?: string,
   revertEntries?: MergeRevertEntry[],
+  jobs?: Job[],
 ): DashboardData["mergeHealth"] {
   const today = todayStr ?? new Date().toISOString().slice(0, 10);
   const todayEntries = entries.filter((e) => e.timestamp.startsWith(today));
@@ -257,6 +258,13 @@ export function aggregateMergeStats(
   // the job-runner only creates PR audit entries when createPullRequest succeeds.
   const prsAutoMergeEnabled = prsCreated; // conservative: could refine later with a dedicated field
 
+  // Auto-fix stats: jobs triggered by post-merge revert
+  const todayJobs = (jobs ?? []).filter((j) => j.enqueuedAt.startsWith(today));
+  const autoFixJobs = todayJobs.filter((j) => j.triggeredBy === "post-merge-revert");
+  const autoFixAttempts = autoFixJobs.length;
+  const autoFixSuccesses = autoFixJobs.filter((j) => j.status === "complete").length;
+  const autoFixCostUsd = autoFixJobs.reduce((sum, j) => sum + j.costUsd, 0);
+
   return {
     totalAttempts,
     merged,
@@ -269,6 +277,9 @@ export function aggregateMergeStats(
     revertRate,
     prsCreated,
     prsAutoMergeEnabled,
+    autoFixAttempts,
+    autoFixSuccesses,
+    autoFixCostUsd,
   };
 }
 
@@ -559,6 +570,21 @@ export function formatDashboard(data: DashboardData): string {
     if (data.mergeHealth.prsCreated > 0) {
       lines.push(`| PRs Created | ${data.mergeHealth.prsCreated} |`);
     }
+    if (data.mergeHealth.autoFixAttempts > 0) {
+      const autoFixSuccessRate = data.mergeHealth.autoFixAttempts > 0
+        ? ((data.mergeHealth.autoFixSuccesses / data.mergeHealth.autoFixAttempts) * 100).toFixed(0)
+        : "0";
+      lines.push(
+        "",
+        "### Self-Healing",
+        "",
+        "| Metric | Value |",
+        "|--------|-------|",
+        `| Auto-fix attempts | ${data.mergeHealth.autoFixAttempts} |`,
+        `| Auto-fix successes | ${data.mergeHealth.autoFixSuccesses} (${autoFixSuccessRate}%) |`,
+        `| Auto-fix cost | $${data.mergeHealth.autoFixCostUsd.toFixed(2)} |`,
+      );
+    }
   }
 
   // Composition Savings section (only when composition has been applied)
@@ -660,8 +686,8 @@ export function buildDashboard(
   // Default to empty until we have a persistence path for enrichment events.
   const bootstrapEnrichment = aggregateBootstrapEnrichmentStats([]);
 
-  // Merge health from audit log entries + revert entries
-  const mergeHealth = aggregateMergeStats(mergeAuditEntries ?? [], todayStr, mergeRevertEntries);
+  // Merge health from audit log entries + revert entries + auto-fix jobs
+  const mergeHealth = aggregateMergeStats(mergeAuditEntries ?? [], todayStr, mergeRevertEntries, state.jobs);
 
   // Pipeline composition stats
   const composition = aggregateCompositionStats(state.jobs, todayStr);

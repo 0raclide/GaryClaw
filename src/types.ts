@@ -570,6 +570,9 @@ export interface DashboardData {
     revertRate: number;           // reverts / merged (0-100)
     prsCreated: number;           // PRs created today (strategy: "pr")
     prsAutoMergeEnabled: number;  // PRs with auto-merge enabled
+    autoFixAttempts: number;      // auto-fix jobs enqueued today
+    autoFixSuccesses: number;     // auto-fix jobs that completed successfully
+    autoFixCostUsd: number;       // total cost of auto-fix jobs today
   };
   composition: {
     composedJobs: number;           // Jobs where composition changed skill list
