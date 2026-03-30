@@ -378,9 +378,21 @@ export function createJobRunner(
         const todosContent = safeReadText(todosPath);
         if (todosContent) {
           const items = parseTodoItems(todosContent);
-          // Filter: not completed (~~), not claimed, not already done by another cycle, has effort ≤ M, deps met
-          const actionable = items.filter(item =>
-            !item.title.startsWith("~~") &&
+          // State files are the sole authority for completion status.
+          // ~~complete~~ markup in TODOS.md is cosmetic (human readability only).
+          // Items without state files fall back to ~~complete~~ as bootstrap signal.
+          const actionable = items.filter(item => {
+            const hasStrikethrough = item.title.startsWith("~~");
+            if (hasStrikethrough) {
+              // Check if state file exists — if so, state wins (may be stale markup)
+              // If no state file, trust the markup (human-managed or pre-state-tracking)
+              const itemSlug = slugify(item.title.replace(/^~~|~~$/g, ""));
+              const stored = readTodoState(preAssignStateDir, itemSlug);
+              if (!stored) return false; // no state file, trust ~~complete~~ markup
+              // State file exists — let state filter below handle it
+            }
+            return true;
+          }).filter(item =>
             !claimedTitles.has(item.title) &&
             !completedTitles.has(item.title) &&
             item.effort && ["XS", "S", "M"].includes(item.effort.toUpperCase()) &&
