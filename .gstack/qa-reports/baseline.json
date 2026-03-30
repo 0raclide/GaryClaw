@@ -1,21 +1,22 @@
 {
   "date": "2026-03-30",
   "url": "cli://garyclaw",
-  "healthScore": 98,
+  "healthScore": 97,
   "issues": [
     {
       "id": "ISSUE-001",
-      "title": "as any type casts at SDK boundary",
-      "severity": "low",
-      "category": "code-quality",
-      "status": "deferred"
+      "title": "Stale test counts in CLAUDE.md",
+      "severity": "medium",
+      "category": "content",
+      "status": "fixed",
+      "commit": "b3a39fa"
     }
   ],
   "categoryScores": {
     "console": 100,
     "functional": 100,
     "codeQuality": 95,
-    "content": 100,
+    "content": 97,
     "performance": 95
   }
 }
