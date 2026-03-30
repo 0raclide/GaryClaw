@@ -217,17 +217,51 @@ describe("Minimum cost guard on continuous re-enqueue", () => {
     expect(queuedJobs[0].triggerDetail).toBe("auto re-enqueue after successful pipeline");
   });
 
-  it("skip-completed re-enqueue paths are unaffected by cost guard", async () => {
-    // The skip-completed re-enqueue on lines 754/770 should fire regardless of cost.
-    // Those paths exist to advance to the next TODO when current is already done.
-    // We verify by checking that the cost guard only applies to the continuous
-    // re-enqueue path (line ~1082), not the skip-completed paths.
+  it("skip-completed re-enqueue fires despite $0 cost", async () => {
+    // The skip-completed paths (lines ~753, ~770) call enqueue() without cost checks.
+    // If someone adds a cost guard to those paths, this test catches it.
+    // Setup: mock TODO state as "merged" so the skip-completed path fires,
+    // then verify a new queued job appears even though costUsd is $0.
 
-    // This is a structural test: MIN_COST_FOR_REENQUEUE guard is only on the
-    // continuous mode block, verified by the source code shape.
-    // The skip-completed paths call enqueue() without cost checks.
-    expect(MIN_COST_FOR_REENQUEUE).toBe(0.01);
-    // If this test exists and passes, the developer has confirmed the skip-completed
-    // paths are not guarded (verified by code review during implementation).
+    const deps = createMockDeps();
+    // Pipeline completes at $0 (no cost events emitted)
+    deps.runPipeline.mockResolvedValue(undefined);
+
+    const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
+    runner.enqueue(["prioritize", "implement", "qa"], "manual", "test");
+
+    // Get the job and set claimedTodoTitle to trigger TODO state tracking
+    const preState = runner.getState();
+    const job = preState.jobs[0];
+    job.claimedTodoTitle = "Test Feature";
+
+    // Write a TODOS.md so pre-assignment can parse it
+    const { writeFileSync, mkdirSync: mkdirSyncFs } = await import("node:fs");
+    writeFileSync(join(TEST_DIR, "TODOS.md"), "## Backlog\n- [ ] Test Feature [P2] [S]\n  A test item\n");
+
+    // Write TODO state as "merged" — this triggers the skip-completed path
+    const { writeTodoState } = await import("../src/todo-state.js");
+    writeTodoState(TEST_DIR, "test-feature", {
+      title: "Test Feature",
+      slug: "test-feature",
+      state: "merged",
+      updatedAt: new Date().toISOString(),
+    });
+
+    await runner.processNext();
+
+    // The skip path should have completed the job without running the pipeline
+    expect(deps.runPipeline).not.toHaveBeenCalled();
+
+    const postState = runner.getState();
+    const completedJob = postState.jobs.find(j => j.id === job.id);
+    expect(completedJob?.status).toBe("complete");
+    expect(completedJob?.costUsd).toBe(0);
+
+    // Key assertion: a new queued job exists despite $0 cost
+    // This proves the skip-completed path is NOT gated by MIN_COST_FOR_REENQUEUE
+    const queuedJobs = postState.jobs.filter(j => j.status === "queued");
+    expect(queuedJobs.length).toBe(1);
+    expect(queuedJobs[0].triggerDetail).toBe("skip-completed re-enqueue");
   });
 });
