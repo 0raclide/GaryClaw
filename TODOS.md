@@ -191,36 +191,16 @@ Implemented by default daemon. Rule-based skill sequence selection based on effo
 **Approach: Bundle skill selection into prioritize.** Prioritize already evaluates each TODO's priority, effort, risk, and context. Extend its output in `priority.md` to include a "Recommended Pipeline" section:
 
 ```markdown
-## Top Pick: Code Quality Sweep
+## P3: Code Quality Sweep
+
+**What:** Five independent XS fixes with no architectural risk. Items are fully specified, no shared interfaces affected.
 
 ### Recommended Pipeline
 implement → qa
 
-### Pipeline Reasoning
-Five independent XS fixes with no architectural risk. No design needed
-(items are fully specified). No eng-review needed (no shared interfaces).
-```
-
-The Oracle chooses the skill sequence by reasoning about:
-- **Risk:** Does this touch core infrastructure (oracle.ts, types.ts, job-runner.ts)? → eng-review needed
-- **Novelty:** Is this a new capability or a known-pattern fix? → office-hours needed for novel work
-- **Scope:** How many files/modules affected? → single-file changes skip design
-- **Existing artifacts:** Design doc already exists? → skip office-hours
-- **History:** Oracle memory of past decisions ("last time we skipped review on worktree.ts, QA found 4 issues") → adjust sequence
-
-**Why not rule-based:** A P3/S item touching `types.ts` (central interface file) needs full review. A P3/S item adding a dashboard widget doesn't. Size and priority don't capture risk — the Oracle understands context and learns from outcomes.
-
-**Implementation:**
-- Extend the prioritize prompt (`PRIORITIZE_RULES` in `src/prioritize.ts`) with a "Recommended Pipeline" output section. Add the available skills list and guidance on when each is needed.
-- Parse the recommended pipeline from priority.md in `src/job-runner.ts` (new `parseRecommendedPipeline()` function alongside existing `parsePriorityPickTitle()`).
-- In `processNext()`: if recommended pipeline is parsed, use it instead of the default skill list. Fall back to full pipeline if parsing fails.
-- The Oracle's pipeline choices feed into reflection — if a skipped eng-review leads to QA finding architecture issues, that outcome trains future decisions.
-
-**Files:** `src/prioritize.ts` (prompt + output format), `src/job-runner.ts` (parse + use recommended pipeline), `src/reflection.ts` (track pipeline choice outcomes)
-
-**Effort:** S (human: ~3 days / CC: ~25 min)
+**Effort:** XS (human: ~1 day / CC: ~15 min)
 **Depends on:** Nothing
-**Added by:** Session 3 retrospective on 2026-03-29, refined with human input
+**Added by:** Daemon prioritize on 2026-03-30
 
 ## ~~P3: Daemon Fleet Command — Parallel Launch + Auto-Cleanup + Live Status~~ — COMPLETE (2026-03-30)
 
