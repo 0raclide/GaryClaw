@@ -18,6 +18,7 @@ import { readFailureRecords } from "./failure-taxonomy.js";
 import { groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-research.js";
 import { formatSkillCatalogForPrompt } from "./skill-catalog.js";
 import { readPipelineOutcomes, computeCategoryStats } from "./pipeline-history.js";
+import { ensureProjectType, formatProjectContext } from "./project-type.js";
 import { VALID_TASK_CATEGORIES, TASK_CATEGORY_DESCRIPTIONS } from "./types.js";
 import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, Decision, DaemonState } from "./types.js";
 
@@ -890,6 +891,19 @@ export async function buildPrioritizePrompt(
   lines.push("");
   lines.push("Write `.garyclaw/priority.md` following the exact format below.");
   lines.push("");
+
+  // Project type awareness
+  try {
+    const pt = ensureProjectType(projectDir);
+    if (pt.type !== "unknown") {
+      lines.push("## Project Type");
+      lines.push("");
+      lines.push(formatProjectContext(pt));
+      lines.push("");
+    }
+  } catch {
+    // fail-open: detection error → no project context
+  }
 
   // Rules + format + worked example
   lines.push(PRIORITIZE_RULES);
