@@ -318,6 +318,7 @@ export function updateAutoFixCost(
   if (isDirectSha) {
     // Direct SHA from job.autoFixMergeSha — use first 8 chars for prefix match
     shaPrefix = mergeShaOrDetail.slice(0, 8);
+    if (shaPrefix.length === 0) return; // guard: empty SHA would match every entry
   } else {
     // Parse merge SHA from trigger detail: "auto-fix attempt N/M for revert of XXXXXXXX ..."
     const match = mergeShaOrDetail.match(/for revert of ([a-f0-9]{8})/);
