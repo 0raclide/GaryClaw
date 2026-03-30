@@ -1,6 +1,6 @@
 # TODOS
 
-## ~~P1: Live Evolution Dashboard — Real-Time Web UI for the Self-Improving Daemon
+## P1: Live Evolution Dashboard — Real-Time Web UI for the Self-Improving Daemon
 
 **What:** A public-facing web page that shows GaryClaw evolving in real-time. Not a static dashboard — a living feed of the daemon's mind: what it's building, why it chose it, what it invented and pruned, how its capabilities grow over time. Think Twitch for an AI coding agent.
 
@@ -563,7 +563,7 @@ Completed (detected by artifact reconciliation, job job-1774886576583-c78bb2).
 
 Fixed by /qa on main, 2026-03-30. Implemented in b3f44aa: auth failures trigger rate limit hold (30-min fallback), MIN_COST_FOR_REENQUEUE ($0.01) prevents $0 spin loops, cross-instance coordination via global budget. 10 tests in job-runner-auth-hold.test.ts.
 
-## ~~P4: Consolidate Lock Modules — Shared Advisory Lock Base
+## P4: Consolidate Lock Modules — Shared Advisory Lock Base
 
 **What:** `budget-lock.ts` (151 lines) and `reflection-lock.ts` (153 lines) are ~98% identical. Same for their doctor checks (`checkStaleBudgetLocks` ~120 lines, `checkReflectionLocks` ~100 lines). Total duplication: ~440 lines across 4 code paths.
 
@@ -575,7 +575,7 @@ Fixed by /qa on main, 2026-03-30. Implemented in b3f44aa: auth failures trigger 
 **Depends on:** Global Budget Locking (COMPLETE)
 **Added by:** /qa on 2026-03-30 (ISSUE-002, deferred from eng review Decision #1)
 
-## ~~P3: Browser Cookie Persistence for Daemon — Authenticated Page Testing
+## P3: Browser Cookie Persistence for Daemon — Authenticated Page Testing
 
 **What:** The daemon's `design-review` and `qa` skills can't test authenticated pages because the headless browser has no login session. Currently `/setup-browser-cookies` imports cookies interactively but they don't survive daemon restarts or carry across skill segments (each skill spawns a fresh SDK session).
 
