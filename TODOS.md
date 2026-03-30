@@ -662,7 +662,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses repeated Oracle confusion pattern)
 
-## P3: Prioritize Prompt Token Budgeting — Prevent Prompt Bloat
+## ~~P3: Prioritize Prompt Token Budgeting — Prevent Prompt Bloat
 
 **What:** The prioritize prompt has grown with every feature: failure patterns, category stats, skill catalog, pipeline outcomes, unresolved review findings, impact measurement, and project type context are all injected without a total token budget. Cap the total prompt size and enforce per-section budgets so low-priority sections get trimmed when the prompt approaches limits.
 
@@ -680,7 +680,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses #1 failure category + cost increase)
 
-## P3: Per-Skill Cost Attribution — Know Where the Money Goes
+## ~~P3: Per-Skill Cost Attribution — Know Where the Money Goes
 
 **What:** Track and display per-skill cost breakdowns in the dashboard. Currently the dashboard shows total cost and per-job cost, but not which skills within a pipeline consume the most. Add per-skill cost tracking to pipeline state and surface it in the dashboard with trend detection.
 
@@ -697,7 +697,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses cost increase — measurement before optimization)
 
-## P3: Oracle Memory Compaction — Bounded Growth for decision-outcomes.md
+## ~~P3: Oracle Memory Compaction — Bounded Growth for decision-outcomes.md
 
 **What:** decision-outcomes.md is 34K and growing unbounded. Compact old entries by merging repeated patterns into summary lines and pruning outcomes older than 30 days. Keep the file under a 20K token budget.
 
@@ -716,7 +716,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses unbounded growth + Oracle latency)
 
-## P3: Job Runner Modular Decomposition — Extract Subsystems from 1888-Line God Module
+## ~~P3: Job Runner Modular Decomposition — Extract Subsystems from 1888-Line God Module
 
 **What:** `job-runner.ts` at 1888 lines is the largest module and growing. Extract four logical subsystems into focused modules: merge handling (~200 lines → `src/merge-handler.ts`), rate limit handling (~150 lines → `src/rate-limit.ts`), auto-mark/TODO management (~200 lines → `src/todo-manager.ts`), and pre-assignment/composition (~200 lines → `src/job-assignment.ts`). The job-runner becomes a ~900-line orchestrator that delegates to these modules.
 
