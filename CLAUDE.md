@@ -246,7 +246,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/token-monitor.test.ts` | 24 | recordTurnUsage, shouldRelay, growthRate, edge cases |
 | `test/adaptive-turns.test.ts` | 28 | computeAdaptiveMaxTurns: fallback, growth prediction, heavy tools, clamping, relay, HEAVY_TOOLS constant, reason string contract |
 | `test/checkpoint.test.ts` | 35 | write/read/rotation, relay prompt tiering, token budget, codebaseSummary validation + relay |
-| `test/ask-handler.test.ts` | 26 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
+| `test/ask-handler.test.ts` | 29 | Multi-question, multi-select, decision audit log, timeout→deny, otherProposal, memory passing |
 | `test/ask-handler-batch.test.ts` | 11 | Batch wiring: multi-question batching, decision log, escalation per-question, serial fallback, human mode unaffected |
 | `test/ask-handler-batch.regression-1.test.ts` | 4 | Guard clause: batchResults length mismatch, fallback low-confidence escalation, empty array, escalated log |
 | `test/ask-handler-batch.regression-2.test.ts` | 3 | onWarn threading: config.onWarn passed to askOracleBatch, undefined when absent, single-question bypass |
@@ -266,7 +266,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline.test.ts` | 27 | state persistence, context handoff, pipeline report, validation |
 | `test/pipeline-extended.test.ts` | 10 | pipeline edge cases, resume, error propagation |
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
-| `test/pipeline-compose.test.ts` | 44 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
+| `test/pipeline-compose.test.ts` | 57 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
 | `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
 | `test/pipeline-history.test.ts` | 41 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker |
 | `test/pipeline-compose-oracle.regression-1.test.ts` | 4 | Oracle override same-length different-skills: set-membership check, identical no-op, length diff, empty |
@@ -396,7 +396,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/notifier-rate-limit.test.ts` | 8 | Rate limit notification tests: hold/resume formatting, gating, sendNotification mock |
 | `test/oracle.regression-2.test.ts` | 3 | Oracle regression: createSdkOracleQueryFn type cast fix |
 | `test/pipeline-evaluate-wiring.regression-1.test.ts` | 4 | Pipeline evaluate wiring regression: runPostEvaluateAnalysis crash safety |
-| `test/pipeline-todo-state.regression-1.test.ts` | 4 | Pipeline regression: writeTodoState wiring after skill completion |
+| `test/pipeline-todo-state.regression-1.test.ts` | 6 | Pipeline regression: writeTodoState wiring after skill completion |
 | `test/triggers-self-commit.test.ts` | 14 | Self-commit filtering: git poller skips daemon-generated commits |
 | `test/triggers-self-commit.regression-1.test.ts` | 5 | Triggers regression: getCommitEmails >100 cap returns empty |
 | `test/worktree-stash-merge.test.ts` | 7 | Worktree stash-merge: stash/pop around merge for dirty working trees |
