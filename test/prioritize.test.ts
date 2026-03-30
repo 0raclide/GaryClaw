@@ -1015,3 +1015,73 @@ describe("measureRecentImpact", () => {
     expect(measureRecentImpact(gcDir)).toBeNull();
   });
 });
+
+// ── buildPrioritizePrompt: category stats injection ─────────────
+
+describe("buildPrioritizePrompt — category stats", () => {
+  it("includes Task Category in output format", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("### Task Category");
+    expect(prompt).toContain("visual-ux");
+    expect(prompt).toContain("architectural");
+    expect(prompt).toContain("bug-fix");
+  });
+
+  it("includes Task Category Guidelines section", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("## Task Category Guidelines");
+    expect(prompt).toContain("UI changes, design polish");
+    expect(prompt).toContain("shared interfaces, cross-module changes");
+  });
+
+  it("omits per-category stats when pipeline-outcomes.jsonl is missing", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).not.toContain("Pipeline Outcome Patterns by Task Category");
+  });
+
+  it("omits per-category stats when fewer than 10 outcomes exist", async () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const lines: string[] = [];
+    for (let i = 0; i < 9; i++) {
+      lines.push(JSON.stringify({
+        jobId: `j${i}`, timestamp: "2026-03-30T00:00:00Z", todoTitle: "Item",
+        effort: "S", priority: 3, skills: ["implement", "qa"], skippedSkills: ["design-review"],
+        qaFailureCount: 0, reopenedCount: 0, outcome: "success", oracleAdjusted: false,
+        taskCategory: "visual-ux",
+      }));
+    }
+    writeFileSync(join(gcDir, "pipeline-outcomes.jsonl"), lines.join("\n") + "\n", "utf-8");
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).not.toContain("Pipeline Outcome Patterns by Task Category");
+  });
+
+  it("injects per-category stats table when 10+ outcomes with sufficient samples", async () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const lines: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      lines.push(JSON.stringify({
+        jobId: `j${i}`, timestamp: "2026-03-30T00:00:00Z", todoTitle: "Item",
+        effort: "S", priority: 3, skills: ["implement", "qa"],
+        skippedSkills: ["design-review"],
+        qaFailureCount: i < 5 ? 2 : 0, reopenedCount: 0,
+        outcome: i < 5 ? "failure" : "success",
+        oracleAdjusted: false, taskCategory: "visual-ux",
+      }));
+    }
+    writeFileSync(join(gcDir, "pipeline-outcomes.jsonl"), lines.join("\n") + "\n", "utf-8");
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("Pipeline Outcome Patterns by Task Category");
+    expect(prompt).toContain("visual-ux");
+    expect(prompt).toContain("design-review");
+    expect(prompt).toContain("High delta means the skill matters");
+  });
+});

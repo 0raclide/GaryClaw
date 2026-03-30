@@ -17,6 +17,7 @@ import { readOracleMemory, readMetrics, defaultMemoryConfig } from "./oracle-mem
 import { readFailureRecords } from "./failure-taxonomy.js";
 import { groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-research.js";
 import { formatSkillCatalogForPrompt } from "./skill-catalog.js";
+import { readPipelineOutcomes, computeCategoryStats } from "./pipeline-history.js";
 import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, Decision, DaemonState } from "./types.js";
 
 // ── TodoItem parsing ─────────────────────────────────────────────
@@ -521,6 +522,9 @@ Write \`.garyclaw/priority.md\` with this exact structure:
 ## Skipped Items
 - [Title]: [reason — unmet deps / too large / P4 while P2 exists]
 
+### Task Category
+{one of: visual-ux, architectural, bug-fix, refactor, performance, infra, new-feature}
+
 ### Recommended Pipeline
 implement -> qa
 
@@ -552,6 +556,17 @@ The backlog may need new items, dependency resolution, or scope splitting.
 \`\`\`
 
 Then STOP. Do not pick an item below the threshold.
+
+## Task Category Guidelines
+
+Classify the task based on its primary nature. Always pick the best-fit category:
+- visual-ux: UI changes, design polish, responsive layouts, visual bugs
+- architectural: shared interfaces, cross-module changes, data flow redesign
+- bug-fix: fixing broken behavior, error handling, regression fixes
+- refactor: code cleanup, dedup, rename, restructure without behavior change
+- performance: speed, memory, bundle size, query optimization
+- infra: CI/CD, deployment, monitoring, tooling, developer experience
+- new-feature: entirely new capability not covered above
 
 ## Recommended Pipeline Guidelines
 
@@ -849,6 +864,26 @@ export async function buildPrioritizePrompt(
   lines.push("Architectural changes need plan-eng-review. ");
   lines.push("Bug fixes and small refactors need only implement → qa.");
   lines.push("");
+
+  // Per-category pipeline outcome stats (only inject with 10+ outcomes)
+  const outcomeHistoryPath = join(projectDir, ".garyclaw", "pipeline-outcomes.jsonl");
+  const outcomes = readPipelineOutcomes(outcomeHistoryPath);
+  if (outcomes.length >= 10) {
+    const categoryStats = computeCategoryStats(outcomes);
+    if (categoryStats.length > 0) {
+      lines.push("### Pipeline Outcome Patterns by Task Category");
+      lines.push("");
+      lines.push("| Category | Skill | When Skipped (fail%) | When Included (fail%) | Delta |");
+      lines.push("|----------|-------|---------------------|----------------------|-------|");
+      for (const s of categoryStats.slice(0, 15)) { // cap at 15 rows
+        const delta = s.skippedFailureRate - s.includedFailureRate;
+        lines.push(`| ${s.category} | ${s.skill} | ${s.skippedCount} jobs (${s.skippedFailureRate.toFixed(0)}% fail) | ${s.includedCount} jobs (${s.includedFailureRate.toFixed(0)}% fail) | ${delta > 0 ? "+" : ""}${delta.toFixed(0)}pp |`);
+      }
+      lines.push("");
+      lines.push("Use these patterns when recommending pipelines. High delta means the skill matters for that category.");
+      lines.push("");
+    }
+  }
 
   // Phase 4 — OUTPUT
   lines.push("## Phase 3 — RANK");
