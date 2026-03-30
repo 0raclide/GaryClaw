@@ -1147,13 +1147,14 @@ export function createJobRunner(
       // Continuous mode: after a successful pipeline, re-enqueue the same skill set
       // to immediately pick up the next TODO. Pre-assignment ensures a different item
       // is claimed each cycle. Stops when backlog is exhausted (enqueue returns null).
+      const originalSkills = nextJob.composedFrom ?? nextJob.skills;
       if (
         nextJob.status === "complete" &&
-        nextJob.skills.length > 1 &&
-        nextJob.skills.includes("prioritize") &&
+        originalSkills.length > 1 &&
+        originalSkills.includes("prioritize") &&
         nextJob.costUsd >= MIN_COST_FOR_REENQUEUE
       ) {
-        const reEnqueueId = enqueue(nextJob.skills, "continuous", "auto re-enqueue after successful pipeline", nextJob.designDoc);
+        const reEnqueueId = enqueue(originalSkills, "continuous", "auto re-enqueue after successful pipeline", nextJob.designDoc);
         if (reEnqueueId) {
           d.log("info", `Continuous: re-enqueued pipeline as ${reEnqueueId}`);
         } else {
