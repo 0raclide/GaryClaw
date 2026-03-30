@@ -953,8 +953,12 @@ export function createJobRunner(
       const record = buildFailureRecord(err, nextJob.id, nextJob.skills, resolvedInstanceName);
       appendFailureRecord(record, checkpointDir);
 
-      // Rate limit detection: hold all jobs instead of spam-retrying
-      if (classification.category === "infra-issue" && isRateLimitError(nextJob.error)) {
+      // Rate limit / auth detection: hold all jobs instead of spam-retrying
+      const shouldHold =
+        (classification.category === "infra-issue" && isRateLimitError(nextJob.error)) ||
+        classification.category === "auth-issue";
+
+      if (shouldHold) {
         const resetAt = parseRateLimitResetTime(nextJob.error);
         const holdUntil = resetAt ?? new Date(Date.now() + RATE_LIMIT_FALLBACK_MS);
         state.rateLimitResetAt = holdUntil.toISOString();
@@ -1079,7 +1083,12 @@ export function createJobRunner(
       // Continuous mode: after a successful pipeline, re-enqueue the same skill set
       // to immediately pick up the next TODO. Pre-assignment ensures a different item
       // is claimed each cycle. Stops when backlog is exhausted (enqueue returns null).
-      if (nextJob.status === "complete" && nextJob.skills.length > 1 && nextJob.skills.includes("prioritize")) {
+      if (
+        nextJob.status === "complete" &&
+        nextJob.skills.length > 1 &&
+        nextJob.skills.includes("prioritize") &&
+        nextJob.costUsd >= MIN_COST_FOR_REENQUEUE
+      ) {
         const reEnqueueId = enqueue(nextJob.skills, "continuous", "auto re-enqueue after successful pipeline", nextJob.designDoc);
         if (reEnqueueId) {
           d.log("info", `Continuous: re-enqueued pipeline as ${reEnqueueId}`);
@@ -1472,6 +1481,9 @@ export function parseRateLimitResetTime(message: string, now?: Date): Date | nul
 
 /** Default rate limit hold duration when reset time cannot be parsed (30 minutes). */
 export const RATE_LIMIT_FALLBACK_MS = 30 * 60 * 1000;
+
+/** Minimum job cost to allow continuous re-enqueue. Prevents $0 spin loops. */
+export const MIN_COST_FOR_REENQUEUE = 0.01;
 
 /**
  * Validate a FileDependencyMap loaded from .garyclaw/file-deps.json.

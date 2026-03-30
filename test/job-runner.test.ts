@@ -300,7 +300,9 @@ describe("Job Runner", () => {
 
     it("sets failureCategory on failed job", async () => {
       const deps = createMockDeps();
-      deps.runSkill.mockRejectedValue(new Error("auth verification failed"));
+      // Use a non-auth, non-rate-limit error so the job lands in "failed" status
+      // (auth-issue now triggers the hold mechanism → rate_limited status)
+      deps.runSkill.mockRejectedValue(new Error("compilation failed"));
 
       const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
       const id = runner.enqueue(["qa"], "manual", "trigger")!;
@@ -310,8 +312,8 @@ describe("Job Runner", () => {
       const state = runner.getState();
       const job = state.jobs.find((j) => j.id === id)!;
       expect(job.status).toBe("failed");
-      expect(job.failureCategory).toBe("auth-issue");
-      expect(job.retryable).toBe(true);
+      expect(job.failureCategory).toBe("project-bug");
+      expect(job.retryable).toBe(false);
     });
 
     it("sets failureCategory to budget-exceeded for PerJobCostExceededError", async () => {
