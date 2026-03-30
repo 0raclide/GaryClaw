@@ -608,8 +608,8 @@ async function runSkillInternal(
           });
         }
 
-        // Update prompt for next session
-        currentPrompt = segmentOptions.prompt;
+        // Update prompt for next session (preserve project type prefix across relay)
+        currentPrompt = segmentOptions.prompt + projectTypePrefix;
         sessionId = ""; // Fresh session
 
         callbacks.onEvent({
