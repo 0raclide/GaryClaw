@@ -210,7 +210,7 @@ export function handlePostMergeVerification(ctx: PostMergeVerificationContext): 
             "```",
             (verifyResult.testOutput ?? "").slice(0, 1000),
             "```",
-            `**Branch:** \`garyclaw/${ctx.instanceName}\` (still exists after revert, check out to debug)`,
+            `**Branch:** \`${branchName(ctx.instanceName)}\` (still exists after revert, check out to debug)`,
             `**Added by:** Post-merge safety net on ${new Date().toISOString().slice(0, 10)}`,
             "",
           ].join("\n");
