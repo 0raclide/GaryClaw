@@ -14,14 +14,13 @@
  * 7. Signal handlers for graceful shutdown
  */
 
-import { readFileSync, writeFileSync, unlinkSync, existsSync, appendFileSync, mkdirSync, statSync, renameSync } from "node:fs";
+import { readFileSync, unlinkSync, existsSync, appendFileSync, statSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { createIPCServer, type IPCHandler } from "./daemon-ipc.js";
 import { createJobRunner, type JobRunner } from "./job-runner.js";
 import { createGitPoller, createCronPoller, validateCronExpression, type GitPoller } from "./triggers.js";
 import { defaultMemoryConfig, readMetrics } from "./oracle-memory.js";
 import {
-  instanceDir,
   ensureInstanceDir,
   resolveInstanceName,
   listInstances,

@@ -1,22 +1,12 @@
 {
   "date": "2026-03-30",
-  "url": "cli-project",
+  "project": "GaryClaw",
   "healthScore": 100,
-  "issues": [],
-  "categoryScores": {
-    "console": 100,
-    "links": 100,
-    "visual": 100,
-    "functional": 100,
-    "ux": 100,
-    "performance": 100,
-    "content": 100,
-    "accessibility": 100
-  },
-  "testSuite": {
-    "files": 191,
-    "tests": 3055,
-    "passing": 3055,
-    "failing": 0
-  }
+  "testFiles": 192,
+  "tests": 3058,
+  "allPassing": true,
+  "typescriptClean": true,
+  "sourceModules": 40,
+  "docsAccurate": true,
+  "issues": []
 }

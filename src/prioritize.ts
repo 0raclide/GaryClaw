@@ -12,13 +12,12 @@
 import { join } from "node:path";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 
-import { safeReadText, safeReadJSON } from "./safe-json.js";
+import { safeReadText } from "./safe-json.js";
 import { readOracleMemory, readMetrics, defaultMemoryConfig } from "./oracle-memory.js";
-import { estimateTokens } from "./checkpoint.js";
 import { readFailureRecords } from "./failure-taxonomy.js";
 import { groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-research.js";
 import { formatSkillCatalogForPrompt } from "./skill-catalog.js";
-import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, FailureRecord, Decision, DaemonState } from "./types.js";
+import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, Decision, DaemonState } from "./types.js";
 
 // ── TodoItem parsing ─────────────────────────────────────────────
 

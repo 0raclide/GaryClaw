@@ -68,7 +68,6 @@ import {
 import type {
   GaryClawConfig,
   ImplementProgress,
-  CodebaseSummary,
   OrchestratorCallbacks,
   Checkpoint,
   RelayPoint,

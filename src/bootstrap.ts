@@ -639,8 +639,8 @@ const BOOTSTRAP_RULES = `## Rules
  * no-op prompt.
  */
 export async function buildBootstrapPrompt(
-  config: GaryClawConfig,
-  previousSkills: PipelineSkillEntry[],
+  _config: GaryClawConfig,
+  _previousSkills: PipelineSkillEntry[],
   projectDir: string,
 ): Promise<string> {
   const analysis = await analyzeCodebase(projectDir);
@@ -776,7 +776,7 @@ const ENRICHED_CLAUDE_MD_BUDGET = 5_000;
  * All helper functions used already exist in bootstrap.ts and checkpoint.ts.
  */
 export async function buildEnrichedBootstrapPrompt(
-  config: GaryClawConfig,
+  _config: GaryClawConfig,
   qaCheckpointDir: string,
   projectDir: string,
 ): Promise<string> {

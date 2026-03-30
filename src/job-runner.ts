@@ -1634,7 +1634,7 @@ function persistState(state: DaemonState, checkpointDir: string): void {
 export function catchUpCompletedTodos(
   checkpointDir: string,
   projectDir: string,
-  resolvedInstanceName: string,
+  _resolvedInstanceName: string,
   parentCheckpointDir?: string,
   deps?: { log: (level: string, message: string) => void },
 ): number {

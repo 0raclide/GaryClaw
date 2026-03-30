@@ -8,7 +8,7 @@
  */
 
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, renameSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 
@@ -42,10 +42,8 @@ export function readPidFile(pidPath: string): number | null {
  * we detect that.
  */
 export function isPidAlive(pid: number, expectedProcessName?: string): PidCheckResult {
-  let alive = false;
   try {
     process.kill(pid, 0);
-    alive = true;
   } catch {
     // Process is dead
     return {

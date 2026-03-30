@@ -11,11 +11,11 @@
 
 import { join } from "node:path";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
 
 import { estimateTokens } from "./checkpoint.js";
 import { safeReadJSON, safeReadText, safeWriteJSON, safeWriteText } from "./safe-json.js";
-import { extractTopicKeywords, groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-research.js";
+import { groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-research.js";
 import { normalizedLevenshtein } from "./reflection.js";
 import { computeGrowthRate } from "./token-monitor.js";
 
@@ -1607,7 +1607,7 @@ export function writeEvaluationReport(projectDir: string, report: EvaluationRepo
  * and asks Claude to synthesize additional improvement candidates.
  */
 export function buildEvaluatePrompt(
-  config: GaryClawConfig,
+  _config: GaryClawConfig,
   previousSkills: PipelineSkillEntry[],
   projectDir: string,
 ): string {

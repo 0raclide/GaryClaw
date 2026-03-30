@@ -716,9 +716,8 @@ export function verifyPostMerge(
   const testTimeout = options?.testTimeout ?? 120_000;
 
   // Verify HEAD is at or ahead of mergeSha
-  let currentHead: string;
   try {
-    currentHead = execFileSync("git", ["rev-parse", "HEAD"], {
+    execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: repoDir,
       stdio: "pipe",
       encoding: "utf-8",

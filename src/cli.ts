@@ -25,9 +25,9 @@ import {
   listInstances,
   readGlobalBudget,
 } from "./daemon-registry.js";
-import { getWorktreePath, listWorktrees, worktreeDir, removeWorktree } from "./worktree.js";
+import { worktreeDir, removeWorktree } from "./worktree.js";
 import { safeReadText, safeWriteText } from "./safe-json.js";
-import type { GaryClawConfig, OrchestratorCallbacks, OrchestratorEvent, InstanceInfo } from "./types.js";
+import type { GaryClawConfig, OrchestratorCallbacks, OrchestratorEvent } from "./types.js";
 
 // ── ANSI colors ─────────────────────────────────────────────────
 
@@ -1279,7 +1279,7 @@ async function main(): Promise<void> {
   process.exit(1);
 }
 
-async function displayAllInstances(checkpointDir: string, projectDir?: string): Promise<void> {
+async function displayAllInstances(checkpointDir: string, _projectDir?: string): Promise<void> {
   const instances = listInstances(checkpointDir);
   const globalBudget = readGlobalBudget(checkpointDir);
 

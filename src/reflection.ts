@@ -16,7 +16,6 @@
  *   edit_distance / max(len_a, len_b) < 0.3 means 70%+ similar
  */
 
-import { join } from "node:path";
 import { resolveWarnFn } from "./types.js";
 import type {
   Decision,
@@ -34,7 +33,7 @@ import {
   writeDecisionOutcomesRolling,
   defaultMemoryConfig,
 } from "./oracle-memory.js";
-import { safeReadJSON, safeReadText } from "./safe-json.js";
+import { safeReadText } from "./safe-json.js";
 import { acquireReflectionLock, releaseReflectionLock } from "./reflection-lock.js";
 
 // ── Levenshtein distance ────────────────────────────────────────

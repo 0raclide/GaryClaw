@@ -25,7 +25,6 @@ import type {
   OracleMetrics,
   GlobalBudget,
   BudgetConfig,
-  AdaptiveTurnsJobStats,
   PipelineOutcomeRecord,
 } from "./types.js";
 
