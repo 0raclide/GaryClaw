@@ -1317,28 +1317,29 @@ describe("addBudgetedSection", () => {
     expect(lines.some(l => l.includes("Short content here."))).toBe(true);
   });
 
-  it("truncates content over section cap (keepEnd=true default)", () => {
+  it("truncates content over section cap (keepEnd=false default)", () => {
     const lines: string[] = [];
     // Create content that's ~2000 tokens (7000 chars)
-    const content = "Line of text for testing.\n".repeat(280);
+    const content = Array.from({ length: 280 }, (_, i) => `Line ${i}: text for testing.`).join("\n");
     const tokens = addBudgetedSection(lines, "### Big Section", content, 500, 10000);
     expect(tokens).toBeLessThanOrEqual(600); // some overhead for header
     // The full content would be ~2000 tokens, but cap is 500
     const joined = lines.join("\n");
     expect(joined.length).toBeLessThan(content.length);
-    // keepEnd=true (default): keeps newest, shows truncation marker
-    expect(joined).toContain("[...truncated oldest]");
+    // keepEnd=false (default): keeps beginning, shows truncation marker
+    expect(joined).toContain("Line 0:");
+    expect(joined).toContain("[...truncated to fit token budget]");
   });
 
-  it("truncates with keepEnd=false (keeps beginning)", () => {
+  it("truncates with keepEnd=true (keeps newest)", () => {
     const lines: string[] = [];
     const content = Array.from({ length: 100 }, (_, i) => `Line ${i}: some content here`).join("\n");
-    const tokens = addBudgetedSection(lines, "### Head Section", content, 200, 10000, false);
+    const tokens = addBudgetedSection(lines, "### Tail Section", content, 200, 10000, true);
     expect(tokens).toBeGreaterThan(0);
     const joined = lines.join("\n");
-    expect(joined).toContain("Line 0:");
-    expect(joined).toContain("[...truncated]");
-    expect(joined).not.toContain("Line 99:");
+    expect(joined).toContain("Line 99:");
+    expect(joined).toContain("[...older entries truncated]");
+    expect(joined).not.toContain("Line 0:");
   });
 
   it("returns 0 for empty content", () => {
@@ -1462,22 +1463,22 @@ describe("truncateSection", () => {
     expect(truncateSection(content, 1000)).toBe(content);
   });
 
-  it("keepEnd=true (default): keeps newest content, drops oldest", () => {
+  it("keepEnd=false (default): keeps beginning, drops end", () => {
     const lines = Array.from({ length: 200 }, (_, i) => `Entry ${i}: data here`);
     const content = lines.join("\n");
     const result = truncateSection(content, 100);
-    expect(result).toContain("[...truncated oldest]");
-    expect(result).toContain("Entry 199:");
-    expect(result).not.toContain("Entry 0:");
-  });
-
-  it("keepEnd=false: keeps beginning, drops end", () => {
-    const lines = Array.from({ length: 200 }, (_, i) => `Entry ${i}: data here`);
-    const content = lines.join("\n");
-    const result = truncateSection(content, 100, false);
-    expect(result).toContain("[...truncated]");
+    expect(result).toContain("[...truncated to fit token budget]");
     expect(result).toContain("Entry 0:");
     expect(result).not.toContain("Entry 199:");
+  });
+
+  it("keepEnd=true: keeps newest content, drops oldest", () => {
+    const lines = Array.from({ length: 200 }, (_, i) => `Entry ${i}: data here`);
+    const content = lines.join("\n");
+    const result = truncateSection(content, 100, true);
+    expect(result).toContain("[...older entries truncated]");
+    expect(result).toContain("Entry 199:");
+    expect(result).not.toContain("Entry 0:");
   });
 
   it("keepEnd=true snaps to newline boundary", () => {
@@ -1485,14 +1486,14 @@ describe("truncateSection", () => {
     const content = "AAAA\nBBBB\nCCCC\nDDDD\n".repeat(50);
     const result = truncateSection(content, 20, true);
     // Should not start mid-line
-    expect(result.startsWith("[...truncated oldest]\n")).toBe(true);
+    expect(result.startsWith("[...older entries truncated]\n")).toBe(true);
   });
 
   it("keepEnd=false snaps to newline boundary", () => {
     const content = "AAAA\nBBBB\nCCCC\nDDDD\n".repeat(50);
     const result = truncateSection(content, 20, false);
     // Should end at a line boundary + truncation marker
-    expect(result.endsWith("\n[...truncated]")).toBe(true);
+    expect(result.endsWith("\n[...truncated to fit token budget]")).toBe(true);
   });
 
   it("uses estimateTokens consistently (no 14% overrun)", () => {

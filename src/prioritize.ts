@@ -1018,9 +1018,9 @@ export async function buildPrioritizePrompt(
       statsLines.push("");
       statsLines.push("Use these patterns when recommending pipelines. High delta means the skill matters for that category.");
       const tStats = addBudgetedSection(lines, "### Pipeline Outcome Patterns by Task Category",
-        statsLines.join("\n"), SB.pipelineOutcomeStats, remaining());
+        statsLines.join("\n"), SB.pipelineStats, remaining());
       tokensUsed += tStats;
-      sectionTokens.pipelineOutcomeStats = tStats;
+      sectionTokens.pipelineStats = tStats;
     }
   }
 
