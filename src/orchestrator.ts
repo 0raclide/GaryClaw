@@ -65,6 +65,7 @@ import {
   buildCodebaseSummary,
 } from "./codebase-summary.js";
 import { isTransientError } from "./failure-taxonomy.js";
+import { ensureProjectType, formatProjectContext } from "./project-type.js";
 
 import type {
   GaryClawConfig,
@@ -227,9 +228,29 @@ async function runSkillInternal(
   let estimatedCostUsd = 0;
   let currentSessionCost = 0;
 
+  // Project type awareness — detect once, inject into both Oracle and skill prompt
+  const projectType = (() => {
+    try {
+      return ensureProjectType(config.projectDir);
+    } catch {
+      return null; // fail-open: detection error → no project context
+    }
+  })();
+
+  const projectTypePrefix = projectType && projectType.type !== "unknown"
+    ? `\n\nProject type: ${formatProjectContext(projectType)}\n` +
+      (projectType.hasWebUI
+        ? "This project has a web UI. Browser testing is appropriate.\n"
+        : "This project has NO web UI. Do NOT attempt browser testing. Run the test suite instead.\n") +
+      (projectType.testCommand
+        ? `Test command: ${projectType.testCommand}\n`
+        : "")
+    : "";
+
   // Initial prompt — use override if provided (pipeline context handoff), else default
-  let currentPrompt = initialPromptOverride
+  const basePrompt = initialPromptOverride
     ?? `Run the /${config.skillName} skill. Follow all SKILL.md instructions completely.`;
+  let currentPrompt = basePrompt + projectTypePrefix;
 
   // 2. Session loop
   for (
@@ -292,6 +313,7 @@ async function runSkillInternal(
                 escalateThreshold: 6,
               },
               skillName: config.skillName,
+              projectContext: projectType ? formatProjectContext(projectType) : undefined,
               memory: oracleMemory,
             },
             escalatedLogPath: join(config.checkpointDir, "escalated.jsonl"),
