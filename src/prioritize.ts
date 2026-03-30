@@ -960,7 +960,9 @@ export async function buildPrioritizePrompt(
       "",
     ].join("\n");
     lines.push(preBlock);
-    tokensUsed += estimateTokens(preBlock);
+    const tPre = estimateTokens(preBlock);
+    tokensUsed += tPre;
+    sectionTokens.preAssigned = tPre;
   }
 
   // Fixed: Claimed items (small, essential for correctness)
@@ -979,7 +981,9 @@ export async function buildPrioritizePrompt(
     claimLines.push("");
     const claimBlock = claimLines.join("\n");
     lines.push(claimBlock);
-    tokensUsed += estimateTokens(claimBlock);
+    const tClaim = estimateTokens(claimBlock);
+    tokensUsed += tClaim;
+    sectionTokens.claimedItems = tClaim;
   }
 
   // Phase 2+3 — SCORE and RANK instructions
