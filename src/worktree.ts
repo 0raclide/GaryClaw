@@ -1141,7 +1141,10 @@ export function createPullRequest(
       prUrl = output;
       // Extract PR number from URL (e.g., https://github.com/owner/repo/pull/42)
       const match = prUrl.match(/\/pull\/(\d+)/);
-      prNumber = match ? parseInt(match[1], 10) : 0;
+      if (!match) {
+        return { created: false, reason: `Could not parse PR number from gh output: ${output.slice(0, 200)}` };
+      }
+      prNumber = parseInt(match[1], 10);
     } catch (createErr) {
       const msg = createErr instanceof Error ? createErr.message : String(createErr);
       return { created: false, reason: `PR creation failed: ${msg}` };
