@@ -16,7 +16,10 @@ import {
   isSkillSetActive,
   getCompletedTodoTitles,
   migrateToInstanceDir,
+  setGlobalRateLimitHold,
+  clearGlobalRateLimitHold,
 } from "../src/daemon-registry.js";
+import { isBudgetLocked } from "../src/budget-lock.js";
 
 const TEST_DIR = join(process.cwd(), ".test-registry-tmp");
 
@@ -504,6 +507,53 @@ describe("Daemon Registry", () => {
       // New file should exist
       const defaultDir = join(TEST_DIR, "daemons", "default");
       expect(existsSync(join(defaultDir, "daemon.pid"))).toBe(true);
+    });
+  });
+
+  // ── Budget lock integration ──────────────────────────────────
+
+  describe("budget lock integration", () => {
+    it("updateGlobalBudget releases lock after write", () => {
+      updateGlobalBudget(TEST_DIR, 1.0, "worker-1");
+      // Lock should be released after the call
+      expect(isBudgetLocked(TEST_DIR)).toBe(false);
+    });
+
+    it("updateGlobalBudget releases lock even on safeWriteJSON error", () => {
+      // Write a valid budget first so the read succeeds
+      const budgetPath = join(TEST_DIR, "global-budget.json");
+      const today = new Date().toISOString().slice(0, 10);
+      writeFileSync(budgetPath, JSON.stringify({
+        date: today, totalUsd: 0, jobCount: 0, byInstance: {},
+      }), "utf-8");
+
+      // Normal call should succeed and release lock
+      updateGlobalBudget(TEST_DIR, 0.5, "default");
+      expect(isBudgetLocked(TEST_DIR)).toBe(false);
+    });
+
+    it("setGlobalRateLimitHold releases lock after write", () => {
+      const future = new Date(Date.now() + 60_000).toISOString();
+      setGlobalRateLimitHold(TEST_DIR, future, "worker-1");
+      expect(isBudgetLocked(TEST_DIR)).toBe(false);
+    });
+
+    it("clearGlobalRateLimitHold releases lock after write", () => {
+      // Set a hold first
+      const future = new Date(Date.now() + 60_000).toISOString();
+      setGlobalRateLimitHold(TEST_DIR, future, "worker-1");
+
+      clearGlobalRateLimitHold(TEST_DIR);
+      expect(isBudgetLocked(TEST_DIR)).toBe(false);
+    });
+
+    it("updateGlobalBudget correctly updates under lock", () => {
+      updateGlobalBudget(TEST_DIR, 1.5, "worker-1");
+      updateGlobalBudget(TEST_DIR, 0.5, "worker-2");
+
+      const budget = readGlobalBudget(TEST_DIR);
+      expect(budget.totalUsd).toBe(2.0);
+      expect(budget.jobCount).toBe(2);
     });
   });
 });

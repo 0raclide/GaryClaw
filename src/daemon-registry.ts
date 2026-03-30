@@ -16,6 +16,7 @@ import { readdirSync, existsSync, readFileSync, writeFileSync, mkdirSync, unlink
 import { join } from "node:path";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
 import { readPidFile as readPidFileDirect, isPidAlive as isPidAliveDirect } from "./pid-utils.js";
+import { acquireBudgetLock, releaseBudgetLock } from "./budget-lock.js";
 import type { GlobalBudget, InstanceInfo, DaemonState } from "./types.js";
 
 const DAEMONS_DIR = "daemons";
@@ -140,23 +141,31 @@ export function updateGlobalBudget(
   addCostUsd: number,
   instanceName: string,
 ): GlobalBudget {
-  const budget = readGlobalBudget(checkpointDir);
-
-  budget.totalUsd += addCostUsd;
-  budget.jobCount += 1;
-
-  // Per-instance tracking
-  const resolved = resolveInstanceName(instanceName);
-  if (!budget.byInstance[resolved]) {
-    budget.byInstance[resolved] = { totalUsd: 0, jobCount: 0 };
+  const locked = acquireBudgetLock(checkpointDir);
+  if (!locked) {
+    console.warn("budget-lock: timeout acquiring lock for updateGlobalBudget, proceeding without lock");
   }
-  budget.byInstance[resolved].totalUsd += addCostUsd;
-  budget.byInstance[resolved].jobCount += 1;
+  try {
+    const budget = readGlobalBudget(checkpointDir);
 
-  const filePath = join(checkpointDir, GLOBAL_BUDGET_FILE);
-  safeWriteJSON(filePath, budget);
+    budget.totalUsd += addCostUsd;
+    budget.jobCount += 1;
 
-  return budget;
+    // Per-instance tracking
+    const resolved = resolveInstanceName(instanceName);
+    if (!budget.byInstance[resolved]) {
+      budget.byInstance[resolved] = { totalUsd: 0, jobCount: 0 };
+    }
+    budget.byInstance[resolved].totalUsd += addCostUsd;
+    budget.byInstance[resolved].jobCount += 1;
+
+    const filePath = join(checkpointDir, GLOBAL_BUDGET_FILE);
+    safeWriteJSON(filePath, budget);
+
+    return budget;
+  } finally {
+    if (locked) releaseBudgetLock(checkpointDir);
+  }
 }
 
 // ── Cross-instance dedup ─────────────────────────────────────────
@@ -425,12 +434,20 @@ export function setGlobalRateLimitHold(
   resetAt: string,
   _instanceName: string,
 ): void {
-  const budget = readGlobalBudget(parentDir);
-  // Only extend the hold, never shorten it
-  if (!budget.rateLimitResetAt || new Date(resetAt) > new Date(budget.rateLimitResetAt)) {
-    budget.rateLimitResetAt = resetAt;
-    const filePath = join(parentDir, GLOBAL_BUDGET_FILE);
-    safeWriteJSON(filePath, budget);
+  const locked = acquireBudgetLock(parentDir);
+  if (!locked) {
+    console.warn("budget-lock: timeout acquiring lock for setGlobalRateLimitHold, proceeding without lock");
+  }
+  try {
+    const budget = readGlobalBudget(parentDir);
+    // Only extend the hold, never shorten it
+    if (!budget.rateLimitResetAt || new Date(resetAt) > new Date(budget.rateLimitResetAt)) {
+      budget.rateLimitResetAt = resetAt;
+      const filePath = join(parentDir, GLOBAL_BUDGET_FILE);
+      safeWriteJSON(filePath, budget);
+    }
+  } finally {
+    if (locked) releaseBudgetLock(parentDir);
   }
 }
 
@@ -439,11 +456,19 @@ export function setGlobalRateLimitHold(
  * Called by the first instance that detects expiry to avoid repeated stale reads.
  */
 export function clearGlobalRateLimitHold(parentDir: string): void {
-  const budget = readGlobalBudget(parentDir);
-  if (budget.rateLimitResetAt) {
-    budget.rateLimitResetAt = undefined;
-    const filePath = join(parentDir, GLOBAL_BUDGET_FILE);
-    safeWriteJSON(filePath, budget);
+  const locked = acquireBudgetLock(parentDir);
+  if (!locked) {
+    console.warn("budget-lock: timeout acquiring lock for clearGlobalRateLimitHold, proceeding without lock");
+  }
+  try {
+    const budget = readGlobalBudget(parentDir);
+    if (budget.rateLimitResetAt) {
+      budget.rateLimitResetAt = undefined;
+      const filePath = join(parentDir, GLOBAL_BUDGET_FILE);
+      safeWriteJSON(filePath, budget);
+    }
+  } finally {
+    if (locked) releaseBudgetLock(parentDir);
   }
 }
 
