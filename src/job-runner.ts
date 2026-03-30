@@ -784,7 +784,8 @@ export function createJobRunner(
           nextJob.completedAt = new Date().toISOString();
           persistState(state, checkpointDir);
           // Continuous: re-enqueue — pre-assignment will skip this TODO via state check
-          enqueue(nextJob.skills, "continuous", "skip-completed re-enqueue", nextJob.designDoc);
+          // Use composedFrom to get original (untrimmed) skills, same as the main continuous path
+          enqueue(nextJob.composedFrom ?? nextJob.skills, "continuous", "skip-completed re-enqueue", nextJob.designDoc);
           running = false;
           return;
         }
@@ -800,7 +801,7 @@ export function createJobRunner(
           nextJob.status = "complete";
           nextJob.completedAt = new Date().toISOString();
           persistState(state, checkpointDir);
-          const reId2 = enqueue(nextJob.skills, "continuous", "all-skills-complete re-enqueue", nextJob.designDoc);
+          const reId2 = enqueue(nextJob.composedFrom ?? nextJob.skills, "continuous", "all-skills-complete re-enqueue", nextJob.designDoc);
           if (reId2) d.log("info", `Continuous: re-enqueued as ${reId2} after all skills complete`);
           running = false;
           processNext().catch(err => d.log("error", `processNext after all-skills-complete failed: ${err instanceof Error ? err.message : String(err)}`));
