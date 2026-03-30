@@ -312,7 +312,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/reflection-pipeline-outcome.test.ts` | 19 | buildPipelineOutcome: success/acceptable/failure, skipped skills, compositionMethod; countPipelineOutcomes: null/empty/positive/mixed |
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
-| `test/prioritize.test.ts` | 66 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact |
+| `test/prioritize.test.ts` | 69 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact |
 | `test/prioritize-review-findings.test.ts` | 11 | loadUnresolvedReviewFindings: flat/instance layouts, action keywords, skip filters, review skill gating, job dir limit, error handling |
 | `test/worktree.test.ts` | 28 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
 | `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
