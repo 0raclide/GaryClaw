@@ -938,6 +938,37 @@ export function createJobRunner(
         } catch (err) {
           d.log("warn", `Auto-merge error: ${err instanceof Error ? err.message : String(err)}`);
         }
+      } else if (nextJob.claimedTodoTitle) {
+        // Default instance (no worktree): commits go directly to main,
+        // so there's no merge step. Promote qa-complete → complete directly.
+        try {
+          const todoSlug = slugify(nextJob.claimedTodoTitle);
+          const stateCheckpointDir = parentCheckpointDir ?? checkpointDir;
+          const existingState = findTodoState(stateCheckpointDir, nextJob.claimedTodoTitle);
+          if (existingState && existingState.state === "qa-complete") {
+            writeTodoState(stateCheckpointDir, todoSlug, {
+              ...existingState,
+              state: "complete",
+              lastJobId: nextJob.id,
+              updatedAt: new Date().toISOString(),
+            });
+            d.log("info", `TODO "${nextJob.claimedTodoTitle}" promoted qa-complete → complete (default instance, no merge step)`);
+
+            // Auto-mark TODOS.md
+            try {
+              const todosPath = join(jobConfig.projectDir, "TODOS.md");
+              const summary = `Completed by default instance (job ${nextJob.id}).`;
+              const marked = markTodoCompleteInFile(todosPath, nextJob.claimedTodoTitle!, summary);
+              if (marked) {
+                d.log("info", `Auto-marked TODO "${nextJob.claimedTodoTitle}" complete in TODOS.md`);
+              }
+            } catch (markErr) {
+              d.log("warn", `Auto-mark TODOS.md failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`);
+            }
+          }
+        } catch {
+          // Fail-open
+        }
       }
     } catch (err) {
       nextJob.status = "failed";
