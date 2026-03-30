@@ -12,7 +12,7 @@
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const LOCK_DIR_NAME = ".reflection-lock";
+export const REFLECTION_LOCK_DIR_NAME = ".reflection-lock";
 const PID_FILE_NAME = "pid";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const POLL_INTERVAL_MS = 500;
@@ -30,7 +30,7 @@ export function acquireReflectionLock(
   oracleMemoryDir: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): boolean {
-  const lockDir = join(oracleMemoryDir, LOCK_DIR_NAME);
+  const lockDir = join(oracleMemoryDir, REFLECTION_LOCK_DIR_NAME);
   const pidFile = join(lockDir, PID_FILE_NAME);
 
   // Try to create lock dir atomically
@@ -74,7 +74,7 @@ export function acquireReflectionLock(
  * Release the reflection lock. Safe to call even if not held.
  */
 export function releaseReflectionLock(oracleMemoryDir: string): void {
-  const lockDir = join(oracleMemoryDir, LOCK_DIR_NAME);
+  const lockDir = join(oracleMemoryDir, REFLECTION_LOCK_DIR_NAME);
   try {
     rmSync(lockDir, { recursive: true, force: true });
   } catch {
@@ -86,7 +86,7 @@ export function releaseReflectionLock(oracleMemoryDir: string): void {
  * Check if the reflection lock is currently held (by any process).
  */
 export function isReflectionLocked(oracleMemoryDir: string): boolean {
-  const lockDir = join(oracleMemoryDir, LOCK_DIR_NAME);
+  const lockDir = join(oracleMemoryDir, REFLECTION_LOCK_DIR_NAME);
   return existsSync(lockDir);
 }
 

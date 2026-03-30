@@ -3,15 +3,24 @@
   "url": "cli-tool",
   "healthScore": 95,
   "issues": [
-    { "id": "LOW-001", "title": "Developer TODO comment in job-runner.ts:1030", "severity": "low", "category": "code-quality" },
-    { "id": "LOW-002", "title": "CLAUDE.md test table scaling concern", "severity": "low", "category": "documentation" }
+    { "id": "ISSUE-001", "title": "CLAUDE.md test documentation stale (2929→2930, 5 missing files)", "severity": "low", "category": "content", "status": "fixed", "commit": "f54e403" }
   ],
+  "categoryScores": {
+    "console": 100,
+    "links": 100,
+    "visual": 100,
+    "functional": 100,
+    "ux": 100,
+    "performance": 100,
+    "content": 80,
+    "accessibility": 100
+  },
   "testResults": {
-    "files": 175,
-    "tests": 2900,
-    "passed": 2900,
+    "files": 178,
+    "tests": 2930,
+    "passed": 2930,
     "failed": 0,
-    "duration": "31.87s"
+    "duration": "32.04s"
   },
   "typeCheck": "clean"
 }
