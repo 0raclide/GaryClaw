@@ -1453,3 +1453,68 @@ Completed item.
     expect(prompt).toContain("## Anti-Patterns");
   });
 });
+
+// ── truncateSection ─────────────────────────────────────────────
+
+describe("truncateSection", () => {
+  it("returns content unchanged when under budget", () => {
+    const content = "Short text here.";
+    expect(truncateSection(content, 1000)).toBe(content);
+  });
+
+  it("keepEnd=true (default): keeps newest content, drops oldest", () => {
+    const lines = Array.from({ length: 200 }, (_, i) => `Entry ${i}: data here`);
+    const content = lines.join("\n");
+    const result = truncateSection(content, 100);
+    expect(result).toContain("[...truncated oldest]");
+    expect(result).toContain("Entry 199:");
+    expect(result).not.toContain("Entry 0:");
+  });
+
+  it("keepEnd=false: keeps beginning, drops end", () => {
+    const lines = Array.from({ length: 200 }, (_, i) => `Entry ${i}: data here`);
+    const content = lines.join("\n");
+    const result = truncateSection(content, 100, false);
+    expect(result).toContain("[...truncated]");
+    expect(result).toContain("Entry 0:");
+    expect(result).not.toContain("Entry 199:");
+  });
+
+  it("keepEnd=true snaps to newline boundary", () => {
+    // Build content that will be truncated
+    const content = "AAAA\nBBBB\nCCCC\nDDDD\n".repeat(50);
+    const result = truncateSection(content, 20, true);
+    // Should not start mid-line
+    expect(result.startsWith("[...truncated oldest]\n")).toBe(true);
+  });
+
+  it("keepEnd=false snaps to newline boundary", () => {
+    const content = "AAAA\nBBBB\nCCCC\nDDDD\n".repeat(50);
+    const result = truncateSection(content, 20, false);
+    // Should end at a line boundary + truncation marker
+    expect(result.endsWith("\n[...truncated]")).toBe(true);
+  });
+
+  it("uses estimateTokens consistently (no 14% overrun)", () => {
+    // Create content that's exactly 1000 tokens via estimateTokens
+    // estimateTokens uses chars / 3.5, so 3500 chars = 1000 tokens
+    const content = "x".repeat(3500);
+    const result = truncateSection(content, 500, true);
+    // truncateSection uses maxTokens * 3.5 for char budget = 1750 chars
+    // estimateTokens(result) should be ~500
+    expect(estimateTokens(result)).toBeLessThanOrEqual(550); // some overhead for marker
+  });
+
+  it("handles content with no newlines (keepEnd=true)", () => {
+    const content = "A".repeat(5000);
+    const result = truncateSection(content, 100, true);
+    // No newline to snap to, returns the sliced content as-is
+    expect(result.length).toBeLessThan(content.length);
+  });
+
+  it("handles content with no newlines (keepEnd=false)", () => {
+    const content = "A".repeat(5000);
+    const result = truncateSection(content, 100, false);
+    expect(result.length).toBeLessThan(content.length);
+  });
+});
