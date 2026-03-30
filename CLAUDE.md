@@ -35,7 +35,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
-- 38 source modules + CLI, 178 test files, 2932 tests
+- 39 source modules + CLI, 182 test files, 2954 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -185,6 +185,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/file-conflict.ts` | File-level conflict prevention: predicted file extraction, dependency expansion, overlap detection for parallel instances |
 | `src/pipeline-compose.ts` | Adaptive pipeline composition: static lookup table mapping (effort, priority, hasDesignDoc) to minimal skill sequences, intersection with requestedSkills (unknown skills pass through) |
 | `src/pipeline-history.ts` | Pipeline outcome history: JSONL I/O, skip-risk scoring with exponential decay, circuit breaker for Oracle composition, failure rate computation |
+| `src/skill-catalog.ts` | Static skill registry with structured metadata (name, description, useWhen, produces, cost, mode), formatSkillCatalogForPrompt for oracle injection |
 | `src/todo-state.ts` | TODO lifecycle state tracking: slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation, pipeline skill trimming |
 | `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon/dashboard`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
 
@@ -272,6 +273,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
 | `test/pipeline-history.test.ts` | 41 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker |
 | `test/pipeline-compose-oracle.regression-1.test.ts` | 4 | Oracle override same-length different-skills: set-membership check, identical no-op, length diff, empty |
+| `test/skill-catalog.test.ts` | 15 | SKILL_CATALOG: completeness, required fields, cost bounds, mode values, formatSkillCatalogForPrompt output |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
 | `test/bootstrap.test.ts` | 52 | walkFileTree, detectTechStack, filePriority, safeReadFile, findCiConfig, findTestDir, buildFileTreeString, truncateToTokenBudget, analyzeCodebase, buildBootstrapPrompt |
 | `test/pipeline-bootstrap.test.ts` | 4 | bootstrap skill dispatch, idempotency, pipeline chaining |
@@ -358,8 +360,10 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/types-warn.test.ts` | 3 | resolveWarnFn: callback passthrough, console.warn fallback, undefined handling |
 | `test/job-runner-todo-state.test.ts` | 10 | TODO state integration: skip complete, trim pipeline, design doc passthrough, fail-open, single-skill bypass |
 | `test/auto-research.regression-3.test.ts` | 7 | Auto-research regression: extractTopicKeywords numeric-only token filtering |
+| `test/cli-todo-flag.test.ts` | 6 | parseArgs --todo flag: daemon trigger passthrough, position variants, --name combo, undefined when absent |
 | `test/cli.regression-2.test.ts` | 5 | CLI regression: formatEvent missing bootstrap_quality_check/recheck cases |
 | `test/cli.regression-3.test.ts` | 3 | CLI regression: formatEvent pipeline_oracle_adjustment kept_skipped variant |
+| `test/daemon-ipc-todo.test.ts` | 4 | buildIPCHandler todoTitle passthrough: skipComposition, claimedTodoTitle, designDoc combo, absent |
 | `test/daemon-merge-config.test.ts` | 13 | Daemon merge config validation |
 | `test/daemon-registry-file-conflict.regression-1.test.ts` | 2 | Daemon registry regression: getClaimedFiles duplicate file entries per instance |
 | `test/daemon-registry.regression-1.test.ts` | 8 | Daemon registry regression: getClaimedTodoTitles cross-instance coordination |
@@ -390,6 +394,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-resume.regression-2.test.ts` | 2 | Job runner resume regression: rate_limited crash recovery, costUsd reset |
 | `test/job-runner.regression-4.test.ts` | 7 | Job runner regression: parsePriorityPickTitle edge cases |
 | `test/job-runner.regression-5.test.ts` | 4 | Job runner regression: backward compat missing config.merge |
+| `test/job-runner-skip-composition.test.ts` | 3 | skipComposition bypass: flag preservation, original skills retention, composedFrom not set |
 | `test/job-runner.regression-6.test.ts` | 2 | Job runner regression: 'continuous' trigger source validity on Job.triggeredBy |
 | `test/job-runner.regression-7.test.ts` | 2 | Job runner regression: 'daemon-crash' must be valid FailureCategory |
 | `test/job-runner.regression-8.test.ts` | 2 | Job runner regression: readTodoState import resolves and round-trips state |
