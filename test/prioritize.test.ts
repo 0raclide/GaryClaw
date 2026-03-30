@@ -1508,13 +1508,14 @@ describe("truncateSection", () => {
   it("handles content with no newlines (keepEnd=true)", () => {
     const content = "A".repeat(5000);
     const result = truncateSection(content, 100, true);
-    // No newline to snap to, returns the sliced content as-is
     expect(result.length).toBeLessThan(content.length);
+    expect(result).toContain("[...truncated oldest]");
   });
 
   it("handles content with no newlines (keepEnd=false)", () => {
     const content = "A".repeat(5000);
     const result = truncateSection(content, 100, false);
     expect(result.length).toBeLessThan(content.length);
+    expect(result).toContain("[...truncated]");
   });
 });
