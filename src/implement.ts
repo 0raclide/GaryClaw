@@ -14,7 +14,7 @@ import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
-import { ensureProjectType, formatProjectContext } from "./project-type.js";
+import { buildProjectTypeSection } from "./project-type.js";
 import type { Checkpoint, GaryClawConfig, ImplementProgress, PipelineSkillEntry } from "./types.js";
 
 // ── Design doc discovery ────────────────────────────────────────
@@ -303,17 +303,8 @@ export async function buildImplementPrompt(
   }
 
   // Project type awareness
-  try {
-    const pt = ensureProjectType(projectDir);
-    if (pt.type !== "unknown") {
-      lines.push("## Project Type");
-      lines.push("");
-      lines.push(formatProjectContext(pt));
-      lines.push("");
-    }
-  } catch {
-    // fail-open: detection error → no project context
-  }
+  const ptSection = buildProjectTypeSection(projectDir);
+  if (ptSection) lines.push(ptSection);
 
   // Rules
   lines.push(IMPLEMENT_RULES);

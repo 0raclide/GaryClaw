@@ -12,6 +12,7 @@ import {
   saveProjectType,
   ensureProjectType,
   formatProjectContext,
+  buildProjectTypeSection,
 } from "../src/project-type.js";
 import type { ProjectTypeResult } from "../src/project-type.js";
 
@@ -374,5 +375,34 @@ describe("formatProjectContext", () => {
     const formatted = formatProjectContext(pt);
     expect(formatted.length).toBeLessThanOrEqual(500);
     expect(formatted.endsWith("...")).toBe(true);
+  });
+});
+
+describe("buildProjectTypeSection", () => {
+  beforeEach(() => { rmSync(TEST_DIR, { recursive: true, force: true }); });
+  afterEach(() => { rmSync(TEST_DIR, { recursive: true, force: true }); });
+
+  it("returns markdown section for known project type", () => {
+    setup({
+      packageJson: { dependencies: { next: "14.0.0" } },
+      dirs: ["pages"],
+    });
+    const section = buildProjectTypeSection(TEST_DIR);
+    expect(section).toContain("## Project Type");
+    expect(section).toContain("Web application");
+    // Should be a complete markdown section with trailing newline
+    expect(section.startsWith("## Project Type\n\n")).toBe(true);
+    expect(section.endsWith("\n")).toBe(true);
+  });
+
+  it("returns empty string for unknown project type", () => {
+    setup(); // no signals → unknown
+    const section = buildProjectTypeSection(TEST_DIR);
+    expect(section).toBe("");
+  });
+
+  it("returns empty string on bad projectDir (fail-open)", () => {
+    const section = buildProjectTypeSection("/nonexistent/path/that/does/not/exist");
+    expect(section).toBe("");
   });
 });

@@ -264,6 +264,21 @@ export function formatProjectContext(pt: ProjectTypeResult): string {
   return result.length > 500 ? result.slice(0, 497) + "..." : result;
 }
 
+/**
+ * Build a `## Project Type` markdown section for prompt injection.
+ * Shared by implement, prioritize, and evaluate prompt builders.
+ * Returns empty string for unknown type or on detection error (fail-open).
+ */
+export function buildProjectTypeSection(projectDir: string): string {
+  try {
+    const pt = ensureProjectType(projectDir);
+    if (pt.type === "unknown") return "";
+    return `## Project Type\n\n${formatProjectContext(pt)}\n`;
+  } catch {
+    return "";
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 function readFileSafe(filePath: string): string | null {

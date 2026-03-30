@@ -39,7 +39,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Auto-Fix Loop After Revert: COMPLETE** (2026-03-30) — Post-merge revert triggers immediate `implement → qa` re-attempt. Retry cap (MAX_AUTO_FIX_RETRIES=2), budget cap (2x original job cost), enqueue-before-persist ordering, mkdir-based advisory lock, context file for implement skill discovery, doctor check #8 for stale auto-fix state, dashboard auto-fix stats.
 **SDK Failure Segment Retry: COMPLETE** (2026-03-30) — Transient error recovery in orchestrator segment loop. `isTransientError()` reuses `classifyError()` for sdk-bug + infra-issue categories. MAX_SEGMENT_RETRIES=1, 30s abort-aware delay, segment_retry event, preserves all accumulated state (monitor, issue tracker, checkpoints). PerJobCostExceededError excluded from retry.
 **Project Type Awareness: COMPLETE** (2026-03-30) — Deterministic project classification (CLAUDE.md > package.json > file patterns), cached in `.garyclaw/project-type.json`. Injected into Oracle projectContext + skill prompts. Doctor check #10 for stale cache. Bootstrap saves on detection.
-- 42 source modules, 202 test files, 3248 tests
+- 42 source modules, 202 test files, 3251 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -339,7 +339,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/auto-research.regression-1.test.ts` | 19 | isTopicGroupFresh direct tests, seed-keyword clustering, 3-char acronym preservation |
 | `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
 | `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
-| `test/project-type.test.ts` | 34 | detectProjectType: tiered detection (CLAUDE.md > package.json > file patterns), loadProjectType, saveProjectType, ensureProjectType, formatProjectContext, hasWebUI, hasTestSuite, testCommand |
+| `test/project-type.test.ts` | 37 | detectProjectType: tiered detection (CLAUDE.md > package.json > file patterns), loadProjectType, saveProjectType, ensureProjectType, formatProjectContext, hasWebUI, hasTestSuite, testCommand, buildProjectTypeSection |
 | `test/project-type-wiring.test.ts` | 8 | Doctor check #10 (stale project type cache), buildEvaluatePrompt project type injection, bootstrap saveProjectType integration |
 | `test/doctor.test.ts` | 62 | 10 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state, stale budget locks, stale auto-fix state, stale project type cache |
 | `test/failure-taxonomy.test.ts` | 77 | 10 failure categories, table-driven classification, failures.jsonl, notification integration, isTransientError |

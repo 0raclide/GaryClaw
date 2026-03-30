@@ -18,7 +18,7 @@ import { safeReadJSON, safeReadText, safeWriteJSON, safeWriteText } from "./safe
 import { groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-research.js";
 import { normalizedLevenshtein } from "./reflection.js";
 import { computeGrowthRate } from "./token-monitor.js";
-import { ensureProjectType, formatProjectContext } from "./project-type.js";
+import { buildProjectTypeSection } from "./project-type.js";
 
 import type {
   Decision,
@@ -1698,17 +1698,8 @@ export function buildEvaluatePrompt(
   }
 
   // Project type awareness
-  try {
-    const pt = ensureProjectType(projectDir);
-    if (pt.type !== "unknown") {
-      lines.push("## Project Type");
-      lines.push("");
-      lines.push(formatProjectContext(pt));
-      lines.push("");
-    }
-  } catch {
-    // fail-open: detection error → no project context
-  }
+  const ptSection = buildProjectTypeSection(projectDir);
+  if (ptSection) lines.push(ptSection);
 
   // Section 4: Instructions
   lines.push("## Instructions");
