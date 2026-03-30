@@ -1,6 +1,6 @@
 # TODOS
 
-## P1: Live Evolution Dashboard — Real-Time Web UI for the Self-Improving Daemon
+## ~~P1: Live Evolution Dashboard — Real-Time Web UI for the Self-Improving Daemon
 
 **What:** A public-facing web page that shows GaryClaw evolving in real-time. Not a static dashboard — a living feed of the daemon's mind: what it's building, why it chose it, what it invented and pruned, how its capabilities grow over time. Think Twitch for an AI coding agent.
 
@@ -563,7 +563,7 @@ Completed (detected by artifact reconciliation, job job-1774886576583-c78bb2).
 
 Fixed by /qa on main, 2026-03-30. Implemented in b3f44aa: auth failures trigger rate limit hold (30-min fallback), MIN_COST_FOR_REENQUEUE ($0.01) prevents $0 spin loops, cross-instance coordination via global budget. 10 tests in job-runner-auth-hold.test.ts.
 
-## P4: Consolidate Lock Modules — Shared Advisory Lock Base
+## ~~P4: Consolidate Lock Modules — Shared Advisory Lock Base
 
 **What:** `budget-lock.ts` (151 lines) and `reflection-lock.ts` (153 lines) are ~98% identical. Same for their doctor checks (`checkStaleBudgetLocks` ~120 lines, `checkReflectionLocks` ~100 lines). Total duplication: ~440 lines across 4 code paths.
 
@@ -575,7 +575,7 @@ Fixed by /qa on main, 2026-03-30. Implemented in b3f44aa: auth failures trigger 
 **Depends on:** Global Budget Locking (COMPLETE)
 **Added by:** /qa on 2026-03-30 (ISSUE-002, deferred from eng review Decision #1)
 
-## P3: Browser Cookie Persistence for Daemon — Authenticated Page Testing
+## ~~P3: Browser Cookie Persistence for Daemon — Authenticated Page Testing
 
 **What:** The daemon's `design-review` and `qa` skills can't test authenticated pages because the headless browser has no login session. Currently `/setup-browser-cookies` imports cookies interactively but they don't survive daemon restarts or carry across skill segments (each skill spawns a fresh SDK session).
 
@@ -609,7 +609,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-30 (ISSUE-004, deferred — not reproducible on retry)
 
-## P3: SDK Failure Segment Retry — Transient Error Recovery
+## ~~P3: SDK Failure Segment Retry — Transient Error Recovery
 
 **What:** When an SDK error (sdk-bug failure category) occurs mid-segment, retry the segment once with a 30-second backoff instead of immediately failing the entire job. Currently, any SDK error kills the job and creates a failure record. A single retry would recover from transient API errors, network blips, and rate-limit edge cases that resolve themselves within seconds.
 
@@ -626,7 +626,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses #1 failure category)
 
-## P3: Oracle Decision Cache — Sticky Answers for Repeated Questions
+## ~~P3: Oracle Decision Cache — Sticky Answers for Repeated Questions
 
 **What:** When the Oracle answers the same question pattern 5+ times identically, cache the answer and auto-apply it without an API call. Recent evidence: 20+ decisions in the last 50 all answer "run test suite" to variations of "GaryClaw is a CLI tool with no web UI, what should QA do?" Each is a ~40K-token API call costing ~$0.05 + 2-5s latency.
 
@@ -645,7 +645,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses cost trend + Oracle latency)
 
-## P3: Project Type Awareness — Skill Routing by Project Nature
+## ~~P3: Project Type Awareness — Skill Routing by Project Nature
 
 **What:** Auto-detect project type (CLI tool, web app, API server, library) from CLAUDE.md and package.json, then inject project type context into skill prompts so skills don't waste turns asking "is there a web UI?" The QA skill would automatically route to test-suite mode for CLI projects, browser mode for web apps.
 
@@ -661,3 +661,67 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Effort:** S (human: ~3 days / CC: ~20 min)
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses repeated Oracle confusion pattern)
+
+## P3: Prioritize Prompt Token Budgeting — Prevent Prompt Bloat
+
+**What:** The prioritize prompt has grown with every feature: failure patterns, category stats, skill catalog, pipeline outcomes, unresolved review findings, impact measurement, and project type context are all injected without a total token budget. Cap the total prompt size and enforce per-section budgets so low-priority sections get trimmed when the prompt approaches limits.
+
+**Why:** sdk-bug is the #1 failure category (15 failures), with 10 of 15 in the prioritize skill. The prioritize prompt is the most complex prompt in the system — it assembles 8+ dynamic sections without any total size guard. As more context gets injected (category stats growing, decision-outcomes.md at 34K and climbing), the prompt risks hitting SDK limits or degrading response quality. Costs are also trending up 22% — smaller, more focused prompts are cheaper. This is the single most likely root cause of both the failure pattern and the cost increase.
+
+**Implementation:**
+- Add `countTokens(text: string): number` utility (simple word-count heuristic, ~4 chars/token)
+- In `buildPrioritizePrompt()`: measure each section's token count after generation
+- Define per-section budgets: TODOS.md (40%), rules/format (30%), context sections (30%)
+- When total exceeds budget (e.g., 50K tokens), truncate lowest-priority sections first: pipeline outcomes → category stats → review findings → failure patterns
+- Add `prompt_size` event for observability (dashboard + daemon log)
+- Track prompt size trend in dashboard
+
+**Effort:** S (human: ~3 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** Invention Protocol on 2026-03-30 (addresses #1 failure category + cost increase)
+
+## P3: Per-Skill Cost Attribution — Know Where the Money Goes
+
+**What:** Track and display per-skill cost breakdowns in the dashboard. Currently the dashboard shows total cost and per-job cost, but not which skills within a pipeline consume the most. Add per-skill cost tracking to pipeline state and surface it in the dashboard with trend detection.
+
+**Why:** Costs are up 22% but we can't tell which skills are getting more expensive. Is it prioritize prompts growing? QA running longer? Implement using more relay sessions? Without per-skill attribution, cost optimization is guesswork. This is the measurement that enables targeted optimization.
+
+**Implementation:**
+- Extend `PipelineState` with `skillCosts: Record<string, number>` — populated after each skill completes
+- In `pipeline.ts`: record `costUsd` per skill from orchestrator result
+- In `dashboard.ts`: new `aggregateSkillCosts()` function, format as table (skill | avg cost | trend)
+- Trend detection: compare last 10 jobs' per-skill costs to previous 10, flag >15% increases
+- ~100 lines of code + ~15 tests
+
+**Effort:** S (human: ~3 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** Invention Protocol on 2026-03-30 (addresses cost increase — measurement before optimization)
+
+## P3: Oracle Memory Compaction — Bounded Growth for decision-outcomes.md
+
+**What:** decision-outcomes.md is 34K and growing unbounded. Compact old entries by merging repeated patterns into summary lines and pruning outcomes older than 30 days. Keep the file under a 20K token budget.
+
+**Why:** decision-outcomes.md feeds into: (1) oracle cache warm-start, (2) oracle memory injection, (3) reflection outcome matching, (4) pipeline outcome counting. As it grows, all four consumers slow down. The warm-start already scans the full file on every skill init. At current growth rate (~1K/day with parallel instances), the file will hit 100K within 2 months, adding measurable latency to every Oracle call.
+
+**Implementation:**
+- New function `compactDecisionOutcomes()` in `oracle-memory.ts`
+- Group outcomes by normalized question pattern (reuse oracle-cache normalization)
+- For groups with 10+ identical outcomes: replace with a summary line (`[10x] question → answer (100% consistent)`)
+- Prune individual entries older than 30 days (summaries persist)
+- Run compaction in reflection post-job (where outcomes are written)
+- Token budget enforcement: if file exceeds 20K tokens after compaction, drop oldest summaries
+- ~80 lines of code + ~12 tests
+
+**Effort:** S (human: ~3 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** Invention Protocol on 2026-03-30 (addresses unbounded growth + Oracle latency)
+
+## P3: Job Runner Modular Decomposition — Extract Subsystems from 1888-Line God Module
+
+**What:** `job-runner.ts` at 1888 lines is the largest module and growing. Extract four logical subsystems into focused modules: merge handling (~200 lines → `src/merge-handler.ts`), rate limit handling (~150 lines → `src/rate-limit.ts`), auto-mark/TODO management (~200 lines → `src/todo-manager.ts`), and pre-assignment/composition (~200 lines → `src/job-assignment.ts`). The job-runner becomes a ~900-line orchestrator that delegates to these modules.
+
+**Why:** Every new feature (PR workflow, auto-fix, rate limiting, cost attribution) adds to job-runner.ts because it's the natural integration point. At 1888 lines, it's approaching the threshold where modifications carry high risk of unintended side effects. Decomposition makes each subsystem independently testable and reduces merge conflicts for parallel daemon instances working on different features.
+
+**Effort:** M (human: ~1 week / CC: ~45 min)
+**Depends on:** Nothing
+**Added by:** Invention Protocol on 2026-03-30 (addresses maintainability + reduces modification risk)
