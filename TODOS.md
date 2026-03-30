@@ -537,3 +537,17 @@ Fixed by /qa on main, 2026-03-30. Implemented in b3f44aa: auth failures trigger 
 **Effort:** S (human: ~3 days / CC: ~25 min)
 **Depends on:** Nothing
 **Added by:** Human on 2026-03-30 (discovered during NihontoWatch P0 mobile vault deployment)
+
+## P3: Flaky job-runner-post-merge.test.ts Under Parallel Vitest Execution
+
+**What:** `test/job-runner-post-merge.test.ts` intermittently fails (7/12 tests) when run in the full 189-file suite. All 12 tests pass in isolation and when run with related job-runner test files. Root cause: `vi.mock("node:child_process")` contamination across Vitest fork workers when multiple test files mock the same module in the same worker pool.
+
+**Fix options:**
+1. **Quick:** Add to `sequentialFiles` in vitest.config.ts to run in its own worker
+2. **Better:** Refactor tests to avoid global `vi.mock("node:child_process")` — use per-test dependency injection instead (matches the pattern in newer test files like `job-runner-pr.test.ts`)
+
+**Severity:** Low — flaky, not a real regression. Affects CI reliability but not code correctness.
+
+**Effort:** XS (human: ~1 hour / CC: ~5 min)
+**Depends on:** Nothing
+**Added by:** /qa on 2026-03-30 (ISSUE-004, deferred — not reproducible on retry)

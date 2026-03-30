@@ -1,23 +1,20 @@
 {
   "date": "2026-03-30",
-  "url": "http://localhost:3000",
-  "healthScore": 93,
-  "issues": [
-    { "id": "ISSUE-001", "title": "Search not functional", "severity": "high", "category": "functional" },
-    { "id": "ISSUE-002", "title": "Glossary link missing from Japanese navigation", "severity": "medium", "category": "functional" },
-    { "id": "ISSUE-003", "title": "Activity tracking fails on every page", "severity": "low", "category": "console" },
-    { "id": "ISSUE-004", "title": "Tosogu tab slow initial load", "severity": "low", "category": "performance" },
-    { "id": "ISSUE-005", "title": "Glossary page DOM too large", "severity": "low", "category": "performance" },
-    { "id": "ISSUE-006", "title": "Next.js dev mode 1 Issue badge visible", "severity": "low", "category": "ux" }
-  ],
+  "url": "cli-test-suite",
+  "healthScore": 100,
+  "issues": [],
   "categoryScores": {
-    "console": 100,
-    "links": 100,
-    "visual": 100,
-    "functional": 77,
-    "ux": 94,
-    "performance": 89,
-    "content": 100,
-    "accessibility": 100
+    "testSuite": 100,
+    "typeSafety": 100,
+    "testCoverage": 100,
+    "dependencies": 100,
+    "codeHygiene": 100
+  },
+  "testStats": {
+    "files": 188,
+    "total": 3039,
+    "passed": 3039,
+    "failed": 0,
+    "duration": "12.89s"
   }
 }
