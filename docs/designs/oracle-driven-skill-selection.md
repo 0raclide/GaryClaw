@@ -45,7 +45,7 @@ And when you know better than the daemon, `--todo` lets you override without fig
 
 4. The existing `parsePipelineRecommendation()` + Oracle override path in `job-runner.ts` is the right integration point. We're extending what's there, not building a new composition path.
 
-5. Task nature classification should be prompt-driven (let the LLM classify), not rule-based. A TODO description like "fix the navigation drawer animation" is obviously visual/UX to a human. It's obviously visual/UX to the LLM too. Adding regex classification would be fragile and unnecessary.
+5. Task nature classification for pipeline selection should be prompt-driven (let the LLM classify), not rule-based. For the `taskCategory` extension point (populated but not acted on), a lightweight regex heuristic is fine since it's a no-op field for now. When category-specific scoring matters (Approach B), the LLM should classify.
 
 ## Approaches Considered
 
@@ -114,13 +114,23 @@ Approach C's auto-discovery is elegant but over-engineered for now. The skill se
 
 Ship A. Add B's `taskCategory` field to `PipelineOutcomeRecord` as a no-op extension point (populate it, don't act on it yet). Revisit B when there's enough category-specific data to matter.
 
+## Design Decisions
+
+**`--todo` matching:** Exact title match. On mismatch, CLI prints available TODO titles from TODOS.md and exits with error. Fuzzy matching via `slugify()`/Levenshtein is a follow-up, not in scope.
+
+**`--todo` + cross-instance dedup:** `--todo` is a human override. It bypasses composition but NOT cross-instance dedup. If another instance has the same TODO claimed, the trigger returns an error. The human can stop that instance first.
+
+**`--todo` + TODO state trimming:** `skipComposition` bypasses `composePipeline()` only. TODO state trimming (`getStartSkill`/`findNextSkill`) still applies. If you say `--todo "X" implement qa` but X is already implemented, it trims to `qa`. This is correct: state tracking prevents wasted work regardless of how the pipeline was composed.
+
+**`--todo` with no skills:** CLI validation error. `--todo` requires at least one skill argument.
+
+**Skill costs:** The skill catalog includes `costUsd` for Oracle prompt context ("this skill costs ~$0.80"). `SKILL_COST_USD` in `pipeline-compose.ts` stays as the authoritative source for savings calculation. Two consumers, slightly different purposes. When the skill catalog is imported by `pipeline-compose.ts` in a future cleanup, they'll unify.
+
+**`mode` field:** Include `mode: "plan" | "exec"` in `SkillEntry` and use it in `formatSkillCatalogForPrompt()` to group skills into "Review Skills" and "Execution Skills" sections. This helps the Oracle understand that plan-mode skills produce findings (not code) and can be parallelized in future.
+
 ## Open Questions
 
-1. Should the skill catalog include cost estimates per skill? The Oracle could factor "$0.80 for design-review vs $1.50 for implement" into recommendations. Current `SKILL_COST_USD` in `pipeline-compose.ts` already has these for the 5 core skills.
-
-2. Should `--todo` accept a TODO title that gets fuzzy-matched against TODOS.md, or require an exact title? Fuzzy match is friendlier but adds a dependency on `slugify()` or Levenshtein in the CLI path.
-
-3. Should the skill catalog differentiate between "plan-mode" skills (plan-ceo-review, plan-eng-review, plan-design-review) and "execution" skills (implement, qa, design-review)? The daemon currently treats all skills as sequential pipeline steps.
+1. Should the skill catalog token estimate be validated with actual tokenization before shipping? The 800-token estimate may be closer to 1,200-1,500 tokens for 10 entries. Either way it fits within the prioritize prompt budget, but accuracy matters for documentation.
 
 ## Success Criteria
 
@@ -310,9 +320,9 @@ In `buildPipelineOutcome()`, extract task category from the TODO description or 
 function inferTaskCategory(todoTitle: string, todoDescription?: string): string {
   const text = `${todoTitle} ${todoDescription ?? ""}`.toLowerCase();
   if (/\b(ui|ux|visual|design|css|style|layout|animation|responsive)\b/.test(text)) return "visual-ux";
-  if (/\b(architect|refactor|types?\.ts|interface|module|abstraction)\b/.test(text)) return "architectural";
-  if (/\b(bug|fix|regression|crash|error|broken)\b/.test(text)) return "bug-fix";
   if (/\b(refactor|cleanup|consolidat|dedupe?|dry)\b/.test(text)) return "refactor";
+  if (/\b(architect|types\.ts|interface|module|abstraction)\b/.test(text)) return "architectural";
+  if (/\b(bug|fix|regression|crash|error|broken)\b/.test(text)) return "bug-fix";
   if (/\b(perf|performance|latency|speed|cache|optimize)\b/.test(text)) return "performance";
   if (/\b(infra|deploy|ci|cd|docker|k8s|config)\b/.test(text)) return "infra";
   return "unknown";
