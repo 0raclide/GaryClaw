@@ -140,6 +140,24 @@ export function validateDaemonConfig(data: unknown): string | null {
     if (m.forcePostMergeVerification !== undefined && typeof m.forcePostMergeVerification !== "boolean") {
       return "merge.forcePostMergeVerification must be a boolean";
     }
+    if (m.strategy !== undefined && m.strategy !== "direct" && m.strategy !== "pr") {
+      return 'merge.strategy must be "direct" or "pr"';
+    }
+    if (m.prAutoMerge !== undefined && typeof m.prAutoMerge !== "boolean") {
+      return "merge.prAutoMerge must be a boolean";
+    }
+    if (m.prMergeMethod !== undefined && m.prMergeMethod !== "squash" && m.prMergeMethod !== "merge" && m.prMergeMethod !== "rebase") {
+      return 'merge.prMergeMethod must be "squash", "merge", or "rebase"';
+    }
+    if (m.prLabels !== undefined && (!Array.isArray(m.prLabels) || !m.prLabels.every((l: unknown) => typeof l === "string"))) {
+      return "merge.prLabels must be an array of strings";
+    }
+    if (m.prReviewers !== undefined && (!Array.isArray(m.prReviewers) || !m.prReviewers.every((r: unknown) => typeof r === "string"))) {
+      return "merge.prReviewers must be an array of strings";
+    }
+    if (m.prDraft !== undefined && typeof m.prDraft !== "boolean") {
+      return "merge.prDraft must be a boolean";
+    }
   }
 
   // Validate autoResearch if provided (optional field)

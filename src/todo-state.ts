@@ -26,6 +26,7 @@ export type TodoLifecycleState =
   | "implemented"
   | "reviewed"
   | "qa-complete"
+  | "pr-created"
   | "merged"
   | "complete";
 
@@ -59,7 +60,7 @@ const STOPWORDS = new Set([
 ]);
 
 const LIFECYCLE_ORDER: TodoLifecycleState[] = [
-  "open", "designed", "implemented", "reviewed", "qa-complete", "merged", "complete",
+  "open", "designed", "implemented", "reviewed", "qa-complete", "pr-created", "merged", "complete",
 ];
 
 /** Maps skill names to the lifecycle state they produce on completion. */
@@ -447,6 +448,7 @@ export function getStartSkill(state: TodoState): string {
     case "implemented":  return "plan-eng-review";
     case "reviewed":     return "qa";
     case "qa-complete":  return "skip";
+    case "pr-created":   return "skip";
     case "merged":       return "skip";
     case "complete":     return "skip";
   }

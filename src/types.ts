@@ -281,6 +281,12 @@ export interface DaemonConfig {
     skipValidation?: boolean;   // default: false
     skipPostMergeVerification?: boolean;   // default: false — skip post-merge test verification
     forcePostMergeVerification?: boolean;  // default: false — always verify post-merge, even when pre-merge passed
+    strategy?: "direct" | "pr";            // default: "direct" — merge method after successful job
+    prAutoMerge?: boolean;                 // default: true — enable GitHub auto-merge on created PRs
+    prMergeMethod?: "squash" | "merge" | "rebase";  // default: "squash" — GitHub merge method
+    prLabels?: string[];                   // labels to add to PR
+    prReviewers?: string[];                // request reviewers (human gate mode)
+    prDraft?: boolean;                     // default: false — create as draft PR
   };
   autoResearch?: AutoResearchConfig;
 }
