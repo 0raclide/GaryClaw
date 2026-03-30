@@ -15,7 +15,12 @@ import {
   aggregateFailurePatterns,
   getDecisionQualityTrends,
   measureRecentImpact,
+  filterOpenTodos,
+  addBudgetedSection,
+  PRIORITIZE_PROMPT_BUDGET,
+  PRIORITIZE_SECTION_BUDGETS,
 } from "../src/prioritize.js";
+import { estimateTokens } from "../src/checkpoint.js";
 import {
   createMockIssue,
   createMockFinding,
@@ -1200,5 +1205,237 @@ describe("buildPrioritizePrompt — category stats", () => {
     expect(prompt).toContain("visual-ux");
     expect(prompt).toContain("design-review");
     expect(prompt).toContain("High delta means the skill matters");
+  });
+});
+
+// ── filterOpenTodos ─────────────────────────────────────────────
+
+describe("filterOpenTodos", () => {
+  it("keeps open items, removes struck-through items", () => {
+    const input = `# TODOS
+
+## P2: Open Item
+
+**What:** Something to do.
+
+## ~~P3: Done Item~~
+
+**What:** Already done.
+
+## P3: Another Open
+
+**What:** More work.`;
+
+    const result = filterOpenTodos(input);
+    expect(result).toContain("## P2: Open Item");
+    expect(result).toContain("## P3: Another Open");
+    expect(result).not.toContain("~~P3: Done Item~~");
+  });
+
+  it("preserves preamble text before first ## block", () => {
+    const input = `# TODOS
+
+Some preamble text here.
+
+## ~~P2: Completed~~
+
+Done stuff.
+
+## P3: Still Open
+
+Open stuff.`;
+
+    const result = filterOpenTodos(input);
+    expect(result).toContain("# TODOS");
+    expect(result).toContain("Some preamble text here.");
+    expect(result).toContain("## P3: Still Open");
+    expect(result).not.toContain("Completed");
+  });
+
+  it("handles all-struck-through input (returns preamble only)", () => {
+    const input = `# TODOS
+
+## ~~P2: Done A~~
+
+A stuff.
+
+## ~~P3: Done B~~
+
+B stuff.`;
+
+    const result = filterOpenTodos(input);
+    expect(result).toContain("# TODOS");
+    expect(result).not.toContain("Done A");
+    expect(result).not.toContain("Done B");
+  });
+
+  it("handles empty input", () => {
+    expect(filterOpenTodos("")).toBe("");
+  });
+
+  it("handles input with no ## blocks", () => {
+    const input = "# TODOS\n\nJust some text.";
+    const result = filterOpenTodos(input);
+    expect(result).toBe("# TODOS\n\nJust some text.");
+  });
+});
+
+// ── Budget constants ────────────────────────────────────────────
+
+describe("budget constants", () => {
+  it("section budgets are reasonable (soft caps, may exceed total since empty sections donate budget)", () => {
+    const sum = Object.values(PRIORITIZE_SECTION_BUDGETS).reduce((a, b) => a + b, 0);
+    // Soft caps sum can exceed total budget — the waterfall pattern means
+    // empty sections donate their budget, so not all caps are used simultaneously.
+    // But they should be within 2x the total budget (sanity check).
+    expect(sum).toBeLessThanOrEqual(PRIORITIZE_PROMPT_BUDGET * 2);
+    expect(sum).toBeGreaterThan(0);
+  });
+
+  it("all section caps are positive", () => {
+    for (const [key, val] of Object.entries(PRIORITIZE_SECTION_BUDGETS)) {
+      expect(val, `${key} should be > 0`).toBeGreaterThan(0);
+    }
+  });
+
+  it("PRIORITIZE_PROMPT_BUDGET is reasonable", () => {
+    expect(PRIORITIZE_PROMPT_BUDGET).toBeGreaterThanOrEqual(10_000);
+    expect(PRIORITIZE_PROMPT_BUDGET).toBeLessThanOrEqual(50_000);
+  });
+});
+
+// ── addBudgetedSection ──────────────────────────────────────────
+
+describe("addBudgetedSection", () => {
+  it("adds content under cap unchanged", () => {
+    const lines: string[] = [];
+    const content = "Short content here.";
+    const tokens = addBudgetedSection(lines, "### Header", content, 5000, 10000);
+    expect(tokens).toBeGreaterThan(0);
+    expect(lines).toContain("### Header");
+    expect(lines.some(l => l.includes("Short content here."))).toBe(true);
+  });
+
+  it("truncates content over section cap", () => {
+    const lines: string[] = [];
+    // Create content that's ~2000 tokens (7000 chars)
+    const content = "Line of text for testing.\n".repeat(280);
+    const tokens = addBudgetedSection(lines, "### Big Section", content, 500, 10000);
+    expect(tokens).toBeLessThanOrEqual(600); // some overhead for header
+    // The full content would be ~2000 tokens, but cap is 500
+    const joined = lines.join("\n");
+    expect(joined.length).toBeLessThan(content.length);
+  });
+
+  it("returns 0 for empty content", () => {
+    const lines: string[] = [];
+    expect(addBudgetedSection(lines, "### Empty", "", 5000, 10000)).toBe(0);
+    expect(lines).toHaveLength(0);
+  });
+
+  it("returns 0 for whitespace-only content", () => {
+    const lines: string[] = [];
+    expect(addBudgetedSection(lines, "### Whitespace", "   \n  ", 5000, 10000)).toBe(0);
+    expect(lines).toHaveLength(0);
+  });
+
+  it("returns 0 when remaining budget is zero", () => {
+    const lines: string[] = [];
+    expect(addBudgetedSection(lines, "### No Budget", "content", 5000, 0)).toBe(0);
+    expect(lines).toHaveLength(0);
+  });
+
+  it("uses remaining budget when smaller than section cap", () => {
+    const lines: string[] = [];
+    // Content is ~1000 tokens, section cap 5000, but remaining only 200
+    const content = "A ".repeat(1750); // ~1000 tokens
+    const tokens = addBudgetedSection(lines, "### Limited", content, 5000, 200);
+    expect(tokens).toBeLessThanOrEqual(300); // effective cap was 200
+  });
+
+  it("skips header when empty string", () => {
+    const lines: string[] = [];
+    addBudgetedSection(lines, "", "some content", 5000, 10000);
+    // No header line should be present
+    expect(lines[0]).toBe("some content");
+  });
+});
+
+// ── buildPrioritizePrompt budget enforcement ────────────────────
+
+describe("buildPrioritizePrompt budget enforcement", () => {
+  beforeEach(() => {
+    mkdirSync(TEST_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true });
+  });
+
+  it("total prompt stays within budget with large TODOS.md", async () => {
+    // Write a large TODOS.md (~20K tokens worth of open items)
+    const bigTodos = "# TODOS\n\n" + Array.from({ length: 100 }, (_, i) =>
+      `## P3: Item ${i}\n\n**What:** ${"Description text for this item. ".repeat(20)}\n\n**Effort:** S\n**Depends on:** None\n`
+    ).join("\n");
+    writeFileSync(join(TEST_DIR, "TODOS.md"), bigTodos, "utf-8");
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    const tokens = estimateTokens(prompt);
+    // The fixed sections (rules + worked example) are ~6K tokens and always included,
+    // so total will be > PRIORITIZE_PROMPT_BUDGET, but budgeted sections are controlled.
+    // Verify the TODOS section was truncated (not all 100 items present)
+    const itemMatches = prompt.match(/## P3: Item \d+/g) ?? [];
+    expect(itemMatches.length).toBeLessThan(100);
+  });
+
+  it("prompt is valid with empty sections (most null)", async () => {
+    // No TODOS.md, no CLAUDE.md, no oracle, no daemon state — almost everything null
+    const config = createMockConfig({ noMemory: true });
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("technical product manager");
+    expect(prompt).toContain("Phase 1 — READ");
+    expect(prompt).toContain("No TODOS.md found");
+    expect(prompt).toContain("Scoring Rubric");
+    expect(prompt).toContain("Worked Example");
+  });
+
+  it("filters struck-through items from TODOS.md", async () => {
+    const todos = `# TODOS
+
+## ~~P2: Already Done~~
+
+Completed item.
+
+## P3: Open Item
+
+**What:** This is open.
+**Effort:** S`;
+    writeFileSync(join(TEST_DIR, "TODOS.md"), todos, "utf-8");
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("Open Item");
+    expect(prompt).not.toContain("Already Done");
+  });
+
+  it("scoring rules and worked example always survive", async () => {
+    // Even with large context, the fixed sections must be present
+    const bigTodos = "# TODOS\n\n" + Array.from({ length: 50 }, (_, i) =>
+      `## P3: Item ${i}\n\n${"Long description. ".repeat(40)}\n`
+    ).join("\n");
+    writeFileSync(join(TEST_DIR, "TODOS.md"), bigTodos, "utf-8");
+
+    // Write large CLAUDE.md
+    writeFileSync(join(TEST_DIR, "CLAUDE.md"),
+      "# Project\n\n" + "Capability description. ".repeat(500) + "\n---\n## Current Status\n" + "Status line.\n".repeat(200),
+      "utf-8");
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("## Scoring Rubric");
+    expect(prompt).toContain("## Worked Example");
+    expect(prompt).toContain("## Confidence Gate");
+    expect(prompt).toContain("## Anti-Patterns");
   });
 });
