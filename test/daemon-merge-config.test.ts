@@ -163,4 +163,23 @@ describe("validateDaemonConfig merge PR fields", () => {
       testTimeout: 120000,
     }))).toBeNull();
   });
+
+  // ── autoFixOnRevert ─────────────────────────────────────────
+
+  it("accepts autoFixOnRevert boolean", () => {
+    expect(validateDaemonConfig(createValidConfig({ autoFixOnRevert: true }))).toBeNull();
+    expect(validateDaemonConfig(createValidConfig({ autoFixOnRevert: false }))).toBeNull();
+  });
+
+  it("rejects non-boolean autoFixOnRevert", () => {
+    expect(validateDaemonConfig(createValidConfig({ autoFixOnRevert: "yes" } as any))).toBe("merge.autoFixOnRevert must be a boolean");
+  });
+
+  it("accepts full config with autoFixOnRevert", () => {
+    expect(validateDaemonConfig(createValidConfig({
+      strategy: "direct",
+      testCommand: "npm test",
+      autoFixOnRevert: true,
+    }))).toBeNull();
+  });
 });

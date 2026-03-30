@@ -157,6 +157,9 @@ export function validateDaemonConfig(data: unknown): string | null {
     if (m.prDraft !== undefined && typeof m.prDraft !== "boolean") {
       return "merge.prDraft must be a boolean";
     }
+    if (m.autoFixOnRevert !== undefined && typeof m.autoFixOnRevert !== "boolean") {
+      return "merge.autoFixOnRevert must be a boolean";
+    }
   }
 
   // Validate autoResearch if provided (optional field)
