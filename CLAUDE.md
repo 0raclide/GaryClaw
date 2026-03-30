@@ -492,12 +492,13 @@ Strip `ANTHROPIC_API_KEY` from env passed to SDK — uses Claude Max login inste
 
 ## Spike Results (2026-03-25)
 
-All 4 spikes passed — see `src/spikes/` for runnable proof-of-concept scripts.
+All 5 spikes passed — see `src/spikes/` for runnable proof-of-concept scripts.
 
 1. **canUseTool:** AskUserQuestion interception via `updatedInput` with pre-filled answers works
 2. **Token tracking:** Per-turn usage on `AssistantMessage.message.usage`. `modelUsage.contextWindow` = 1,000,000
 3. **Env passthrough:** Custom env vars + `$B` browse binary pass through to spawned sessions
 4. **Relay prompt size:** 30-issue relay = ~1,880 tokens (19% of 10K budget)
+5. **Oracle session reuse:** Stateful queryFn with SDK resume, `buildResumePrompt` strips 43K prefix, MAX_REUSE=25 reset
 
 ---
 
