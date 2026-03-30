@@ -17,6 +17,7 @@ import { readOracleMemory, readMetrics, defaultMemoryConfig } from "./oracle-mem
 import { estimateTokens } from "./checkpoint.js";
 import { readFailureRecords } from "./failure-taxonomy.js";
 import { groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-research.js";
+import { formatSkillCatalogForPrompt } from "./skill-catalog.js";
 import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, FailureRecord, Decision, DaemonState } from "./types.js";
 
 // ── TodoItem parsing ─────────────────────────────────────────────
@@ -836,6 +837,18 @@ export async function buildPrioritizePrompt(
   lines.push("## Phase 2 — SCORE");
   lines.push("");
   lines.push("Also read CLAUDE.md, any recent QA reports in `.gstack/qa-reports/`, and `git log --oneline -20` to understand the project's current state. Then score each backlog item against the rubric below.");
+  lines.push("");
+
+  // Skill catalog — gives the Oracle knowledge of available skills for pipeline recommendation
+  lines.push("## Available Skills");
+  lines.push("");
+  lines.push(formatSkillCatalogForPrompt());
+  lines.push("");
+  lines.push("When recommending a pipeline in the \"### Recommended Pipeline\" section, ");
+  lines.push("choose from the skills above based on the task's nature. ");
+  lines.push("Consider: visual/UI tasks benefit from design-review. ");
+  lines.push("Architectural changes need plan-eng-review. ");
+  lines.push("Bug fixes and small refactors need only implement → qa.");
   lines.push("");
 
   // Phase 4 — OUTPUT

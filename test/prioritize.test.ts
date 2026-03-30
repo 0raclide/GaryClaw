@@ -665,6 +665,33 @@ describe("buildPrioritizePrompt", () => {
     const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
     expect(prompt).toContain("Impact Measurement");
   });
+
+  // ── Skill catalog injection ──────────────────────────────────
+  it("includes skill catalog section", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("## Available Skills");
+    expect(prompt).toContain("### Review Skills");
+    expect(prompt).toContain("### Execution Skills");
+  });
+
+  it("includes skill catalog guidance for pipeline recommendation", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("### Recommended Pipeline");
+    expect(prompt).toContain("design-review");
+    expect(prompt).toContain("plan-eng-review");
+  });
+
+  it("skill catalog appears before output phase", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    const catalogIdx = prompt.indexOf("## Available Skills");
+    const outputIdx = prompt.indexOf("## Phase 4 — OUTPUT");
+    expect(catalogIdx).toBeGreaterThan(-1);
+    expect(outputIdx).toBeGreaterThan(-1);
+    expect(catalogIdx).toBeLessThan(outputIdx);
+  });
 });
 
 // ── aggregateFailurePatterns ─────────────────────────────────────
