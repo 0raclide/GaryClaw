@@ -470,7 +470,9 @@ Completed (detected by artifact reconciliation, job job-1774882911918-a44eea).
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-30 (ISSUE-002, deferred)
 
-## P3: Auto-Fix Loop After Post-Merge Revert
+## ~~P3: Auto-Fix Loop After Post-Merge Revert~~ — COMPLETE (2026-03-30)
+
+Implemented in 6 commits (6a926f7..d668ded). Auto-fix coordinator module with retry cap (max 2), budget guard (2× original job cost), state persistence in `.garyclaw/auto-fix-state/`. Wired into post-merge verification and job completion. Doctor check #9 for stale auto-fix state. Dashboard auto-fix stats in Merge Health section. `autoFixOnRevert` config flag (default: false).
 
 **What:** When post-merge verification reverts a merge, immediately enqueue an `implement → qa` pipeline targeting the specific regression, instead of waiting for the next prioritize cycle. The operator wakes up to a clean main instead of a reverted main + pending bug TODO.
 

@@ -2,9 +2,12 @@
   "date": "2026-03-30",
   "target": "GaryClaw CLI",
   "healthScore": 100,
-  "testsPassed": 3058,
+  "testsPassed": 3114,
   "testsFailed": 0,
-  "testFiles": 192,
+  "testFiles": 193,
   "typescriptErrors": 0,
-  "issues": []
+  "issues": [
+    { "id": "ISSUE-001", "title": "Stale test count in CLAUDE.md (51→52)", "severity": "low", "category": "content", "status": "fixed" },
+    { "id": "ISSUE-002", "title": "computeCategoryStats wrong failure check", "severity": "medium", "category": "functional", "status": "fixed" }
+  ]
 }
