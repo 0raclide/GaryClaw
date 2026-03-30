@@ -129,7 +129,13 @@ export const RULES: readonly ClassificationRule[] = [
     retryable: false,
     suggestion: "GaryClaw internal error — file a bug",
     stackPatterns: [
-      "src/",
+      "garyclaw/src/",
+      "src/orchestrator.",
+      "src/job-runner.",
+      "src/daemon.",
+      "src/pipeline.",
+      "src/oracle.",
+      "src/relay.",
     ],
   },
 
