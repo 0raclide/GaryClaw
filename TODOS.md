@@ -188,9 +188,8 @@ Implemented by default daemon. Rule-based skill sequence selection based on effo
 
 **What:** Replace the rule-based pipeline composition (currently live: skips skills based on effort/priority heuristics) with Oracle-driven selection. Let the Oracle decide which skills each TODO needs by reasoning about risk, novelty, scope, and history — not just size labels.
 
-**Approach: Bundle skill selection into prioritize.** Prioritize already evaluates each TODO's priority, effort, risk, and context. Extend its output in `priority.md` to include a "Recommended Pipeline" section:
+**Approach: Bundle skill selection into prioritize.** Prioritize already evaluates each TODO's priority, effort, risk, and context. Extend its output in `priority.md` to include a "Recommended Pipeline" section (e.g., `### Recommended Pipeline` followed by `implement → qa`).
 
-```markdown
 ## ~~P3: Code Quality Sweep~~ — COMPLETE (2026-03-30)
 
 Completed by default instance (job job-1774878955249-0d5486).
@@ -458,7 +457,10 @@ Fixed by /qa on main, 2026-03-30. Commit d95a15b: socket.setTimeout(30_000) + 1 
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-30 (ISSUE-006, deferred)
 
-## P5: Dead Code in Auto-Mark Guard
+## ~~P5: Dead Code in Auto-Mark Guard~~ — COMPLETE (2026-03-30)
+
+Completed (detected by artifact reconciliation, job job-1774882911918-a44eea).
+
 
 **What:** Line 857 of `job-runner.ts`: `finalState === "complete" || finalState === "merged"` — the `"merged"` branch is unreachable because the ternary on lines 840-844 always promotes merged → complete before the guard runs. Not a behavioral bug, but misleading code.
 
