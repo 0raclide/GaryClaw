@@ -34,7 +34,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
-- 38 source modules + CLI, 177 test files, 2906 tests
+**Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
+- 39 source modules + CLI, 178 test files, 2929 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -165,6 +166,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/triggers.ts` | Git poll trigger with HEAD change detection + debounce |
 | `src/notifier.ts` | macOS notifications via osascript, job summary files, instance labels |
 | `src/reflection-lock.ts` | Advisory file lock (mkdir-based) for concurrent oracle-memory writes |
+| `src/budget-lock.ts` | Advisory file lock (mkdir-based) for concurrent global-budget.json writes |
 | `src/safe-json.ts` | Shared atomic JSON/text I/O — `safeReadJSON`, `safeWriteJSON`, corruption recovery |
 | `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics |
 | `src/reflection.ts` | Post-job reflection: decision outcomes, reopened detection, quality metrics |
@@ -176,7 +178,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/dashboard.ts` | Dogfood dashboard: job/oracle/budget aggregation, health score, markdown formatting |
 | `src/auto-research.ts` | Auto-research trigger: keyword extraction, topic grouping, freshness-aware enqueue |
 | `src/codebase-summary.ts` | Codebase summary persistence: observation extraction, dedup, token budget, relay formatting |
-| `src/doctor.ts` | Self-diagnostic command: 7 subsystem checks, --fix/--json flags, stale PID detection, orphaned TODO state |
+| `src/doctor.ts` | Self-diagnostic command: 8 subsystem checks, --fix/--json flags, stale PID detection, orphaned TODO state, stale budget locks |
 | `src/evaluate.ts` | Dogfood campaign evaluator: bootstrap quality, oracle performance, pipeline health, improvement extraction, post-evaluate deterministic analysis |
 | `src/failure-taxonomy.ts` | 10-category failure classification, failures.jsonl persistence, notification integration |
 | `src/pid-utils.ts` | PID liveness check, process-name verification, stale PID detection |
@@ -297,8 +299,9 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/daemon.test.ts` | 55 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request, autoResearch validation, merge config |
 | `test/daemon-extended.test.ts` | 46 | Extended daemon: shutdown, poller lifecycle, IPC edge cases |
 | `test/daemon-lifecycle.test.ts` | 14 | Daemon start/stop lifecycle, signal handling |
-| `test/daemon-registry.test.ts` | 47 | Instance discovery, global budget, cross-instance dedup, migration |
+| `test/daemon-registry.test.ts` | 52 | Instance discovery, global budget, cross-instance dedup, migration, budget lock integration |
 | `test/reflection-lock.test.ts` | 12 | Acquire/release, reentrant, stale recovery, timeout |
+| `test/budget-lock.test.ts` | 12 | Acquire/release, reentrant, stale recovery, timeout |
 | `test/safe-json.test.ts` | 21 | Atomic write/read, corruption recovery, .bak rename, validation |
 | `test/safe-json-extended.test.ts` | 13 | Extended safe-json: concurrent writes, large files, encoding |
 | `test/safe-json.regression-1.test.ts` | 5 | ENOENT retry on rename during parallel cold-start I/O |
@@ -316,7 +319,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/auto-research.regression-1.test.ts` | 19 | isTopicGroupFresh direct tests, seed-keyword clustering, 3-char acronym preservation |
 | `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
 | `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
-| `test/doctor.test.ts` | 52 | 7 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state |
+| `test/doctor.test.ts` | 59 | 8 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state, stale budget locks |
 | `test/failure-taxonomy.test.ts` | 71 | 10 failure categories, table-driven classification, failures.jsonl, notification integration |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
 | `test/orchestrator.test.ts` | 47 | auth, success, maxTurns, errors, abort, relay, adaptive turns, heavy tool tracking, --no-adaptive config, codebase summary extraction |
