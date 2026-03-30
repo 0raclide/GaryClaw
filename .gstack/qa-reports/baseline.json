@@ -1,22 +1,23 @@
 {
   "date": "2026-03-30",
   "url": "cli://garyclaw",
-  "healthScore": 97,
-  "issues": [
-    {
-      "id": "ISSUE-001",
-      "title": "Stale test counts in CLAUDE.md",
-      "severity": "medium",
-      "category": "content",
-      "status": "fixed",
-      "commit": "b3a39fa"
-    }
-  ],
+  "healthScore": 100,
+  "issues": [],
   "categoryScores": {
     "console": 100,
+    "links": 100,
+    "visual": 100,
     "functional": 100,
-    "codeQuality": 95,
-    "content": 97,
-    "performance": 95
+    "ux": 100,
+    "performance": 100,
+    "content": 100,
+    "accessibility": 100
+  },
+  "testStats": {
+    "files": 182,
+    "tests": 2963,
+    "passed": 2963,
+    "failed": 0,
+    "duration": "32.03s"
   }
 }
