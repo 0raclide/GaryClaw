@@ -292,6 +292,43 @@ function advanceTodoToMerged(
   }
 }
 
+// ── Pre-merge test runner helper ─────────────────────────────────
+
+export interface PreMergeTestResult {
+  passed: boolean | undefined;  // undefined = skipped (no validation config)
+  durationMs?: number;
+}
+
+/**
+ * Run pre-merge validation tests in a worktree directory.
+ * Shared between PR and direct merge strategies to prevent logic divergence.
+ */
+export function runPreMergeTests(
+  cwd: string,
+  mergeConfig: DaemonConfig["merge"],
+  log: (level: string, message: string) => void,
+): PreMergeTestResult {
+  if (!mergeConfig || mergeConfig.skipValidation) {
+    return { passed: undefined };
+  }
+  const testCommand = mergeConfig.testCommand ?? "npm test";
+  const testTimeout = mergeConfig.testTimeout ?? 120_000;
+  try {
+    const start = Date.now();
+    execFileSync("sh", ["-c", testCommand], {
+      cwd,
+      timeout: testTimeout,
+      stdio: "pipe",
+    });
+    const durationMs = Date.now() - start;
+    log("info", `Pre-merge tests passed (${Math.round(durationMs / 1000)}s)`);
+    return { passed: true, durationMs };
+  } catch {
+    log("warn", "Pre-merge tests failed");
+    return { passed: false };
+  }
+}
+
 /**
  * Create a job runner bound to a daemon config and checkpoint directory.
  *
@@ -933,33 +970,22 @@ export function createJobRunner(
 
           if (mergeStrategy === "pr") {
             // ── PR-based merge strategy ────────────────────────────
-            // Run pre-merge tests in worktree first (same as direct strategy)
-            let testsPassed: boolean | undefined;
-            let testDurationMs: number | undefined;
-            if (mergeConfig && !mergeConfig.skipValidation) {
-              try {
-                const testCommand = mergeConfig.testCommand ?? "npm test";
-                const testTimeout = mergeConfig.testTimeout ?? 120_000;
-                const testStart = Date.now();
-                execFileSync("sh", ["-c", testCommand], {
-                  cwd: jobConfig.worktreePath,
-                  timeout: testTimeout,
-                  stdio: "pipe",
-                });
-                testsPassed = true;
-                testDurationMs = Date.now() - testStart;
-                d.log("info", `Pre-merge tests passed (${Math.round((testDurationMs) / 1000)}s)`);
-              } catch {
-                testsPassed = false;
-                d.log("warn", "Pre-merge tests failed — skipping PR creation");
-                // Log merge failure
-                const syntheticErr = Object.assign(
-                  new Error("Pre-merge tests failed (PR strategy)"),
-                  { name: "MergeValidationError" },
-                );
-                const record = buildFailureRecord(syntheticErr, nextJob.id, nextJob.skills, resolvedInstanceName);
-                appendFailureRecord(record, checkpointDir);
-              }
+            // Run pre-merge tests using shared helper (same logic as direct strategy)
+            const prTestResult = runPreMergeTests(
+              jobConfig.worktreePath!,
+              mergeConfig,
+              d.log,
+            );
+            let testsPassed = prTestResult.passed;
+            const testDurationMs = prTestResult.durationMs;
+            if (testsPassed === false) {
+              d.log("warn", "Skipping PR creation due to test failure");
+              const syntheticErr = Object.assign(
+                new Error("Pre-merge tests failed (PR strategy)"),
+                { name: "MergeValidationError" },
+              );
+              const record = buildFailureRecord(syntheticErr, nextJob.id, nextJob.skills, resolvedInstanceName);
+              appendFailureRecord(record, checkpointDir);
             }
 
             if (testsPassed !== false) {
