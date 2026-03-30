@@ -16,6 +16,8 @@ import { readPidFile, isPidAlive, removePidFile } from "./pid-utils.js";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
 import { listWorktrees, removeWorktree, branchName, resolveBaseBranch } from "./worktree.js";
 import { validateGlobalBudget } from "./daemon-registry.js";
+import { BUDGET_LOCK_DIR_NAME } from "./budget-lock.js";
+import { REFLECTION_LOCK_DIR_NAME } from "./reflection-lock.js";
 import { execFileSync } from "node:child_process";
 import type { GlobalBudget, OracleMetrics } from "./types.js";
 
@@ -60,8 +62,6 @@ const PID_FILE = "daemon.pid";
 const SOCKET_FILE = "daemon.sock";
 const GLOBAL_BUDGET_FILE = "global-budget.json";
 const METRICS_FILE = "metrics.json";
-const LOCK_DIR_NAME = ".reflection-lock";
-const BUDGET_LOCK_DIR_NAME = ".budget-lock";
 const DEFAULT_AUTH_TIMEOUT_MS = 10_000;
 const DEFAULT_DAILY_COST_LIMIT = 50;
 const DEFAULT_MAX_JOBS_PER_DAY = 20;
@@ -458,7 +458,7 @@ export function checkReflectionLocks(options: DoctorOptions): CheckResult {
   ];
 
   for (const { label, dir } of dirs) {
-    const lockDir = join(dir, LOCK_DIR_NAME);
+    const lockDir = join(dir, REFLECTION_LOCK_DIR_NAME);
     if (!existsSync(lockDir)) continue;
 
     const pidFile = join(lockDir, "pid");

@@ -9,7 +9,7 @@
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const LOCK_DIR_NAME = ".budget-lock";
+export const BUDGET_LOCK_DIR_NAME = ".budget-lock";
 const PID_FILE_NAME = "pid";
 const DEFAULT_TIMEOUT_MS = 5_000;  // 5s (shorter than reflection-lock's 30s)
 const POLL_INTERVAL_MS = 50;       // 50ms (faster poll for microsecond-hold lock)
@@ -27,7 +27,7 @@ export function acquireBudgetLock(
   checkpointDir: string,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): boolean {
-  const lockDir = join(checkpointDir, LOCK_DIR_NAME);
+  const lockDir = join(checkpointDir, BUDGET_LOCK_DIR_NAME);
   const pidFile = join(lockDir, PID_FILE_NAME);
 
   // Try to create lock dir atomically
@@ -71,7 +71,7 @@ export function acquireBudgetLock(
  * Release the budget lock. Safe to call even if not held.
  */
 export function releaseBudgetLock(checkpointDir: string): void {
-  const lockDir = join(checkpointDir, LOCK_DIR_NAME);
+  const lockDir = join(checkpointDir, BUDGET_LOCK_DIR_NAME);
   try {
     rmSync(lockDir, { recursive: true, force: true });
   } catch {
@@ -83,7 +83,7 @@ export function releaseBudgetLock(checkpointDir: string): void {
  * Check if the budget lock is currently held (by any process).
  */
 export function isBudgetLocked(checkpointDir: string): boolean {
-  const lockDir = join(checkpointDir, LOCK_DIR_NAME);
+  const lockDir = join(checkpointDir, BUDGET_LOCK_DIR_NAME);
   return existsSync(lockDir);
 }
 
