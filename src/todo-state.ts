@@ -492,7 +492,10 @@ export function markTodoCompleteInFile(
   const content = safeReadText(todosPath);
   if (!content) return false;
 
-  const targetSlug = slugify(title);
+  // Strip P\d: prefix from title — claimedTodoTitle may or may not include it,
+  // and TODOS.md headings may or may not include it. Normalize both sides.
+  const normalizedTitle = title.replace(/^P\d+:\s*/, "");
+  const targetSlug = slugify(normalizedTitle);
   if (!targetSlug) return false;
 
   const lines = content.split("\n");
@@ -511,7 +514,10 @@ export function markTodoCompleteInFile(
 
     // Extract heading text (strip ## prefix)
     const headingText = line.replace(/^#{2,}\s+/, "").trim();
-    const headingSlug = slugify(headingText);
+    // Strip P\d: prefix for slug comparison — parseTodoItems extracts title
+    // without the priority prefix, so claimedTodoTitle won't have it.
+    const headingForSlug = headingText.replace(/^P\d+:\s*/, "");
+    const headingSlug = slugify(headingForSlug);
 
     if (headingSlug === targetSlug) {
       // Rewrite heading: ## P2: Foo Bar → ## ~~P2: Foo Bar~~ — COMPLETE (2026-03-29)
