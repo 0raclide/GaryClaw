@@ -12,6 +12,9 @@ import {
   formatPipelineContext,
   formatMetricsSummary,
   buildPrioritizePrompt,
+  aggregateFailurePatterns,
+  getDecisionQualityTrends,
+  measureRecentImpact,
 } from "../src/prioritize.js";
 import {
   createMockIssue,
@@ -566,5 +569,422 @@ describe("buildPrioritizePrompt", () => {
     expect(prompt).toContain("Alternatives");
     expect(prompt).toContain("Skipped Items");
     expect(prompt).toContain("Backlog Health");
+  });
+
+  it("includes invention protocol", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("Invention Protocol");
+    expect(prompt).toContain("Step 1 — RESEARCH");
+    expect(prompt).toContain("Step 3 — CRITIQUE");
+    expect(prompt).toContain("Step 4 — PRUNE");
+  });
+
+  it("includes failure pattern scoring bonus instruction", async () => {
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("+2 scoring bonus to items that fix recurring failure patterns");
+  });
+
+  it("includes failure patterns section when failures exist", async () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    writeFileSync(
+      join(gcDir, "failures.jsonl"),
+      JSON.stringify({ timestamp: "2026-03-30T01:00:00Z", jobId: "j1", skills: ["qa"], category: "project-bug", retryable: false, errorMessage: "test failed" }) + "\n",
+      "utf-8",
+    );
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("Failure Patterns");
+    expect(prompt).toContain("project-bug");
+  });
+
+  it("includes decision quality trends when decisions exist", async () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const lines = Array.from({ length: 5 }, (_, i) =>
+      JSON.stringify({
+        timestamp: `2026-03-30T0${i}:00:00Z`,
+        sessionIndex: 0,
+        question: "Should we use WebSocket for real-time updates?",
+        options: [{ label: "Yes", description: "Use WS" }, { label: "No", description: "Use polling" }],
+        chosen: "Yes",
+        confidence: 4,
+        rationale: "Low confidence",
+        principle: "Bias toward action",
+      }),
+    );
+    writeFileSync(join(gcDir, "decisions.jsonl"), lines.join("\n") + "\n", "utf-8");
+
+    const metricsDir = join(gcDir, "oracle-memory");
+    mkdirSync(metricsDir, { recursive: true });
+    writeFileSync(
+      join(metricsDir, "metrics.json"),
+      JSON.stringify({
+        totalDecisions: 10,
+        accurateDecisions: 8,
+        neutralDecisions: 1,
+        failedDecisions: 1,
+        accuracyPercent: 88.9,
+        confidenceTrend: [4, 5, 4, 3, 5],
+        lastReflectionTimestamp: null,
+        circuitBreakerTripped: false,
+      }),
+      "utf-8",
+    );
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("Decision Quality Trends");
+  });
+
+  it("includes impact measurement when enough jobs exist", async () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const jobs = Array.from({ length: 6 }, (_, i) => ({
+      id: `job-${i}`,
+      triggeredBy: "manual",
+      triggerDetail: "test",
+      skills: ["qa"],
+      projectDir: TEST_DIR,
+      status: "complete",
+      enqueuedAt: `2026-03-${20 + i}T00:00:00Z`,
+      startedAt: `2026-03-${20 + i}T00:01:00Z`,
+      completedAt: `2026-03-${20 + i}T00:10:00Z`,
+      costUsd: i < 3 ? 2.0 : 1.0,
+    }));
+    writeFileSync(
+      join(gcDir, "daemon-state.json"),
+      JSON.stringify({ version: 1, jobs, dailyCost: { date: "2026-03-30", totalUsd: 0, jobCount: 0 } }),
+      "utf-8",
+    );
+
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("Impact Measurement");
+  });
+});
+
+// ── aggregateFailurePatterns ─────────────────────────────────────
+
+describe("aggregateFailurePatterns", () => {
+  it("returns null for empty checkpoint dir", () => {
+    expect(aggregateFailurePatterns(join(TEST_DIR, ".garyclaw"))).toBeNull();
+  });
+
+  it("returns null when failures.jsonl is missing", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    expect(aggregateFailurePatterns(gcDir)).toBeNull();
+  });
+
+  it("parses a single failure", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    writeFileSync(
+      join(gcDir, "failures.jsonl"),
+      JSON.stringify({ timestamp: "2026-03-30T01:00:00Z", jobId: "j1", skills: ["qa"], category: "project-bug", retryable: false, errorMessage: "test failed" }) + "\n",
+      "utf-8",
+    );
+
+    const result = aggregateFailurePatterns(gcDir);
+    expect(result).not.toBeNull();
+    expect(result).toContain("1 total failure");
+    expect(result).toContain("project-bug: 1 failure");
+    expect(result).toContain("qa: 1 failure");
+  });
+
+  it("aggregates multiple categories", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const records = [
+      { timestamp: "2026-03-30T01:00:00Z", jobId: "j1", skills: ["qa"], category: "project-bug", retryable: false, errorMessage: "e1" },
+      { timestamp: "2026-03-30T02:00:00Z", jobId: "j2", skills: ["implement"], category: "sdk-bug", retryable: true, errorMessage: "e2" },
+      { timestamp: "2026-03-30T03:00:00Z", jobId: "j3", skills: ["qa"], category: "project-bug", retryable: false, errorMessage: "e3" },
+    ];
+    writeFileSync(join(gcDir, "failures.jsonl"), records.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf-8");
+
+    const result = aggregateFailurePatterns(gcDir)!;
+    expect(result).toContain("3 total failures");
+    expect(result).toContain("project-bug: 2 failures");
+    expect(result).toContain("sdk-bug: 1 failure");
+    expect(result).toContain("qa: 2 failures");
+    expect(result).toContain("implement: 1 failure");
+  });
+
+  it("scans cross-instance failures under daemons/", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    const instDir = join(gcDir, "daemons", "worker-1");
+    mkdirSync(instDir, { recursive: true });
+    writeFileSync(
+      join(instDir, "failures.jsonl"),
+      JSON.stringify({ timestamp: "2026-03-30T01:00:00Z", jobId: "j1", skills: ["implement"], category: "garyclaw-bug", retryable: false, errorMessage: "e1" }) + "\n",
+      "utf-8",
+    );
+
+    const result = aggregateFailurePatterns(gcDir);
+    expect(result).not.toBeNull();
+    expect(result).toContain("garyclaw-bug");
+    expect(result).toContain("implement");
+  });
+
+  it("skips malformed JSONL lines", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    writeFileSync(
+      join(gcDir, "failures.jsonl"),
+      "not json\n" + JSON.stringify({ timestamp: "2026-03-30T01:00:00Z", jobId: "j1", skills: ["qa"], category: "infra-issue", retryable: true, errorMessage: "e1" }) + "\n",
+      "utf-8",
+    );
+
+    const result = aggregateFailurePatterns(gcDir)!;
+    expect(result).toContain("1 total failure");
+    expect(result).toContain("infra-issue");
+  });
+
+  it("includes scoring bonus instruction", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    writeFileSync(
+      join(gcDir, "failures.jsonl"),
+      JSON.stringify({ timestamp: "2026-03-30T01:00:00Z", jobId: "j1", skills: ["qa"], category: "project-bug", retryable: false, errorMessage: "e1" }) + "\n",
+      "utf-8",
+    );
+
+    const result = aggregateFailurePatterns(gcDir)!;
+    expect(result).toContain("+2 scoring bonus");
+  });
+});
+
+// ── getDecisionQualityTrends ─────────────────────────────────────
+
+describe("getDecisionQualityTrends", () => {
+  it("returns null when no oracle data or decisions exist", () => {
+    expect(getDecisionQualityTrends(TEST_DIR)).toBeNull();
+  });
+
+  it("returns metrics when they exist even without decisions", () => {
+    const metricsDir = join(TEST_DIR, ".garyclaw", "oracle-memory");
+    mkdirSync(metricsDir, { recursive: true });
+    writeFileSync(
+      join(metricsDir, "metrics.json"),
+      JSON.stringify({
+        totalDecisions: 10,
+        accurateDecisions: 8,
+        neutralDecisions: 1,
+        failedDecisions: 1,
+        accuracyPercent: 88.9,
+        confidenceTrend: [7, 8, 9],
+        lastReflectionTimestamp: null,
+        circuitBreakerTripped: false,
+      }),
+      "utf-8",
+    );
+
+    const result = getDecisionQualityTrends(TEST_DIR);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Oracle accuracy: 89%");
+    expect(result).toContain("10 decisions");
+    expect(result).toContain("confidence trend");
+  });
+
+  it("clusters low-confidence decisions into topics", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+
+    // Create decisions about the same topic with low confidence
+    const decisions = [
+      { timestamp: "t1", sessionIndex: 0, question: "Should we cache the WebSocket connection pool?", options: [], chosen: "Yes", confidence: 3, rationale: "", principle: "" },
+      { timestamp: "t2", sessionIndex: 0, question: "How to handle WebSocket connection timeout?", options: [], chosen: "Retry", confidence: 4, rationale: "", principle: "" },
+      { timestamp: "t3", sessionIndex: 0, question: "Should the WebSocket pool have a max size?", options: [], chosen: "Yes", confidence: 5, rationale: "", principle: "" },
+    ];
+    writeFileSync(join(gcDir, "decisions.jsonl"), decisions.map((d) => JSON.stringify(d)).join("\n") + "\n", "utf-8");
+
+    const result = getDecisionQualityTrends(TEST_DIR);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Topics with low confidence");
+  });
+
+  it("ignores high-confidence decisions", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+
+    const decisions = [
+      { timestamp: "t1", sessionIndex: 0, question: "Fix the bug?", options: [], chosen: "Yes", confidence: 9, rationale: "", principle: "" },
+      { timestamp: "t2", sessionIndex: 0, question: "Add the test?", options: [], chosen: "Yes", confidence: 8, rationale: "", principle: "" },
+    ];
+    writeFileSync(join(gcDir, "decisions.jsonl"), decisions.map((d) => JSON.stringify(d)).join("\n") + "\n", "utf-8");
+
+    // No low-confidence groups should form
+    const result = getDecisionQualityTrends(TEST_DIR);
+    // May be null (no metrics + no low-conf groups) or just metrics (if metrics exist)
+    if (result) {
+      expect(result).not.toContain("Topics with low confidence");
+    }
+  });
+
+  it("includes +1 bonus instruction when topics found", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+
+    const decisions = [
+      { timestamp: "t1", sessionIndex: 0, question: "Should we cache the database query results?", options: [], chosen: "Yes", confidence: 3, rationale: "", principle: "" },
+      { timestamp: "t2", sessionIndex: 0, question: "How to invalidate database query cache entries?", options: [], chosen: "TTL", confidence: 4, rationale: "", principle: "" },
+    ];
+    writeFileSync(join(gcDir, "decisions.jsonl"), decisions.map((d) => JSON.stringify(d)).join("\n") + "\n", "utf-8");
+
+    const result = getDecisionQualityTrends(TEST_DIR);
+    if (result && result.includes("Topics with low confidence")) {
+      expect(result).toContain("+1 scoring bonus");
+    }
+  });
+});
+
+// ── measureRecentImpact ──────────────────────────────────────────
+
+describe("measureRecentImpact", () => {
+  it("returns null for empty checkpoint dir", () => {
+    expect(measureRecentImpact(join(TEST_DIR, ".garyclaw"))).toBeNull();
+  });
+
+  it("returns null for fewer than 4 jobs", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const jobs = [
+      { id: "j1", triggeredBy: "manual", triggerDetail: "t", skills: ["qa"], projectDir: TEST_DIR, status: "complete", enqueuedAt: "2026-03-25T00:00:00Z", startedAt: "2026-03-25T00:01:00Z", completedAt: "2026-03-25T00:10:00Z", costUsd: 1.0 },
+      { id: "j2", triggeredBy: "manual", triggerDetail: "t", skills: ["qa"], projectDir: TEST_DIR, status: "complete", enqueuedAt: "2026-03-26T00:00:00Z", startedAt: "2026-03-26T00:01:00Z", completedAt: "2026-03-26T00:10:00Z", costUsd: 1.5 },
+    ];
+    writeFileSync(
+      join(gcDir, "daemon-state.json"),
+      JSON.stringify({ version: 1, jobs, dailyCost: { date: "2026-03-30", totalUsd: 0, jobCount: 0 } }),
+      "utf-8",
+    );
+
+    expect(measureRecentImpact(gcDir)).toBeNull();
+  });
+
+  it("detects cost decrease", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const jobs = Array.from({ length: 6 }, (_, i) => ({
+      id: `j${i}`,
+      triggeredBy: "manual",
+      triggerDetail: "t",
+      skills: ["qa"],
+      projectDir: TEST_DIR,
+      status: "complete",
+      enqueuedAt: `2026-03-${20 + i}T00:00:00Z`,
+      startedAt: `2026-03-${20 + i}T00:01:00Z`,
+      completedAt: `2026-03-${20 + i}T00:10:00Z`,
+      costUsd: i < 3 ? 3.0 : 1.0, // older jobs cost more
+    }));
+    writeFileSync(
+      join(gcDir, "daemon-state.json"),
+      JSON.stringify({ version: 1, jobs, dailyCost: { date: "2026-03-30", totalUsd: 0, jobCount: 0 } }),
+      "utf-8",
+    );
+
+    const result = measureRecentImpact(gcDir)!;
+    expect(result).toContain("Impact Measurement");
+    expect(result).toContain("Cost improved");
+    expect(result).toContain("savings");
+  });
+
+  it("detects cost increase", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const jobs = Array.from({ length: 6 }, (_, i) => ({
+      id: `j${i}`,
+      triggeredBy: "manual",
+      triggerDetail: "t",
+      skills: ["qa"],
+      projectDir: TEST_DIR,
+      status: "complete",
+      enqueuedAt: `2026-03-${20 + i}T00:00:00Z`,
+      startedAt: `2026-03-${20 + i}T00:01:00Z`,
+      completedAt: `2026-03-${20 + i}T00:10:00Z`,
+      costUsd: i < 3 ? 1.0 : 3.0, // newer jobs cost more
+    }));
+    writeFileSync(
+      join(gcDir, "daemon-state.json"),
+      JSON.stringify({ version: 1, jobs, dailyCost: { date: "2026-03-30", totalUsd: 0, jobCount: 0 } }),
+      "utf-8",
+    );
+
+    const result = measureRecentImpact(gcDir)!;
+    expect(result).toContain("Cost increased");
+    expect(result).toContain("optimization");
+  });
+
+  it("detects stable costs", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const jobs = Array.from({ length: 4 }, (_, i) => ({
+      id: `j${i}`,
+      triggeredBy: "manual",
+      triggerDetail: "t",
+      skills: ["qa"],
+      projectDir: TEST_DIR,
+      status: "complete",
+      enqueuedAt: `2026-03-${20 + i}T00:00:00Z`,
+      startedAt: `2026-03-${20 + i}T00:01:00Z`,
+      completedAt: `2026-03-${20 + i}T00:10:00Z`,
+      costUsd: 2.0,
+    }));
+    writeFileSync(
+      join(gcDir, "daemon-state.json"),
+      JSON.stringify({ version: 1, jobs, dailyCost: { date: "2026-03-30", totalUsd: 0, jobCount: 0 } }),
+      "utf-8",
+    );
+
+    const result = measureRecentImpact(gcDir)!;
+    expect(result).toContain("stable");
+  });
+
+  it("scans cross-instance daemon state", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    const instDir = join(gcDir, "daemons", "worker-1");
+    mkdirSync(instDir, { recursive: true });
+    const jobs = Array.from({ length: 4 }, (_, i) => ({
+      id: `j${i}`,
+      triggeredBy: "manual",
+      triggerDetail: "t",
+      skills: ["qa"],
+      projectDir: TEST_DIR,
+      status: "complete",
+      enqueuedAt: `2026-03-${20 + i}T00:00:00Z`,
+      startedAt: `2026-03-${20 + i}T00:01:00Z`,
+      completedAt: `2026-03-${20 + i}T00:10:00Z`,
+      costUsd: 1.5,
+    }));
+    writeFileSync(
+      join(instDir, "daemon-state.json"),
+      JSON.stringify({ version: 1, jobs, dailyCost: { date: "2026-03-30", totalUsd: 0, jobCount: 0 } }),
+      "utf-8",
+    );
+
+    const result = measureRecentImpact(gcDir);
+    expect(result).not.toBeNull();
+    expect(result).toContain("Impact Measurement");
+  });
+
+  it("skips non-complete and zero-cost jobs", () => {
+    const gcDir = join(TEST_DIR, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    const jobs = [
+      { id: "j1", triggeredBy: "manual", triggerDetail: "t", skills: ["qa"], projectDir: TEST_DIR, status: "failed", enqueuedAt: "2026-03-25T00:00:00Z", costUsd: 5.0 },
+      { id: "j2", triggeredBy: "manual", triggerDetail: "t", skills: ["qa"], projectDir: TEST_DIR, status: "complete", enqueuedAt: "2026-03-25T00:00:00Z", completedAt: "2026-03-25T00:10:00Z", costUsd: 0 },
+      { id: "j3", triggeredBy: "manual", triggerDetail: "t", skills: ["qa"], projectDir: TEST_DIR, status: "queued", enqueuedAt: "2026-03-25T00:00:00Z", costUsd: 0 },
+    ];
+    writeFileSync(
+      join(gcDir, "daemon-state.json"),
+      JSON.stringify({ version: 1, jobs, dailyCost: { date: "2026-03-30", totalUsd: 0, jobCount: 0 } }),
+      "utf-8",
+    );
+
+    // Only 0 qualifying jobs (failed has no completedAt filter pass, zero-cost skipped)
+    expect(measureRecentImpact(gcDir)).toBeNull();
   });
 });

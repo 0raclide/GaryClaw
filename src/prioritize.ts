@@ -304,12 +304,12 @@ export function aggregateFailurePatterns(checkpointDir: string): string | null {
   }
 
   // Top 3 categories sorted by count
-  const topCategories = [...byCategory.entries()]
+  const topCategories = Array.from(byCategory.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3);
 
   // Top 3 skills sorted by count
-  const topSkills = [...bySkill.entries()]
+  const topSkills = Array.from(bySkill.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3);
 
@@ -792,7 +792,6 @@ export async function buildPrioritizePrompt(
   }
 
   // Unresolved review findings (accepted fixes from recent eng/CEO reviews)
-  const gcDir = join(projectDir, ".garyclaw");
   const reviewFindings = loadUnresolvedReviewFindings(gcDir);
   if (reviewFindings.length > 0) {
     lines.push("### Unresolved Review Findings");
