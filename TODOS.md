@@ -517,3 +517,20 @@ Fixed by /qa on main, 2026-03-30. Implemented in b3f44aa: auth failures trigger 
 **Effort:** XS (human: ~2 hours / CC: ~10 min)
 **Depends on:** Global Budget Locking (COMPLETE)
 **Added by:** /qa on 2026-03-30 (ISSUE-002, deferred from eng review Decision #1)
+
+## P3: Browser Cookie Persistence for Daemon — Authenticated Page Testing
+
+**What:** The daemon's `design-review` and `qa` skills can't test authenticated pages because the headless browser has no login session. Currently `/setup-browser-cookies` imports cookies interactively but they don't survive daemon restarts or carry across skill segments (each skill spawns a fresh SDK session).
+
+**Fix:** Add cookie persistence to the daemon lifecycle:
+1. **Import** — `daemon start --import-cookies` runs `$B cookie-import-browser` on startup, importing from the user's real browser
+2. **Persist** — Export cookies to `.garyclaw/browser-cookies.json` after import
+3. **Restore** — Before each browser-dependent skill segment, restore cookies from disk via `$B cookie-set`
+4. **Refresh** — Re-import on `SIGHUP` config reload or `daemon start --import-cookies` re-run
+5. **Scope** — Only import domains listed in `daemon.json` config (e.g., `"browserCookies": { "domains": ["nihontowatch.com", "localhost:3000"] }`)
+
+**Why:** Discovered on 2026-03-30 when the P0 mobile vault UI/UX task on NihontoWatch couldn't be fully tested by the daemon — vault pages require auth. The daemon could design and implement from code context but couldn't do visual QA or design-review on the live authenticated pages.
+
+**Effort:** S (human: ~3 days / CC: ~25 min)
+**Depends on:** Nothing
+**Added by:** Human on 2026-03-30 (discovered during NihontoWatch P0 mobile vault deployment)
