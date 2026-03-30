@@ -573,17 +573,6 @@ export interface DashboardData {
   instances: string[];           // Active instance names
 }
 
-// ── Pipeline progress (live status for IPC) ─────────────────────
-
-export interface PipelineProgress {
-  currentSkill: string;           // e.g. "implement"
-  skillIndex: number;             // 0-based
-  totalSkills: number;            // total in pipeline
-  claimedTodoTitle: string | null;  // from job.claimedTodoTitle
-  elapsedSeconds: number;         // since job started
-  commitCount: number;            // commits on worktree branch since creation
-}
-
 // ── SDK message types (loosely typed for pre-1.0 safety) ────────
 
 export interface SdkUsage {

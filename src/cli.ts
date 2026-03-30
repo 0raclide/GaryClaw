@@ -138,6 +138,7 @@ export function parseArgs(argv: string[]): {
   name?: string;
   all: boolean;
   cleanup: boolean;
+  parallel?: number;
   doctorFix: boolean;
   doctorJson: boolean;
   doctorSkipAuth: boolean;
@@ -162,6 +163,7 @@ export function parseArgs(argv: string[]): {
   let name: string | undefined;
   let all = false;
   let cleanup = false;
+  let parallel: number | undefined;
   let doctorFix = false;
   let doctorJson = false;
   let doctorSkipAuth = false;
@@ -216,6 +218,13 @@ export function parseArgs(argv: string[]): {
           all = true;
         } else if (args[i] === "--cleanup") {
           cleanup = true;
+        } else if (args[i] === "--parallel" && args[i + 1]) {
+          const parsed = parseInt(args[++i], 10);
+          if (Number.isNaN(parsed) || parsed < 2 || parsed > 10) {
+            console.error(`Invalid --parallel value: ${args[i]}. Must be between 2 and 10.`);
+            process.exit(1);
+          }
+          parallel = parsed;
         } else if (args[i] === "--tail" && args[i + 1]) {
           const parsed = parseInt(args[++i], 10);
           if (Number.isNaN(parsed) || parsed < 1) {
@@ -279,7 +288,7 @@ export function parseArgs(argv: string[]): {
   // Merge shared flags back into return value
   ({ projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, noAdaptive, designDoc } = shared);
 
-  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, noAdaptive, tailLines, designDoc, force, researchTopic, name, all, cleanup, doctorFix, doctorJson, doctorSkipAuth };
+  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, noAdaptive, tailLines, designDoc, force, researchTopic, name, all, cleanup, parallel, doctorFix, doctorJson, doctorSkipAuth };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -473,6 +482,7 @@ ${BOLD}Usage:${RESET}
   garyclaw oracle init                Initialize oracle memory directories + templates
   garyclaw doctor [--fix] [--json]    Run self-diagnostics on all subsystems
   garyclaw daemon start [--name <n>]   Start background daemon instance
+  garyclaw daemon start --parallel N   Launch N parallel workers (2-10)
   garyclaw daemon stop [--name <n>]   Stop running daemon instance
   garyclaw daemon stop [--name <n>] --cleanup  Stop + remove worktree/branch
   garyclaw daemon stop --all          Stop all running instances
@@ -494,6 +504,7 @@ ${BOLD}Options:${RESET}
   --name <instance>        Daemon instance name (default: "default")
   --all                    Apply to all daemon instances (stop --all, status --all)
   --cleanup                Remove worktree + branch on daemon stop (named instances)
+  --parallel N             Launch N parallel worker instances (2-10, daemon start only)
   --fix                    Auto-fix fixable issues (doctor command)
   --json                   Output as JSON (doctor command)
   --skip-auth              Skip auth verification check (doctor command)
@@ -536,6 +547,126 @@ ${BOLD}Daemon Config (daemon.json triggers):${RESET}
     "0 0 1 * *"     — midnight on the 1st of each month
   Reload config without restart: kill -HUP <daemon-pid>
 `);
+}
+
+// ── Parallel instance launcher ───────────────────────────────────
+
+/**
+ * Launch N parallel daemon instances (worker-1 through worker-N).
+ * Performs auto-cleanup, budget pre-validation, staggered starts.
+ * Exported for testing.
+ */
+export async function startParallelInstances(
+  n: number,
+  checkpointDir: string,
+  projectDir: string,
+  configPath?: string,
+): Promise<{ launched: number; skipped: number; failed: number }> {
+  const { runAutoCleanup } = await import("./doctor.js");
+
+  // 1. Auto-cleanup stale state first (so budget reads are accurate)
+  console.log(`${BOLD}GaryClaw Fleet${RESET} — launching ${n} parallel instances\n`);
+  const { cleaned } = await runAutoCleanup({ projectDir });
+  if (cleaned.length > 0) {
+    console.log(`${DIM}Auto-cleanup: ${cleaned.join(", ")}${RESET}`);
+  }
+
+  // 2. Budget pre-validation
+  const resolvedConfigPath = configPath ??
+    (existsSync(join(checkpointDir, "daemon.json")) ? join(checkpointDir, "daemon.json") : undefined);
+  if (!resolvedConfigPath || !existsSync(resolvedConfigPath)) {
+    console.error(`${RED}No daemon config found.${RESET} Create .garyclaw/daemon.json first.`);
+    process.exit(1);
+  }
+
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(readFileSync(resolvedConfigPath, "utf-8"));
+  } catch {
+    console.error(`${RED}Invalid daemon config at:${RESET} ${resolvedConfigPath}`);
+    process.exit(1);
+  }
+
+  const budget = config.budget as Record<string, number> | undefined;
+  const dailyLimit = budget?.dailyCostLimitUsd ?? 50;
+  const perJobLimit = budget?.perJobCostLimitUsd ?? 5;
+  const globalBudget = readGlobalBudget(checkpointDir);
+  const remaining = dailyLimit - globalBudget.totalUsd;
+  const needed = n * perJobLimit;
+
+  if (needed > remaining) {
+    console.error(`${RED}Budget insufficient for ${n} instances.${RESET}`);
+    console.error(`${DIM}  Remaining: $${remaining.toFixed(2)}, needed: $${needed.toFixed(2)} (${n} × $${perJobLimit.toFixed(2)})${RESET}`);
+    console.error(`${DIM}  Raise budget.dailyCostLimitUsd or reduce --parallel count.${RESET}`);
+    process.exit(1);
+  }
+
+  console.log(`${DIM}Budget: $${remaining.toFixed(2)} remaining, $${needed.toFixed(2)} needed for ${n} instances${RESET}\n`);
+
+  // 3. Staggered launch
+  const __filename = fileURLToPath(import.meta.url);
+  const daemonScript = join(dirname(__filename), "daemon.ts");
+
+  let launched = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (let i = 1; i <= n; i++) {
+    const workerName = `worker-${i}`;
+    const workerInstDir = instanceDir(checkpointDir, workerName);
+
+    // Check if already running
+    const existingPid = readPidFile(workerInstDir);
+    if (existingPid !== null && isPidAlive(existingPid)) {
+      console.log(`  ${YELLOW}worker-${i}${RESET}: already running (PID ${existingPid}) — skipped`);
+      skipped++;
+      continue;
+    }
+
+    // Fork daemon process
+    const forkArgs = ["--start", checkpointDir, "--instance", workerName];
+    const child = fork(daemonScript, forkArgs, {
+      detached: true,
+      stdio: "ignore",
+      execArgv: ["--import", "tsx"],
+    });
+    child.unref();
+
+    if (!child.pid) {
+      console.log(`  ${RED}worker-${i}${RESET}: fork failed — no PID returned`);
+      failed++;
+      continue;
+    }
+
+    // Verify PID file written (poll up to 3s)
+    let verified = false;
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const pid = readPidFile(workerInstDir);
+      if (pid !== null) { verified = true; break; }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    if (verified) {
+      console.log(`  ${GREEN}worker-${i}${RESET}: started (PID ${child.pid})`);
+      launched++;
+    } else {
+      console.log(`  ${YELLOW}worker-${i}${RESET}: forked (PID ${child.pid}) but PID file not confirmed — check log`);
+      launched++; // Count as launched since the process did start
+    }
+
+    // Stagger: 1s delay between forks to prevent worktree race
+    if (i < n) {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  // 4. Summary
+  console.log(`\n${BOLD}Fleet Summary:${RESET} ${GREEN}${launched} launched${RESET}` +
+    (skipped > 0 ? `, ${YELLOW}${skipped} skipped${RESET}` : "") +
+    (failed > 0 ? `, ${RED}${failed} failed${RESET}` : ""));
+
+  return { launched, skipped, failed };
 }
 
 // ── Post-pipeline evaluate hook ──────────────────────────────────
@@ -892,6 +1023,16 @@ async function main(): Promise<void> {
     const socketPath = join(instDir, "daemon.sock");
 
     if (parsed.subcommand === "start") {
+      // --parallel N: launch multiple instances
+      if (parsed.parallel) {
+        if (parsed.name) {
+          console.error(`${RED}Error:${RESET} --parallel and --name are mutually exclusive`);
+          process.exit(1);
+        }
+        await startParallelInstances(parsed.parallel, checkpointDir, parsed.projectDir, parsed.configPath);
+        return;
+      }
+
       // Check if daemon instance is already running
       const existingPid = readPidFile(instDir);
       if (existingPid !== null && isPidAlive(existingPid)) {
@@ -905,6 +1046,13 @@ async function main(): Promise<void> {
         console.error(`${RED}No daemon config found at:${RESET} ${configPath}`);
         console.error(`${DIM}Create a daemon.json config file. See docs for schema.${RESET}`);
         process.exit(1);
+      }
+
+      // Run auto-cleanup before starting
+      const { runAutoCleanup } = await import("./doctor.js");
+      const { cleaned } = await runAutoCleanup({ projectDir: parsed.projectDir });
+      if (cleaned.length > 0) {
+        console.log(`${DIM}Auto-cleanup: ${cleaned.join(", ")}${RESET}`);
       }
 
       // Fork the daemon process with instance name
@@ -1011,7 +1159,7 @@ async function main(): Promise<void> {
     if (parsed.subcommand === "status") {
       // --all or "list" subcommand: show all instances
       if (parsed.all) {
-        displayAllInstances(checkpointDir, parsed.projectDir);
+        await displayAllInstances(checkpointDir, parsed.projectDir);
         return;
       }
 
@@ -1040,6 +1188,12 @@ async function main(): Promise<void> {
           console.log(`    Cost:    $${(d.currentJob.costUsd ?? 0).toFixed(3)}`);
         }
 
+        if (d.pipelineProgress) {
+          const pp = d.pipelineProgress;
+          console.log(`  ${BOLD}Pipeline:${RESET}    ${pp.currentSkill} (${pp.skillIndex + 1}/${pp.totalSkills})${pp.claimedTodoTitle ? ` — "${pp.claimedTodoTitle}"` : ""}`);
+          console.log(`  ${BOLD}Elapsed:${RESET}     ${formatUptime(pp.elapsedSeconds)} — ${pp.commitCount} commit(s)`);
+        }
+
         if (d.oracleHealth) {
           const oh = d.oracleHealth;
           const accColor = oh.accuracyPercent >= 80 ? GREEN : oh.accuracyPercent >= 60 ? YELLOW : RED;
@@ -1062,7 +1216,7 @@ async function main(): Promise<void> {
     }
 
     if (parsed.subcommand === "list") {
-      displayAllInstances(checkpointDir);
+      await displayAllInstances(checkpointDir);
       return;
     }
 
@@ -1114,7 +1268,7 @@ async function main(): Promise<void> {
   process.exit(1);
 }
 
-function displayAllInstances(checkpointDir: string, projectDir?: string): void {
+async function displayAllInstances(checkpointDir: string, projectDir?: string): Promise<void> {
   const instances = listInstances(checkpointDir);
   const globalBudget = readGlobalBudget(checkpointDir);
 
@@ -1123,31 +1277,88 @@ function displayAllInstances(checkpointDir: string, projectDir?: string): void {
     return;
   }
 
-  // Look up active worktrees for display
-  const activeWorktrees = projectDir ? listWorktrees(projectDir) : [];
-  const worktreeByBranch = new Map(activeWorktrees.map((w) => [w.branch, w]));
-
-  console.log(`${BOLD}GaryClaw Daemon Instances${RESET}\n`);
-  console.log(`  ${BOLD}${"NAME".padEnd(16)}${"PID".padEnd(10)}${"STATUS".padEnd(12)}DAILY COST${RESET}`);
-
-  for (const inst of instances) {
-    const status = inst.alive ? `${GREEN}running${RESET}` : `${DIM}stopped${RESET}`;
-    const statusPad = inst.alive ? "running" : "stopped";
-    const instBudget = globalBudget.byInstance[inst.name];
-    const cost = instBudget ? `$${instBudget.totalUsd.toFixed(3)}` : "$0.000";
-    console.log(`  ${inst.name.padEnd(16)}${String(inst.pid).padEnd(10)}${statusPad.padEnd(12)}${cost}`);
-
-    // Show worktree info for named instances
-    if (inst.name !== "default") {
-      const wt = worktreeByBranch.get(`garyclaw/${inst.name}`);
-      if (wt) {
-        console.log(`  ${DIM}  ↳ worktree: ${wt.path}  branch: ${wt.branch}${RESET}`);
-      }
+  // Query IPC for running instances in parallel
+  const statusPromises = instances.map(async (inst) => {
+    if (!inst.alive) return null;
+    try {
+      const resp = await sendIPCRequest(inst.socketPath, { type: "status" }, 3000);
+      if (resp.ok) return resp.data as Record<string, unknown>;
+    } catch {
+      // IPC timeout — fall back to disk
     }
+    return null;
+  });
+  const statusResults = await Promise.all(statusPromises);
+
+  const budgetStr = `$${globalBudget.totalUsd.toFixed(2)}`;
+  console.log(`${BOLD}GaryClaw Daemon Fleet${RESET}${DIM}                                    Budget: ${budgetStr}${RESET}\n`);
+  console.log(`  ${BOLD}${"NAME".padEnd(17)}${"STATUS".padEnd(10)}${"SKILL".padEnd(16)}${"TODO".padEnd(28)}${"TIME".padEnd(8)}COMMITS${RESET}`);
+
+  for (let idx = 0; idx < instances.length; idx++) {
+    const inst = instances[idx];
+    const ipcData = statusResults[idx];
+    const progress = ipcData?.pipelineProgress as Record<string, unknown> | null | undefined;
+
+    let statusStr: string;
+    let statusRaw: string;
+    let skillStr = "—";
+    let todoStr = "—";
+    let timeStr = "—";
+    let commitStr = "—";
+
+    if (!inst.alive) {
+      statusStr = `${DIM}stopped${RESET}`;
+      statusRaw = "stopped";
+    } else if (ipcData && progress) {
+      statusStr = `${GREEN}running${RESET}`;
+      statusRaw = "running";
+      const skillName = String(progress.currentSkill ?? "?");
+      const skillIdx = Number(progress.skillIndex ?? 0) + 1;
+      const totalSkills = Number(progress.totalSkills ?? 1);
+      skillStr = `${skillName} ${skillIdx}/${totalSkills}`;
+
+      const todoTitle = progress.claimedTodoTitle;
+      todoStr = todoTitle ? truncateStr(String(todoTitle), 26) : "—";
+
+      const elapsed = Number(progress.elapsedSeconds ?? 0);
+      timeStr = formatElapsed(elapsed);
+
+      const commits = Number(progress.commitCount ?? 0);
+      commitStr = String(commits);
+    } else if (inst.alive) {
+      statusStr = ipcData ? `${GREEN}idle${RESET}` : `${YELLOW}running${RESET}`;
+      statusRaw = ipcData ? "idle" : "running";
+    } else {
+      statusStr = `${DIM}stopped${RESET}`;
+      statusRaw = "stopped";
+    }
+
+    // Use raw (un-colored) status for padding calculation
+    const line = `  ${inst.name.padEnd(17)}${statusRaw.padEnd(10)}${skillStr.padEnd(16)}${todoStr.padEnd(28)}${timeStr.padEnd(8)}${commitStr}`;
+    // Re-apply color to status
+    const coloredLine = line.replace(statusRaw, statusStr.padEnd(statusRaw.length + (statusStr.length - statusRaw.length)));
+    console.log(coloredLine);
   }
 
-  console.log(`${"".padEnd(48)}${"─".repeat(10)}`);
-  console.log(`${"".padEnd(38)}${BOLD}TOTAL: $${globalBudget.totalUsd.toFixed(3)}${RESET}`);
+  const todayJobCount = globalBudget.jobCount;
+  console.log(`${"".padEnd(62)}${"─".repeat(10)}`);
+  console.log(`${"".padEnd(47)}${BOLD}TOTAL: $${globalBudget.totalUsd.toFixed(2)} (${todayJobCount} jobs today)${RESET}`);
+}
+
+/**
+ * Format a single-instance enriched status display.
+ */
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
+function truncateStr(s: string, maxLen: number): string {
+  if (s.length <= maxLen) return s;
+  return s.slice(0, maxLen - 1) + "…";
 }
 
 export function formatUptime(seconds: number): string {
