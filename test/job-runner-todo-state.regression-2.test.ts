@@ -111,11 +111,11 @@ describe("Default instance qa-complete → complete promotion", () => {
     expect(deps.runPipeline).not.toHaveBeenCalled();
   });
 
-  it("does NOT promote when state is not qa-complete (e.g. merged)", async () => {
+  it("promotes merged to complete (merged is not terminal)", async () => {
     const deps = createMockDeps();
     const runner = createJobRunner(createTestConfig(), TEST_DIR, deps);
 
-    // State is "merged" — already promoted, should stay as-is
+    // State is "merged" — branch merged but not yet marked complete
     writeTodoState(TEST_DIR, "fix-login-bug", {
       title: "Fix Login Bug",
       slug: "fix-login-bug",
@@ -134,10 +134,10 @@ describe("Default instance qa-complete → complete promotion", () => {
 
     await runner.processNext();
 
-    // State should remain "merged" (not downgraded to "complete")
+    // State should be promoted to "complete" (merged → complete is natural lifecycle)
     const finalState = readTodoState(TEST_DIR, "fix-login-bug");
     expect(finalState).toBeDefined();
-    expect(finalState!.state).toBe("merged");
+    expect(finalState!.state).toBe("complete");
   });
 
   it("auto-marks TODOS.md on promotion", async () => {

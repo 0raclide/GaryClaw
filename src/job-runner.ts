@@ -832,43 +832,45 @@ export function createJobRunner(
         if (startSkill === "skip") {
           d.log("info", `TODO "${todoTitle}" already complete (${reconciledState.state}) — skipping`);
 
-          // Default instance promotion: qa-complete → complete
-          // Named instances go through auto-merge which promotes to "merged".
-          // Default instance has no merge step, so promote directly here.
-          // Check storedState (pre-reconciliation) because reconcileState may
-          // promote qa-complete → merged via artifact detection (commitsOnMain),
-          // masking the actual stored state we need to act on.
-          if (storedState && storedState.state === "qa-complete" && !jobConfig.worktreePath) {
-            try {
-              writeTodoState(stateCheckpointDir, slug, {
-                ...reconciledState,
-                state: "complete",
-                lastJobId: nextJob.id,
-                updatedAt: new Date().toISOString(),
-              });
-              d.log("info", `TODO "${todoTitle}" promoted qa-complete → complete (default instance, no merge step)`);
-
-              // Auto-mark TODOS.md
-              try {
-                const todosPath = join(jobConfig.projectDir, "TODOS.md");
-                const summary = `Completed by default instance (job ${nextJob.id}).`;
-                const marked = markTodoCompleteInFile(todosPath, todoTitle, summary);
-                if (marked) {
-                  d.log("info", `Auto-marked TODO "${todoTitle}" complete in TODOS.md`);
-                }
-              } catch (markErr) {
-                d.log("warn", `Auto-mark TODOS.md failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`);
-              }
-            } catch {
-              // Fail-open
+          // Ensure state file exists and is set to "complete" so future
+          // pre-assignment checks skip this item. Without this, artifact-detected
+          // completions (no state file) or auto-cleanup'd state files cause
+          // an infinite skip→re-enqueue→skip loop.
+          try {
+            const finalState = reconciledState.state === "qa-complete" && !jobConfig.worktreePath
+              ? "complete"  // Default instance: promote qa-complete directly (no merge step)
+              : reconciledState.state === "merged"
+                ? "complete"  // merged → complete is natural lifecycle progression
+                : reconciledState.state;
+            writeTodoState(stateCheckpointDir, slug, {
+              ...reconciledState,
+              state: finalState,
+              lastJobId: nextJob.id,
+              updatedAt: new Date().toISOString(),
+            });
+            if (finalState !== reconciledState.state) {
+              d.log("info", `TODO "${todoTitle}" promoted ${reconciledState.state} → ${finalState}`);
             }
+
+            // Auto-mark TODOS.md heading as ~~complete~~
+            try {
+              const todosPath = join(jobConfig.projectDir, "TODOS.md");
+              const summary = `Completed (detected by artifact reconciliation, job ${nextJob.id}).`;
+              const marked = markTodoCompleteInFile(todosPath, todoTitle, summary);
+              if (marked) {
+                d.log("info", `Auto-marked TODO "${todoTitle}" complete in TODOS.md`);
+              }
+            } catch (markErr) {
+              d.log("warn", `Auto-mark TODOS.md failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`);
+            }
+          } catch {
+            // Fail-open
           }
 
           nextJob.status = "complete";
           nextJob.completedAt = new Date().toISOString();
           persistState(state, checkpointDir);
-          // Continuous: re-enqueue — pre-assignment will skip this TODO via state check
-          // Use composedFrom to get original (untrimmed) skills, same as the main continuous path
+          // Continuous: re-enqueue — state file now ensures pre-assignment skips this TODO
           enqueue(nextJob.composedFrom ?? nextJob.skills, "continuous", "skip-completed re-enqueue", nextJob.designDoc);
           running = false;
           return;
