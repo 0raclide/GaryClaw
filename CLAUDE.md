@@ -36,7 +36,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
 **GitHub PR Workflow: COMPLETE** (2026-03-30) — Optional `merge.strategy: "pr"` creates structured GitHub PRs instead of direct merge. PR body includes pipeline summary, oracle decisions, test results. Auto-merge via `gh pr merge --auto`. Fallback to direct merge when `gh` unavailable. New "pr-created" TODO state. Dashboard PR stats.
-- 40 source modules, 190 test files, 3052 tests
+- 40 source modules, 191 test files, 3055 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -362,6 +362,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/types-warn.test.ts` | 3 | resolveWarnFn: callback passthrough, console.warn fallback, undefined handling |
 | `test/job-runner-todo-state.test.ts` | 10 | TODO state integration: skip complete, trim pipeline, design doc passthrough, fail-open, single-skill bypass |
 | `test/job-runner-todo-state.regression-2.test.ts` | 5 | Default instance qa-complete → complete promotion, no-promote for merged, auto-mark TODOS.md, worktree guard, fail-open |
+| `test/job-runner-todo-state.regression-3.test.ts` | 3 | pr-created auto-mark guard: no TODOS.md mark for pr-created, state preserved, merged still marks |
 | `test/auto-research.regression-3.test.ts` | 7 | Auto-research regression: extractTopicKeywords numeric-only token filtering |
 | `test/cli-todo-flag.test.ts` | 6 | parseArgs --todo flag: daemon trigger passthrough, position variants, --name combo, undefined when absent |
 | `test/cli.regression-2.test.ts` | 5 | CLI regression: formatEvent missing bootstrap_quality_check/recheck cases |
