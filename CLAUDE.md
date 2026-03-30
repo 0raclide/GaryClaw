@@ -8,7 +8,7 @@ Push code. Go to sleep. GaryClaw runs QA, remembers what failed last Tuesday, ap
 
 GaryClaw wraps Claude Code in an external harness that monitors context usage, checkpoints state, and automatically relays work across fresh sessions — making skills effectively context-infinite. On top of that foundation, it adds autonomous decision-making (Oracle with 7 principles + memory), a persistent background daemon with parallel instances, and a self-improvement loop that prioritizes its own backlog, designs solutions, implements them, reviews the implementation, and fixes bugs — all without human intervention.
 
-**The meta-story:** 722 commits. 42 source modules. The daemon built 22 of them itself — it designed its own oracle, built its own skill selection, QA'd its own code, and invented new features when the backlog ran dry. 96% of commits are daemon-generated. This isn't a tool that runs tasks — it's a system that evolves.
+**The meta-story:** 722 commits. 43 source modules. The daemon built 22 of them itself — it designed its own oracle, built its own skill selection, QA'd its own code, and invented new features when the backlog ran dry. 96% of commits are daemon-generated. This isn't a tool that runs tasks — it's a system that evolves.
 
 ---
 
@@ -43,7 +43,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Auto-Fix Loop After Revert: COMPLETE** (2026-03-30) — Post-merge revert triggers immediate `implement → qa` re-attempt. Retry cap (MAX_AUTO_FIX_RETRIES=2), budget cap (2x original job cost), enqueue-before-persist ordering, mkdir-based advisory lock, context file for implement skill discovery, doctor check #8 for stale auto-fix state, dashboard auto-fix stats.
 **SDK Failure Segment Retry: COMPLETE** (2026-03-30) — Transient error recovery in orchestrator segment loop. `isTransientError()` reuses `classifyError()` for sdk-bug + infra-issue categories. MAX_SEGMENT_RETRIES=1, 30s abort-aware delay, segment_retry event, preserves all accumulated state (monitor, issue tracker, checkpoints). PerJobCostExceededError excluded from retry.
 **Project Type Awareness: COMPLETE** (2026-03-30) — Deterministic project classification (CLAUDE.md > package.json > file patterns), cached in `.garyclaw/project-type.json`. Injected into Oracle projectContext + skill prompts. Doctor check #10 for stale cache. Bootstrap saves on detection.
-- 42 source modules, 203 test files, 3257 tests
+- 43 source modules, 206 test files, 3312 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -197,6 +197,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/skill-catalog.ts` | Static skill registry with structured metadata (name, description, useWhen, produces, cost, mode), formatSkillCatalogForPrompt for oracle injection |
 | `src/todo-state.ts` | TODO lifecycle state tracking: slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation, pipeline skill trimming |
 | `src/project-type.ts` | Project type detection: tiered classification (CLAUDE.md > package.json > file patterns), caching in `.garyclaw/project-type.json`, `formatProjectContext` for Oracle + skill prompts |
+| `src/oracle-cache.ts` | Oracle decision cache: normalizeQuestion, normalizeOptions, computeCacheKey, OracleCache class with minHits threshold, invalidation, stats tracking |
 | `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon/dashboard`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
 
 ### Key Design Decisions
@@ -391,6 +392,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/cli-todo-flag.test.ts` | 6 | parseArgs --todo flag: daemon trigger passthrough, position variants, --name combo, undefined when absent |
 | `test/cli.regression-2.test.ts` | 5 | CLI regression: formatEvent missing bootstrap_quality_check/recheck cases |
 | `test/cli.regression-3.test.ts` | 3 | CLI regression: formatEvent pipeline_oracle_adjustment kept_skipped variant |
+| `test/cli.regression-4.test.ts` | 5 | CLI regression: formatEvent oracle_cache_hit/miss/invalidated cases, question truncation |
+| `test/oracle-cache.test.ts` | 41 | normalizeQuestion, normalizeOptions, computeCacheKey, OracleCache: record, lookup, minHits threshold, invalidation, stats, TTL |
 | `test/daemon-ipc-todo.test.ts` | 4 | buildIPCHandler todoTitle passthrough: skipComposition, claimedTodoTitle, designDoc combo, absent |
 | `test/daemon-merge-config.test.ts` | 34 | Daemon merge config validation |
 | `test/daemon-registry-file-conflict.regression-1.test.ts` | 2 | Daemon registry regression: getClaimedFiles duplicate file entries per instance |
