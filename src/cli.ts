@@ -1315,7 +1315,7 @@ async function displayAllInstances(checkpointDir: string, projectDir?: string): 
       const skillName = String(progress.currentSkill ?? "?");
       const skillIdx = Number(progress.skillIndex ?? 0) + 1;
       const totalSkills = Number(progress.totalSkills ?? 1);
-      skillStr = `${skillName} ${skillIdx}/${totalSkills}`;
+      skillStr = truncateStr(`${skillName} ${skillIdx}/${totalSkills}`, 15);
 
       const todoTitle = progress.claimedTodoTitle;
       todoStr = todoTitle ? truncateStr(String(todoTitle), 26) : "—";
