@@ -1048,6 +1048,22 @@ export function createJobRunner(
                   if (mergeResult.merged) {
                     d.log("info", `Fallback direct merge: merged ${mergeResult.commitCount ?? 0} commit(s)`);
                     advanceTodoToMerged(nextJob, resolvedInstanceName, parentCheckpointDir ?? checkpointDir, jobConfig.projectDir, d.log);
+
+                    // Post-merge verification (defense-in-depth) — same as direct strategy path
+                    handlePostMergeVerification({
+                      projectDir: jobConfig.projectDir,
+                      instanceName: resolvedInstanceName,
+                      jobId: nextJob.id,
+                      skills: nextJob.skills,
+                      checkpointDir,
+                      mergeConfig: jobConfig.merge,
+                      testsPassed: mergeResult.testsPassed,
+                      commitCount: mergeResult.commitCount ?? 0,
+                      log: d.log,
+                      notifyMergeReverted: d.notifyMergeReverted,
+                      job: nextJob,
+                      config: jobConfig,
+                    });
                   } else {
                     d.log("warn", `Fallback direct merge also blocked: ${mergeResult.reason}`);
                     d.notifyMergeBlocked?.(nextJob, mergeResult, jobConfig);
