@@ -1,6 +1,6 @@
 /**
- * Tests for project type wiring into prompt builders (evaluate, bootstrap)
- * and doctor check #10 (stale project type cache).
+ * Tests for project type wiring into prompt builders (evaluate, implement,
+ * prioritize, bootstrap) and doctor check #10 (stale project type cache).
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -111,6 +111,55 @@ describe("project-type-wiring", () => {
       const { buildEvaluatePrompt } = await import("../src/evaluate.js");
       const config = { projectDir: TEST_DIR } as any;
       const prompt = buildEvaluatePrompt(config, [], TEST_DIR);
+      expect(prompt).not.toContain("## Project Type");
+    });
+  });
+
+  // ── buildImplementPrompt project type injection ────────────────
+
+  describe("buildImplementPrompt project type", () => {
+    it("includes Project Type section when project has signals", async () => {
+      // Create CLAUDE.md with CLI signal
+      writeFileSync(join(TEST_DIR, "CLAUDE.md"), "# My CLI Tool\nA command-line tool for testing.");
+
+      const { buildImplementPrompt } = await import("../src/implement.js");
+      const config = { projectDir: TEST_DIR } as any;
+      const prompt = await buildImplementPrompt(config, [], TEST_DIR);
+      expect(prompt).toContain("## Project Type");
+      expect(prompt).toContain("CLI tool");
+    });
+
+    it("omits Project Type section for unknown projects", async () => {
+      // No CLAUDE.md, no package.json → unknown type
+      const { buildImplementPrompt } = await import("../src/implement.js");
+      const config = { projectDir: TEST_DIR } as any;
+      const prompt = await buildImplementPrompt(config, [], TEST_DIR);
+      expect(prompt).not.toContain("## Project Type");
+    });
+  });
+
+  // ── buildPrioritizePrompt project type injection ──────────────
+
+  describe("buildPrioritizePrompt project type", () => {
+    it("includes Project Type section when project has signals", async () => {
+      // Create CLAUDE.md with CLI signal + TODOS.md so prompt builds fully
+      writeFileSync(join(TEST_DIR, "CLAUDE.md"), "# My CLI Tool\nA command-line tool for testing.");
+      writeFileSync(join(TEST_DIR, "TODOS.md"), "# TODOS\n\n## P1: Something\nDo the thing.\n");
+
+      const { buildPrioritizePrompt } = await import("../src/prioritize.js");
+      const config = { projectDir: TEST_DIR } as any;
+      const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+      expect(prompt).toContain("## Project Type");
+      expect(prompt).toContain("CLI tool");
+    });
+
+    it("omits Project Type section for unknown projects", async () => {
+      // No CLAUDE.md, no package.json → unknown type
+      writeFileSync(join(TEST_DIR, "TODOS.md"), "# TODOS\n\n## P1: Something\nDo the thing.\n");
+
+      const { buildPrioritizePrompt } = await import("../src/prioritize.js");
+      const config = { projectDir: TEST_DIR } as any;
+      const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
       expect(prompt).not.toContain("## Project Type");
     });
   });
