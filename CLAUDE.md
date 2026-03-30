@@ -36,7 +36,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
 **GitHub PR Workflow: COMPLETE** (2026-03-30) — Optional `merge.strategy: "pr"` creates structured GitHub PRs instead of direct merge. PR body includes pipeline summary, oracle decisions, test results. Auto-merge via `gh pr merge --auto`. Fallback to direct merge when `gh` unavailable. New "pr-created" TODO state. Dashboard PR stats.
-**Auto-Fix Loop After Revert: COMPLETE** (2026-03-30) — Post-merge revert triggers immediate `implement → qa` re-attempt. Retry cap (MAX_AUTO_FIX_RETRIES=2), budget cap (2x original job cost), enqueue-before-persist ordering, mkdir-based advisory lock, context file for implement skill discovery, doctor check #9 for stale auto-fix state, dashboard auto-fix stats.
+**Auto-Fix Loop After Revert: COMPLETE** (2026-03-30) — Post-merge revert triggers immediate `implement → qa` re-attempt. Retry cap (MAX_AUTO_FIX_RETRIES=2), budget cap (2x original job cost), enqueue-before-persist ordering, mkdir-based advisory lock, context file for implement skill discovery, doctor check #8 for stale auto-fix state, dashboard auto-fix stats.
 - 41 source modules, 199 test files, 3185 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
@@ -180,7 +180,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/dashboard.ts` | Dogfood dashboard: job/oracle/budget aggregation, health score, markdown formatting |
 | `src/auto-research.ts` | Auto-research trigger: keyword extraction, topic grouping, freshness-aware enqueue |
 | `src/codebase-summary.ts` | Codebase summary persistence: observation extraction, dedup, token budget, relay formatting |
-| `src/doctor.ts` | Self-diagnostic command: 8 subsystem checks, --fix/--json flags, stale PID detection, orphaned TODO state, stale budget locks |
+| `src/doctor.ts` | Self-diagnostic command: 9 subsystem checks, --fix/--json flags, stale PID detection, orphaned TODO state, stale budget locks, stale auto-fix state |
 | `src/evaluate.ts` | Dogfood campaign evaluator: bootstrap quality, oracle performance, pipeline health, improvement extraction, post-evaluate deterministic analysis |
 | `src/auto-fix.ts` | Auto-fix coordinator: post-merge revert → immediate implement+qa re-attempt, retry cap, budget cap, advisory lock, context file writing, cost accumulation |
 | `src/failure-taxonomy.ts` | 10-category failure classification, failures.jsonl persistence, notification integration |
