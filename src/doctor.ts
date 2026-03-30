@@ -1,9 +1,9 @@
 /**
  * Doctor — self-diagnostic command for GaryClaw.
  *
- * Runs 8 subsystem checks: stale PIDs, oracle memory integrity, orphaned worktrees,
+ * Runs 9 subsystem checks: stale PIDs, oracle memory integrity, orphaned worktrees,
  * stuck reflection locks, global budget status, orphaned TODO state, stale budget locks,
- * and auth verification.
+ * stale auto-fix state, and auth verification.
  *
  * Default mode is diagnose-only (no side effects). Pass --fix to auto-heal
  * fixable issues. Pass --json for machine-readable output.
@@ -18,6 +18,7 @@ import { listWorktrees, removeWorktree, branchName, resolveBaseBranch } from "./
 import { validateGlobalBudget } from "./daemon-registry.js";
 import { BUDGET_LOCK_DIR_NAME } from "./budget-lock.js";
 import { REFLECTION_LOCK_DIR_NAME } from "./reflection-lock.js";
+import { readAutoFixState } from "./auto-fix.js";
 import { execFileSync } from "node:child_process";
 import type { GlobalBudget, OracleMetrics } from "./types.js";
 
@@ -80,6 +81,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   checks.push(checkBudgetStatus(options));
   checks.push(checkOrphanedTodoState(options));
   checks.push(checkStaleBudgetLocks(options));
+  checks.push(checkStaleAutoFixState(options));
 
   // Auth check: async, with timeout
   if (!options.skipAuth) {
@@ -1072,6 +1074,76 @@ export function checkStaleBudgetLocks(options: DoctorOptions): CheckResult {
     message: "Stale budget lock detected",
     details,
     fixable: true,
+  };
+}
+
+// ── Check 9: Stale Auto-Fix State ────────────────────────────────
+
+export function checkStaleAutoFixState(options: DoctorOptions): CheckResult {
+  const checkpointDir = join(options.projectDir, ".garyclaw");
+  const details: string[] = [];
+  let hasIssue = false;
+  let fixedCount = 0;
+
+  // Read auto-fix state (readAutoFixState already prunes entries > 24h on read)
+  const state = readAutoFixState(checkpointDir);
+  const entries = Object.entries(state.entries);
+
+  if (entries.length === 0) {
+    return {
+      name: "auto-fix-state",
+      status: "PASS",
+      message: "No stale auto-fix state",
+      fixable: false,
+    };
+  }
+
+  // Check for entries at max retries with no corresponding bug TODO in TODOS.md
+  const todosPath = join(options.projectDir, "TODOS.md");
+  let todosContent: string | null = null;
+  try {
+    if (existsSync(todosPath)) {
+      todosContent = readFileSync(todosPath, "utf-8");
+    }
+  } catch {
+    // Can't read TODOS.md — skip this sub-check
+  }
+
+  for (const [sha, entry] of entries) {
+    if (entry.retryCount >= 2) {
+      // Max retries reached — check if bug TODO exists
+      const todoPattern = sha.slice(0, 8);
+      const hasTodo = todosContent !== null && todosContent.includes(todoPattern);
+
+      if (!hasTodo) {
+        hasIssue = true;
+        details.push(
+          `Auto-fix for ${sha.slice(0, 8)} exhausted ${entry.retryCount} retries but no matching bug TODO found`,
+        );
+      } else {
+        details.push(
+          `Auto-fix for ${sha.slice(0, 8)} exhausted ${entry.retryCount} retries — bug TODO exists (expected)`,
+        );
+      }
+    }
+  }
+
+  if (!hasIssue) {
+    return {
+      name: "auto-fix-state",
+      status: details.length > 0 ? "INFO" : "PASS",
+      message: `${entries.length} auto-fix state entry(s), all healthy`,
+      details: details.length > 0 ? details : undefined,
+      fixable: false,
+    };
+  }
+
+  return {
+    name: "auto-fix-state",
+    status: "WARN",
+    message: `${entries.length} auto-fix state entry(s) with issues`,
+    details,
+    fixable: false,
   };
 }
 
