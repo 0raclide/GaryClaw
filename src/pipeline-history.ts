@@ -242,6 +242,9 @@ export interface CategorySkillStat {
  *   "skipped"  = skill appears in record.skippedSkills
  *   "included" = skill appears in record.skills
  *
+ * Failure definition: outcome === "failure" only. "partial" does NOT count as failure.
+ * This is stricter than computeSkipRiskScores() which uses outcome !== "success".
+ *
  * Filters to pairs with MIN_CATEGORY_SAMPLES+ total outcomes.
  * Returns sorted by failure rate delta (skippedFailureRate - includedFailureRate), biggest gap first.
  *
@@ -266,7 +269,7 @@ export function computeCategoryStats(
       if (!acc.has(key)) acc.set(key, { skipped: { total: 0, failures: 0 }, included: { total: 0, failures: 0 } });
       const entry = acc.get(key)!;
       entry.skipped.total++;
-      if (o.outcome !== "success") entry.skipped.failures++;
+      if (o.outcome === "failure") entry.skipped.failures++;
     }
 
     for (const skill of o.skills) {
@@ -274,7 +277,7 @@ export function computeCategoryStats(
       if (!acc.has(key)) acc.set(key, { skipped: { total: 0, failures: 0 }, included: { total: 0, failures: 0 } });
       const entry = acc.get(key)!;
       entry.included.total++;
-      if (o.outcome !== "success") entry.included.failures++;
+      if (o.outcome === "failure") entry.included.failures++;
     }
   }
 

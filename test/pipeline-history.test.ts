@@ -573,7 +573,7 @@ describe("computeCategoryStats", () => {
     }
   });
 
-  it("treats 'partial' outcome as non-success (failure)", () => {
+  it("treats 'partial' outcome as non-failure (stricter than computeSkipRiskScores)", () => {
     const outcomes = [
       makeRecord({ taskCategory: "infra", skills: ["implement"], skippedSkills: ["qa"], outcome: "partial" as "success" | "partial" | "failure" }),
       makeRecord({ taskCategory: "infra", skills: ["implement"], skippedSkills: ["qa"], outcome: "partial" as "success" | "partial" | "failure" }),
@@ -582,7 +582,8 @@ describe("computeCategoryStats", () => {
     const stats = computeCategoryStats(outcomes);
     const qa = stats.find(s => s.skill === "qa" && s.category === "infra");
     expect(qa).toBeDefined();
-    expect(qa!.skippedFailureRate).toBeCloseTo(66.67, 0);
+    // "partial" does NOT count as failure — only "failure" does
+    expect(qa!.skippedFailureRate).toBe(0);
   });
 
   it("MIN_CATEGORY_SAMPLES constant is 3", () => {
