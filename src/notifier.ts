@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Job, DaemonConfig } from "./types.js";
-import type { MergeResult, PostMergeVerifyResult } from "./worktree.js";
+import type { MergeResult, PostMergeVerifyResult, PullRequestResult } from "./worktree.js";
 
 /**
  * Send a macOS notification for a completed job.
@@ -102,6 +102,20 @@ export function notifyMergeReverted(
   const instanceLabel = config.name ? ` [${config.name}]` : "";
   const title = `GaryClaw${instanceLabel} MERGE REVERTED`;
   const message = `Post-merge tests failed for /${job.skills.join(" → /")}. Auto-reverted ${verifyResult.mergeSha.slice(0, 8)}. Bug TODO created.`;
+  sendNotification(title, message);
+}
+
+/**
+ * Send a macOS notification when a PR is created.
+ * Gated by notifications.onComplete — PR creation is a success-class event.
+ */
+export function notifyPrCreated(job: Job, prResult: PullRequestResult, config: DaemonConfig): void {
+  if (!config.notifications.enabled || !config.notifications.onComplete) return;
+
+  const instanceLabel = config.name ? ` [${config.name}]` : "";
+  const title = `GaryClaw${instanceLabel} PR Created`;
+  const autoMergeTag = prResult.autoMergeEnabled ? " (auto-merge enabled)" : "";
+  const message = `PR #${prResult.prNumber ?? "?"} for /${job.skills.join(" → /")}${autoMergeTag}`;
   sendNotification(title, message);
 }
 
