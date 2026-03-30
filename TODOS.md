@@ -446,12 +446,11 @@ Already implemented in commit b8c5ac8. Invented by prioritize without checking e
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-30 (ISSUE-005, deferred)
 
-## ~~P4: IPC Server Connection Timeout~~ — COMPLETE (2026-03-30)
-
-Completed by default instance (job job-1774882228599-fe2217).
-
+## P4: IPC Server Connection Timeout
 
 **What:** The Unix domain socket IPC server in `daemon-ipc.ts` has no per-connection timeout. A hung CLI process that connects but never sends data keeps the connection open indefinitely, with the data buffer accumulating with no cap.
+
+**Note:** Falsely marked COMPLETE by artifact reconciliation (stale todo-state file). Reverted by /qa on 2026-03-30.
 
 **Fix:** Add `socket.setTimeout(30000)` with cleanup handler.
 
