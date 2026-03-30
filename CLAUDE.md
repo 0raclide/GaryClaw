@@ -35,7 +35,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
-- 40 source modules + CLI, 182 test files, 2963 tests
+- 40 source modules + CLI, 183 test files, 2973 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -392,6 +392,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-rate-limit.regression-1.test.ts` | 1 | Job runner rate limit regression: costUsd reset on re-queue after hold expiry |
 | `test/job-runner-resume.regression-1.test.ts` | 2 | Job runner resume regression: abandoned job FailureRecord retryable flag |
 | `test/job-runner-resume.regression-2.test.ts` | 2 | Job runner resume regression: rate_limited crash recovery, costUsd reset |
+| `test/job-runner-auth-hold.test.ts` | 10 | Auth failure hold: rate_limited on auth error, 30-min fallback, global budget propagation, MIN_COST_FOR_REENQUEUE spin loop prevention |
 | `test/job-runner.regression-4.test.ts` | 7 | Job runner regression: parsePriorityPickTitle edge cases |
 | `test/job-runner.regression-5.test.ts` | 4 | Job runner regression: backward compat missing config.merge |
 | `test/job-runner-skip-composition.test.ts` | 3 | skipComposition bypass: flag preservation, original skills retention, composedFrom not set |
