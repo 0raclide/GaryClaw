@@ -854,7 +854,7 @@ export function createJobRunner(
 
             // Auto-mark TODOS.md heading as ~~complete~~ only for terminal states.
             // pr-created is NOT terminal — the PR hasn't merged yet.
-            if (finalState === "complete" || finalState === "merged") {
+            if (finalState === "complete") {
               try {
                 const todosPath = join(jobConfig.projectDir, "TODOS.md");
                 const summary = `Completed (detected by artifact reconciliation, job ${nextJob.id}).`;
