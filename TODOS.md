@@ -477,11 +477,11 @@ Already implemented in commit b8c5ac8. Invented by prioritize without checking e
 
 **What:** Replace the static 5-skill lookup table in `pipeline-compose.ts` with two modes:
 
-**Mode 1 — Deterministic Override:** When the user specifies both a TODO item and a skill sequence via `daemon trigger --todo "Title" skill1 skill2 ...`, bypass composition entirely. No intersection, no stripping. The user owns the pipeline. Requires new `--todo` flag on `daemon trigger` + a `skipComposition` flag on Job.
+**Mode 1 — Deterministic Override: COMPLETE (2026-03-30).** When the user specifies both a TODO item and a skill sequence via `daemon trigger --todo "Title" skill1 skill2 ...`, bypass composition entirely. No intersection, no stripping. The user owns the pipeline.
 
-**Mode 2 — Oracle Task Analysis:** When no skills are specified (or the daemon auto-picks via prioritize/continuous), the Oracle reasons about what the task actually needs by:
+**Mode 2 — Oracle Task Analysis (remaining work):** When no skills are specified (or the daemon auto-picks via prioritize/continuous), the Oracle reasons about what the task actually needs by:
 1. Reading the TODO description and classifying the task nature (visual/UX, architectural, bug fix, refactor, performance, infra)
-2. Consulting a **skill catalog** — a structured description of every available gstack skill (what it does, when it's useful, what it produces). Built by scanning `.claude/skills/` directories or a static registry.
+2. Consulting a **skill catalog** — a structured description of every available gstack skill (what it does, when it's useful, what it produces). ~~Built by scanning `.claude/skills/` directories or a static registry.~~ DONE: `src/skill-catalog.ts` static registry (10 skills, plan/exec modes).
 3. Selecting the optimal skill sequence based on task nature + skill capabilities + history
 4. Learning from outcomes: "last time we skipped design-review on a UI task, QA found 8 visual issues"
 
@@ -490,15 +490,15 @@ Already implemented in commit b8c5ac8. Invented by prioritize without checking e
 **Immediate fix (ship first):** ~~Pass through unknown skills in `composePipeline()` — skills not in `FULL_PIPELINE` should survive intersection untouched.~~ DONE (commit 1a519db, 2026-03-30). This unblocks manual triggers with gstack skills while the Oracle skill selection is built.
 
 **Implementation:**
-- `src/pipeline-compose.ts`: Fix intersection to preserve unknown skills (immediate)
-- `src/cli.ts`: Add `--todo` flag to `daemon trigger` for deterministic mode
-- `src/types.ts`: Add `skipComposition` flag on Job, `todoTitle` on trigger
-- `src/job-runner.ts`: When `skipComposition` is true, bypass `composePipeline()` entirely
-- New: `src/skill-catalog.ts` — scan available skills, build structured descriptions
-- `src/oracle.ts` or `src/prioritize.ts`: Oracle prompt for skill selection given task + catalog
-- `src/pipeline-history.ts`: Track per-skill outcomes by task category for learning
+- ~~`src/pipeline-compose.ts`: Fix intersection to preserve unknown skills (immediate)~~ DONE
+- ~~`src/cli.ts`: Add `--todo` flag to `daemon trigger` for deterministic mode~~ DONE
+- ~~`src/types.ts`: Add `skipComposition` flag on Job, `todoTitle` on trigger~~ DONE
+- ~~`src/job-runner.ts`: When `skipComposition` is true, bypass `composePipeline()` entirely~~ DONE
+- ~~New: `src/skill-catalog.ts` — scan available skills, build structured descriptions~~ DONE (10 skills, 15 tests)
+- ~~`src/oracle.ts` or `src/prioritize.ts`: Oracle prompt for skill selection given task + catalog~~ DONE (injected into prioritize prompt)
+- `src/pipeline-history.ts`: Track per-skill outcomes by task category for learning (Mode 2)
 
-**Effort:** M (human: ~1 week / CC: ~1 hour)
+**Effort:** M (human: ~1 week / CC: ~1 hour). Mode 1 complete, Mode 2 remaining effort ~S.
 **Depends on:** Nothing (immediate fix is XS, full Oracle mode is M)
 **Added by:** Human on 2026-03-30 (discovered when daemon stripped design skills from P0 mobile vault task)
 
