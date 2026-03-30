@@ -34,7 +34,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
-- 38 source modules + CLI, 170 test files, 2828 tests
+- 38 source modules + CLI, 177 test files, 2906 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -307,7 +307,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/reflection-pipeline-outcome.test.ts` | 19 | buildPipelineOutcome: success/acceptable/failure, skipped skills, compositionMethod; countPipelineOutcomes: null/empty/positive/mixed |
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
-| `test/prioritize.test.ts` | 42 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt |
+| `test/prioritize.test.ts` | 66 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact |
 | `test/prioritize-review-findings.test.ts` | 11 | loadUnresolvedReviewFindings: flat/instance layouts, action keywords, skip filters, review skill gating, job dir limit, error handling |
 | `test/worktree.test.ts` | 28 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
 | `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
@@ -389,6 +389,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner.regression-6.test.ts` | 2 | Job runner regression: 'continuous' trigger source validity on Job.triggeredBy |
 | `test/job-runner.regression-7.test.ts` | 2 | Job runner regression: 'daemon-crash' must be valid FailureCategory |
 | `test/job-runner.regression-8.test.ts` | 2 | Job runner regression: readTodoState import resolves and round-trips state |
+| `test/job-runner-post-merge.regression-1.test.ts` | 3 | Post-merge verification regression: git rev-parse failure, HEAD re-read failure, bug TODO markdown format |
+| `test/job-runner-post-merge.regression-2.test.ts` | 3 | Post-merge verification regression: branchName() sanitization in bug TODO body |
 | `test/merge-audit.test.ts` | 11 | Merge audit log: append, read, truncation, JSONL format |
 | `test/notifier.regression-1.test.ts` | 5 | Notifier regression: notifyJobResumed message format with notifications enabled |
 | `test/notifier.regression-2.test.ts` | 7 | Notifier regression: notifyMergeBlocked formatting, gating, instance labels |
