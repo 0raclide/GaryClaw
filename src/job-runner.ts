@@ -1525,6 +1525,7 @@ function buildGaryClawConfig(
     todoTitle: job.claimedTodoTitle,
     instanceName: config.name,
     rootCheckpointDir,
+    autoFixMergeSha: job.autoFixMergeSha,
   };
 }
 

@@ -156,6 +156,8 @@ export interface GaryClawConfig {
   instanceName?: string;
   /** Root checkpoint directory (e.g., .garyclaw/daemons/worker-1/). Set by job-runner for TODO state persistence. */
   rootCheckpointDir?: string;
+  /** Original merge SHA that was reverted, for auto-fix context lookup. */
+  autoFixMergeSha?: string;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────

@@ -316,17 +316,23 @@ export async function buildImplementPrompt(
  * from the config's autoFixMergeSha or a glob of available context files.
  */
 export function loadAutoFixContext(projectDir: string, config: GaryClawConfig): string | null {
-  // Only load when there's an auto-fix context hint
-  // The autoFixMergeSha is threaded through GaryClawConfig when the job has it
   const contextDir = join(projectDir, ".garyclaw", "auto-fix-context");
   if (!existsSync(contextDir)) return null;
 
   try {
+    // Preferred: direct lookup by SHA when threaded through config
+    if (config.autoFixMergeSha) {
+      const directPath = join(contextDir, `${config.autoFixMergeSha.slice(0, 12)}.md`);
+      if (existsSync(directPath)) {
+        const content = readFileSync(directPath, "utf-8");
+        return content.slice(0, 4000);
+      }
+    }
+
+    // Fallback: pick the most recently modified context file
     const files = readdirSync(contextDir).filter(f => f.endsWith(".md"));
     if (files.length === 0) return null;
 
-    // Pick the most recently modified context file (there should typically be just one
-    // relevant to this job, but if multiple exist, newest is most relevant)
     let newest: { path: string; mtime: number } | null = null;
     for (const file of files) {
       const fullPath = join(contextDir, file);
