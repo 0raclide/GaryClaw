@@ -191,7 +191,10 @@ Implemented by default daemon. Rule-based skill sequence selection based on effo
 **Approach: Bundle skill selection into prioritize.** Prioritize already evaluates each TODO's priority, effort, risk, and context. Extend its output in `priority.md` to include a "Recommended Pipeline" section:
 
 ```markdown
-## P3: Code Quality Sweep
+## ~~P3: Code Quality Sweep~~ — COMPLETE (2026-03-30)
+
+Completed by default instance (job job-1774878955249-0d5486).
+
 
 **What:** Five independent XS fixes with no architectural risk. Items are fully specified, no shared interfaces affected.
 
