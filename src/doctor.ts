@@ -694,6 +694,54 @@ export async function checkAuth(
   }
 }
 
+// ── Auto-cleanup (callable from daemon start / --parallel) ──────
+
+export interface AutoCleanupOptions {
+  projectDir: string;
+  dailyCostLimitUsd?: number;
+  maxJobsPerDay?: number;
+}
+
+/**
+ * Run fixable doctor checks and return what was cleaned.
+ * Used by `daemon start` and `--parallel` to auto-heal stale state.
+ *
+ * Each cleanup category is independent and fail-open: partial cleanup
+ * never blocks daemon start. Auth is always skipped (checked separately).
+ */
+export async function runAutoCleanup(options: AutoCleanupOptions): Promise<{ cleaned: string[] }> {
+  const cleaned: string[] = [];
+  const fixOptions: DoctorOptions = {
+    projectDir: options.projectDir,
+    fix: true,
+    skipAuth: true,
+    dailyCostLimitUsd: options.dailyCostLimitUsd,
+    maxJobsPerDay: options.maxJobsPerDay,
+  };
+
+  // Each check is independent — failures in one don't block others
+  const checks = [
+    { fn: () => checkStalePids(fixOptions), label: "stale PIDs" },
+    { fn: () => checkOrphanedWorktrees(fixOptions), label: "orphaned worktrees" },
+    { fn: () => checkReflectionLocks(fixOptions), label: "stuck reflection locks" },
+    { fn: () => checkBudgetStatus(fixOptions), label: "budget" },
+    { fn: () => checkOrphanedTodoState(fixOptions), label: "orphaned TODO state" },
+  ];
+
+  for (const check of checks) {
+    try {
+      const result = check.fn();
+      if (result.fixed) {
+        cleaned.push(check.label);
+      }
+    } catch {
+      // Fail-open: log nothing, continue to next check
+    }
+  }
+
+  return { cleaned };
+}
+
 // ── CLI formatting ──────────────────────────────────────────────
 
 const RESET = "\x1b[0m";
