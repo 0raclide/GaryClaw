@@ -38,7 +38,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **GitHub PR Workflow: COMPLETE** (2026-03-30) — Optional `merge.strategy: "pr"` creates structured GitHub PRs instead of direct merge. PR body includes pipeline summary, oracle decisions, test results. Auto-merge via `gh pr merge --auto`. Fallback to direct merge when `gh` unavailable. New "pr-created" TODO state. Dashboard PR stats.
 **Auto-Fix Loop After Revert: COMPLETE** (2026-03-30) — Post-merge revert triggers immediate `implement → qa` re-attempt. Retry cap (MAX_AUTO_FIX_RETRIES=2), budget cap (2x original job cost), enqueue-before-persist ordering, mkdir-based advisory lock, context file for implement skill discovery, doctor check #8 for stale auto-fix state, dashboard auto-fix stats.
 **SDK Failure Segment Retry: COMPLETE** (2026-03-30) — Transient error recovery in orchestrator segment loop. `isTransientError()` reuses `classifyError()` for sdk-bug + infra-issue categories. MAX_SEGMENT_RETRIES=1, 30s abort-aware delay, segment_retry event, preserves all accumulated state (monitor, issue tracker, checkpoints). PerJobCostExceededError excluded from retry.
-- 41 source modules, 200 test files, 3203 tests
+**Project Type Awareness: COMPLETE** (2026-03-30) — Deterministic project classification (CLAUDE.md > package.json > file patterns), cached in `.garyclaw/project-type.json`. Injected into Oracle projectContext + skill prompts. Doctor check #10 for stale cache. Bootstrap saves on detection.
+- 42 source modules, 202 test files, 3248 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -181,7 +182,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/dashboard.ts` | Dogfood dashboard: job/oracle/budget aggregation, health score, markdown formatting |
 | `src/auto-research.ts` | Auto-research trigger: keyword extraction, topic grouping, freshness-aware enqueue |
 | `src/codebase-summary.ts` | Codebase summary persistence: observation extraction, dedup, token budget, relay formatting |
-| `src/doctor.ts` | Self-diagnostic command: 9 subsystem checks, --fix/--json flags, stale PID detection, orphaned TODO state, stale budget locks, stale auto-fix state |
+| `src/doctor.ts` | Self-diagnostic command: 10 subsystem checks, --fix/--json flags, stale PID detection, orphaned TODO state, stale budget locks, stale auto-fix state, stale project type cache |
 | `src/evaluate.ts` | Dogfood campaign evaluator: bootstrap quality, oracle performance, pipeline health, improvement extraction, post-evaluate deterministic analysis |
 | `src/auto-fix.ts` | Auto-fix coordinator: post-merge revert → immediate implement+qa re-attempt, retry cap, budget cap, advisory lock, context file writing, cost accumulation |
 | `src/failure-taxonomy.ts` | 10-category failure classification, failures.jsonl persistence, notification integration |
@@ -191,6 +192,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/pipeline-history.ts` | Pipeline outcome history: JSONL I/O, skip-risk scoring with exponential decay, circuit breaker for Oracle composition, failure rate computation |
 | `src/skill-catalog.ts` | Static skill registry with structured metadata (name, description, useWhen, produces, cost, mode), formatSkillCatalogForPrompt for oracle injection |
 | `src/todo-state.ts` | TODO lifecycle state tracking: slugify, state I/O, Levenshtein fallback, artifact detection, reconciliation, pipeline skill trimming |
+| `src/project-type.ts` | Project type detection: tiered classification (CLAUDE.md > package.json > file patterns), caching in `.garyclaw/project-type.json`, `formatProjectContext` for Oracle + skill prompts |
 | `src/cli.ts` | `garyclaw run/resume/replay/research/oracle/daemon/dashboard`, multi-skill, daemon subcommands, `--name`/`--all`/`--cleanup` |
 
 ### Key Design Decisions
@@ -337,7 +339,9 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/auto-research.regression-1.test.ts` | 19 | isTopicGroupFresh direct tests, seed-keyword clustering, 3-char acronym preservation |
 | `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
 | `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
-| `test/doctor.test.ts` | 59 | 9 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state, stale budget locks, stale auto-fix state |
+| `test/project-type.test.ts` | 34 | detectProjectType: tiered detection (CLAUDE.md > package.json > file patterns), loadProjectType, saveProjectType, ensureProjectType, formatProjectContext, hasWebUI, hasTestSuite, testCommand |
+| `test/project-type-wiring.test.ts` | 8 | Doctor check #10 (stale project type cache), buildEvaluatePrompt project type injection, bootstrap saveProjectType integration |
+| `test/doctor.test.ts` | 62 | 10 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state, stale budget locks, stale auto-fix state, stale project type cache |
 | `test/failure-taxonomy.test.ts` | 77 | 10 failure categories, table-driven classification, failures.jsonl, notification integration, isTransientError |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
 | `test/orchestrator.test.ts` | 47 | auth, success, maxTurns, errors, abort, relay, adaptive turns, heavy tool tracking, --no-adaptive config, codebase summary extraction |
@@ -369,6 +373,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/qa-regressions.regression-1.test.ts` | 9 | QA regression: issue extraction edge cases |
 | `test/qa-regressions.regression-2.test.ts` | 10 | QA regression: report formatting edge cases |
 | `test/bootstrap.regression-1.test.ts` | 14 | Bootstrap regression: walkFileTree permission errors, detectTechStack edge cases, safeReadFile edge cases, budget edge cases |
+| `test/project-type.test.ts` | 34 | detectProjectType: tiered detection (CLAUDE.md, package.json, file patterns), loadProjectType, saveProjectType, ensureProjectType, formatProjectContext, hasWebUI, hasTestSuite, tier priority |
 | `test/file-conflict.test.ts` | 30 | extractPredictedFiles, expandWithDependencies, hasFileOverlap, DEFAULT_FILE_DEPS validation |
 | `test/daemon-registry-file-conflict.test.ts` | 7 | getClaimedFiles: cross-instance scanning, self-exclusion, status filtering, aggregation |
 | `test/job-runner-file-conflict.test.ts` | 8 | File conflict integration: skip conflicting items, fall-through, fail-open, custom dep map, idle on all blocked |
