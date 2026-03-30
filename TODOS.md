@@ -487,7 +487,7 @@ Already implemented in commit b8c5ac8. Invented by prioritize without checking e
 
 **Why:** The current static table only knows 5 skills (`prioritize, office-hours, implement, plan-eng-review, qa`). Any gstack skill (`plan-design-review`, `design-review`, `design-consultation`, `browse`, `qa-only`, etc.) gets silently killed by the intersection logic in `composePipeline()`. This caused a P0 mobile UI/UX task to have its design skills stripped and then get deprioritized because the pipeline couldn't do design work. The Oracle should understand that a visual UX task needs design skills, an architectural change needs eng review, and a simple bug fix just needs implement + qa.
 
-**Immediate fix (ship first):** Pass through unknown skills in `composePipeline()` — skills not in `FULL_PIPELINE` should survive intersection untouched. This unblocks manual triggers with gstack skills while the Oracle skill selection is built.
+**Immediate fix (ship first):** ~~Pass through unknown skills in `composePipeline()` — skills not in `FULL_PIPELINE` should survive intersection untouched.~~ DONE (commit 1a519db, 2026-03-30). This unblocks manual triggers with gstack skills while the Oracle skill selection is built.
 
 **Implementation:**
 - `src/pipeline-compose.ts`: Fix intersection to preserve unknown skills (immediate)
