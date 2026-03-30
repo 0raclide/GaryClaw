@@ -81,3 +81,86 @@ describe("validateDaemonConfig merge field", () => {
     expect(validateDaemonConfig(createValidConfig({ skipValidation: "yes" } as any))).toBe("merge.skipValidation must be a boolean");
   });
 });
+
+describe("validateDaemonConfig merge PR fields", () => {
+  it('accepts strategy "direct"', () => {
+    expect(validateDaemonConfig(createValidConfig({ strategy: "direct" }))).toBeNull();
+  });
+
+  it('accepts strategy "pr"', () => {
+    expect(validateDaemonConfig(createValidConfig({ strategy: "pr" }))).toBeNull();
+  });
+
+  it("rejects invalid strategy", () => {
+    expect(validateDaemonConfig(createValidConfig({ strategy: "github" } as any))).toBe('merge.strategy must be "direct" or "pr"');
+  });
+
+  it("accepts prAutoMerge boolean", () => {
+    expect(validateDaemonConfig(createValidConfig({ strategy: "pr", prAutoMerge: false }))).toBeNull();
+  });
+
+  it("rejects non-boolean prAutoMerge", () => {
+    expect(validateDaemonConfig(createValidConfig({ prAutoMerge: "yes" } as any))).toBe("merge.prAutoMerge must be a boolean");
+  });
+
+  it('accepts prMergeMethod "squash"', () => {
+    expect(validateDaemonConfig(createValidConfig({ prMergeMethod: "squash" }))).toBeNull();
+  });
+
+  it('accepts prMergeMethod "merge"', () => {
+    expect(validateDaemonConfig(createValidConfig({ prMergeMethod: "merge" }))).toBeNull();
+  });
+
+  it('accepts prMergeMethod "rebase"', () => {
+    expect(validateDaemonConfig(createValidConfig({ prMergeMethod: "rebase" }))).toBeNull();
+  });
+
+  it("rejects invalid prMergeMethod", () => {
+    expect(validateDaemonConfig(createValidConfig({ prMergeMethod: "fast-forward" } as any))).toBe('merge.prMergeMethod must be "squash", "merge", or "rebase"');
+  });
+
+  it("accepts valid prLabels", () => {
+    expect(validateDaemonConfig(createValidConfig({ prLabels: ["bot", "auto"] }))).toBeNull();
+  });
+
+  it("accepts empty prLabels array", () => {
+    expect(validateDaemonConfig(createValidConfig({ prLabels: [] }))).toBeNull();
+  });
+
+  it("rejects non-array prLabels", () => {
+    expect(validateDaemonConfig(createValidConfig({ prLabels: "bot" } as any))).toBe("merge.prLabels must be an array of strings");
+  });
+
+  it("rejects prLabels with non-string elements", () => {
+    expect(validateDaemonConfig(createValidConfig({ prLabels: [42] } as any))).toBe("merge.prLabels must be an array of strings");
+  });
+
+  it("accepts valid prReviewers", () => {
+    expect(validateDaemonConfig(createValidConfig({ prReviewers: ["alice"] }))).toBeNull();
+  });
+
+  it("rejects non-array prReviewers", () => {
+    expect(validateDaemonConfig(createValidConfig({ prReviewers: "alice" } as any))).toBe("merge.prReviewers must be an array of strings");
+  });
+
+  it("accepts prDraft boolean", () => {
+    expect(validateDaemonConfig(createValidConfig({ prDraft: true }))).toBeNull();
+  });
+
+  it("rejects non-boolean prDraft", () => {
+    expect(validateDaemonConfig(createValidConfig({ prDraft: "yes" } as any))).toBe("merge.prDraft must be a boolean");
+  });
+
+  it("accepts full PR config", () => {
+    expect(validateDaemonConfig(createValidConfig({
+      strategy: "pr",
+      prAutoMerge: true,
+      prMergeMethod: "squash",
+      prLabels: ["garyclaw", "auto"],
+      prReviewers: ["alice", "bob"],
+      prDraft: false,
+      testCommand: "npm test",
+      testTimeout: 120000,
+    }))).toBeNull();
+  });
+});
