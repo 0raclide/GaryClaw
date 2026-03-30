@@ -144,6 +144,8 @@ export interface PostMergeVerificationContext {
   config: DaemonConfig;
   /** Enqueue function for auto-fix jobs. If not provided, auto-fix is disabled. */
   enqueue?: (skills: string[], triggeredBy: Job["triggeredBy"], detail: string) => string | null;
+  /** State accessor for post-enqueue field assignment. */
+  _getState?: () => DaemonState;
 }
 
 /**
@@ -234,6 +236,20 @@ export function handlePostMergeVerification(ctx: PostMergeVerificationContext): 
       if (ctx.enqueue) {
         try {
           const todoTitle = `P2: Fix post-merge regression from ${ctx.instanceName} (job ${ctx.jobId})`;
+          // Wrap enqueue to set claimedTodoTitle, autoFixMergeSha, and skipComposition
+          // on the created job (same pattern as enqueueWithTopic)
+          const autoFixEnqueue: typeof ctx.enqueue = (skills, triggeredBy, detail) => {
+            const jobId = ctx.enqueue!(skills, triggeredBy, detail);
+            if (jobId && ctx._getState) {
+              const job = ctx._getState().jobs.find((j: Job) => j.id === jobId);
+              if (job) {
+                job.claimedTodoTitle = todoTitle;
+                job.autoFixMergeSha = verifyResult.mergeSha;
+                job.skipComposition = true;
+              }
+            }
+            return jobId;
+          };
           const autoFixResult = maybeEnqueueAutoFix({
             projectDir: ctx.projectDir,
             checkpointDir: ctx.checkpointDir,
@@ -245,7 +261,7 @@ export function handlePostMergeVerification(ctx: PostMergeVerificationContext): 
             testOutput: verifyResult.testOutput,
             revertSha: verifyResult.revertSha,
             bugTodoTitle: todoTitle,
-            enqueue: ctx.enqueue,
+            enqueue: autoFixEnqueue,
             log: ctx.log,
             config: { autoFixOnRevert: ctx.mergeConfig?.autoFixOnRevert ?? false },
           });
@@ -1000,7 +1016,13 @@ export function createJobRunner(
       // Auto-fix cost accumulation: track spending for budget cap enforcement
       if (nextJob.triggeredBy === "post-merge-revert") {
         try {
-          updateAutoFixCost(checkpointDir, nextJob.triggerDetail, nextJob.costUsd);
+          if (nextJob.autoFixMergeSha) {
+            // Preferred: use typed field for direct SHA lookup
+            updateAutoFixCost(checkpointDir, nextJob.autoFixMergeSha, nextJob.costUsd, true);
+          } else {
+            // Fallback: parse SHA from triggerDetail (backwards compat)
+            updateAutoFixCost(checkpointDir, nextJob.triggerDetail, nextJob.costUsd);
+          }
         } catch (err) {
           d.log("warn", `Auto-fix cost update failed: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -1142,6 +1164,7 @@ export function createJobRunner(
                       job: nextJob,
                       config: jobConfig,
                       enqueue,
+                      _getState: () => state,
                     });
                   } else {
                     d.log("warn", `Fallback direct merge also blocked: ${mergeResult.reason}`);
@@ -1191,6 +1214,7 @@ export function createJobRunner(
                 job: nextJob,
                 config: jobConfig,
                 enqueue,
+                _getState: () => state,
               });
             } else {
               d.log("warn", `Auto-merge blocked: ${mergeResult.reason}` +

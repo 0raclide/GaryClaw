@@ -1,6 +1,7 @@
 /**
  * Job Runner auto-fix integration tests — enqueue after revert, cost accumulation,
- * skipComposition, post-merge-revert triggeredBy.
+ * skipComposition, post-merge-revert triggeredBy, _getState wiring,
+ * autoFixMergeSha + claimedTodoTitle assignment.
  *
  * All synthetic data — mocks worktree, child_process, dashboard, and daemon-registry.
  */
@@ -10,7 +11,7 @@ import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { handlePostMergeVerification } from "../src/job-runner.js";
 import type { PostMergeVerificationContext } from "../src/job-runner.js";
-import type { DaemonConfig, Job } from "../src/types.js";
+import type { DaemonConfig, DaemonState, Job } from "../src/types.js";
 
 // ── Mocks ──────────────────────────────────────────────────────
 
@@ -105,6 +106,14 @@ function makeJob(overrides: Partial<Job> = {}): Job {
     enqueuedAt: new Date().toISOString(),
     costUsd: 4.0,
     ...overrides,
+  };
+}
+
+function makeState(jobs: Job[] = []): DaemonState {
+  return {
+    version: 1,
+    jobs,
+    dailyCost: { date: new Date().toISOString().slice(0, 10), totalUsd: 0, jobCount: 0 },
   };
 }
 
@@ -211,6 +220,45 @@ describe("job-runner auto-fix integration", () => {
     expect(callArg.config.autoFixOnRevert).toBe(false);
   });
 
+  // ── _getState wiring for post-enqueue field assignment ──────────
+
+  it("wraps enqueue to set claimedTodoTitle and autoFixMergeSha when _getState is provided", () => {
+    const job = makeJob();
+    const stateObj = makeState([job]);
+    let capturedEnqueueArgs: unknown[] = [];
+
+    // The enqueue wrapper in handlePostMergeVerification calls ctx.enqueue,
+    // then uses _getState to find the created job. We need the mock to
+    // return a jobId that exists in the state.
+    const mockEnqueue = vi.fn().mockImplementation((skills: string[], triggeredBy: string, detail: string) => {
+      capturedEnqueueArgs = [skills, triggeredBy, detail];
+      // Simulate creating a new job in state
+      const newJob = makeJob({ id: "job-fix-001", triggeredBy: "post-merge-revert" as const, skills });
+      stateObj.jobs.push(newJob);
+      return "job-fix-001";
+    });
+
+    const ctx = makeCtx({
+      enqueue: mockEnqueue,
+      _getState: () => stateObj,
+    });
+    handlePostMergeVerification(ctx);
+
+    // The autoFixEnqueue wrapper should have been passed to maybeEnqueueAutoFix
+    const passedCtx = mockMaybeEnqueue.mock.calls[0][0];
+    // Call the enqueue function that was passed to maybeEnqueueAutoFix
+    const wrappedEnqueue = passedCtx.enqueue;
+    const jobId = wrappedEnqueue(["implement", "qa"], "post-merge-revert", "test detail");
+
+    expect(jobId).toBe("job-fix-001");
+
+    // Check that the job got the fields set
+    const createdJob = stateObj.jobs.find((j: Job) => j.id === "job-fix-001");
+    expect(createdJob?.claimedTodoTitle).toContain("P2: Fix post-merge regression");
+    expect(createdJob?.autoFixMergeSha).toBe("abc123def456");
+    expect(createdJob?.skipComposition).toBe(true);
+  });
+
   // ── triggeredBy === "post-merge-revert" type check ──────────────
 
   it("post-merge-revert is a valid triggeredBy value", () => {
@@ -219,11 +267,12 @@ describe("job-runner auto-fix integration", () => {
   });
 
   it("auto-fix jobs skip composition via triggeredBy check", () => {
-    // This test verifies the type — the actual composition skip is tested
-    // in the job-runner-skip-composition tests.
     const job = makeJob({ triggeredBy: "post-merge-revert" });
-    // The composition skip check in processNext is:
-    // nextJob.skipComposition || nextJob.triggeredBy === "post-merge-revert"
     expect(job.triggeredBy === "post-merge-revert").toBe(true);
+  });
+
+  it("autoFixMergeSha field exists on Job type", () => {
+    const job = makeJob({ autoFixMergeSha: "abc123def456" });
+    expect(job.autoFixMergeSha).toBe("abc123def456");
   });
 });

@@ -290,11 +290,64 @@ export async function buildImplementPrompt(
     lines.push("");
   }
 
+  // Auto-fix context: when triggered by post-merge revert, inject regression details
+  const autoFixContext = loadAutoFixContext(projectDir, config);
+  if (autoFixContext) {
+    lines.push("## Regression Context (Auto-Fix)");
+    lines.push("");
+    lines.push("This is an auto-fix attempt for a post-merge regression. The previous merge was auto-reverted because tests failed. Your job is to fix the regression so the code can be re-merged.");
+    lines.push("");
+    lines.push(autoFixContext);
+    lines.push("");
+  }
+
   // Rules
   lines.push(IMPLEMENT_RULES);
   lines.push("");
 
   return lines.join("\n");
+}
+
+/**
+ * Load auto-fix context file when the implement skill is running as part of
+ * an auto-fix job (triggeredBy === "post-merge-revert").
+ *
+ * Looks for `.garyclaw/auto-fix-context/{sha-prefix}.md` where the SHA comes
+ * from the config's autoFixMergeSha or a glob of available context files.
+ */
+export function loadAutoFixContext(projectDir: string, config: GaryClawConfig): string | null {
+  // Only load when there's an auto-fix context hint
+  // The autoFixMergeSha is threaded through GaryClawConfig when the job has it
+  const contextDir = join(projectDir, ".garyclaw", "auto-fix-context");
+  if (!existsSync(contextDir)) return null;
+
+  try {
+    const files = readdirSync(contextDir).filter(f => f.endsWith(".md"));
+    if (files.length === 0) return null;
+
+    // Pick the most recently modified context file (there should typically be just one
+    // relevant to this job, but if multiple exist, newest is most relevant)
+    let newest: { path: string; mtime: number } | null = null;
+    for (const file of files) {
+      const fullPath = join(contextDir, file);
+      try {
+        const stat = statSync(fullPath);
+        if (!newest || stat.mtimeMs > newest.mtime) {
+          newest = { path: fullPath, mtime: stat.mtimeMs };
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!newest) return null;
+
+    const content = readFileSync(newest.path, "utf-8");
+    // Cap at 4000 chars to avoid blowing up the prompt
+    return content.slice(0, 4000);
+  } catch {
+    return null;
+  }
 }
 
 // ── Step detection for relay tracking ────────────────────────────

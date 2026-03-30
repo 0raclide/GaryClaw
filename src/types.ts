@@ -343,6 +343,7 @@ export interface Job {
   composedFrom?: string[];    // Original skills before adaptive composition (undefined if no composition happened)
   compositionMethod?: "static" | "oracle";  // How pipeline was composed: static table or oracle recommendation
   skipComposition?: boolean;  // true = bypass composePipeline() entirely (deterministic --todo override)
+  autoFixMergeSha?: string;   // Original merge SHA that was reverted, used for cost accumulation in auto-fix jobs
 }
 
 export interface DaemonState {
