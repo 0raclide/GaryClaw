@@ -501,7 +501,25 @@ export async function buildPrioritizePrompt(
     lines.push(vision);
     lines.push("");
     lines.push("When the backlog is exhausted, use this vision to invent new features that move the product forward. Write invented items to TODOS.md before scoring them.");
+    lines.push("IMPORTANT: Do NOT invent features that already exist. Check the Current Capabilities section below — these describe everything the system already does.");
     lines.push("");
+
+    // Inject current capabilities from CLAUDE.md — the system's self-description.
+    // Extract Current Status + Module Map + Key Design Decisions sections.
+    const statusMatch = claudeMdContent.match(/## Current Status\n([\s\S]*?)(?=\n---)/);
+    const moduleMatch = claudeMdContent.match(/### Module Map\n([\s\S]*?)(?=\n### )/);
+    const decisionsMatch = claudeMdContent.match(/### Key Design Decisions\n([\s\S]*?)(?=\n---)/);
+    const capabilities = [statusMatch?.[1], moduleMatch?.[1], decisionsMatch?.[1]].filter(Boolean).join("\n\n");
+    if (capabilities) {
+      lines.push("### Current Capabilities (from CLAUDE.md)");
+      lines.push("");
+      lines.push("The system already has these features. Do NOT re-invent any of them:");
+      lines.push("");
+      // Trim to ~3000 tokens to avoid bloating the prompt
+      const trimmed = capabilities.length > 12000 ? capabilities.slice(0, 12000) + "\n[...truncated]" : capabilities;
+      lines.push(trimmed);
+      lines.push("");
+    }
   }
 
   // Overnight goal
