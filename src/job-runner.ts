@@ -454,7 +454,7 @@ export function createJobRunner(
             return; // Another instance is rate-limited — hold this one too
           }
           // Expired — clear stale global hold to avoid repeated file I/O
-          clearGlobalRateLimitHold(parentCheckpointDir);
+          clearGlobalRateLimitHold(parentCheckpointDir, (msg) => d.log("warn", String(msg)));
         }
       } catch {
         // Fail-open: if global budget read fails, proceed
@@ -831,7 +831,7 @@ export function createJobRunner(
       // Update global budget (shared across all instances)
       if (parentCheckpointDir) {
         try {
-          updateGlobalBudget(parentCheckpointDir, nextJob.costUsd, resolvedInstanceName);
+          updateGlobalBudget(parentCheckpointDir, nextJob.costUsd, resolvedInstanceName, (msg) => d.log("warn", String(msg)));
         } catch (err) {
           d.log("warn", `Failed to update global budget: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -963,7 +963,7 @@ export function createJobRunner(
         // Propagate to global budget for cross-instance coordination
         if (parentCheckpointDir) {
           try {
-            setGlobalRateLimitHold(parentCheckpointDir, holdUntil.toISOString(), resolvedInstanceName);
+            setGlobalRateLimitHold(parentCheckpointDir, holdUntil.toISOString(), resolvedInstanceName, (msg) => d.log("warn", String(msg)));
           } catch {
             // Fail-open: local hold is sufficient
           }

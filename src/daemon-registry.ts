@@ -17,7 +17,8 @@ import { join } from "node:path";
 import { safeReadJSON, safeWriteJSON } from "./safe-json.js";
 import { readPidFile as readPidFileDirect, isPidAlive as isPidAliveDirect } from "./pid-utils.js";
 import { acquireBudgetLock, releaseBudgetLock } from "./budget-lock.js";
-import type { GlobalBudget, InstanceInfo, DaemonState } from "./types.js";
+import { resolveWarnFn } from "./types.js";
+import type { GlobalBudget, InstanceInfo, DaemonState, WarnFn } from "./types.js";
 
 const DAEMONS_DIR = "daemons";
 const GLOBAL_BUDGET_FILE = "global-budget.json";
@@ -140,10 +141,12 @@ export function updateGlobalBudget(
   checkpointDir: string,
   addCostUsd: number,
   instanceName: string,
+  onWarn?: WarnFn,
 ): GlobalBudget {
+  const warn = resolveWarnFn(onWarn);
   const locked = acquireBudgetLock(checkpointDir);
   if (!locked) {
-    console.warn("budget-lock: timeout acquiring lock for updateGlobalBudget, proceeding without lock");
+    warn("budget-lock: timeout acquiring lock for updateGlobalBudget, proceeding without lock");
   }
   try {
     const budget = readGlobalBudget(checkpointDir);
@@ -433,10 +436,12 @@ export function setGlobalRateLimitHold(
   parentDir: string,
   resetAt: string,
   _instanceName: string,
+  onWarn?: WarnFn,
 ): void {
+  const warn = resolveWarnFn(onWarn);
   const locked = acquireBudgetLock(parentDir);
   if (!locked) {
-    console.warn("budget-lock: timeout acquiring lock for setGlobalRateLimitHold, proceeding without lock");
+    warn("budget-lock: timeout acquiring lock for setGlobalRateLimitHold, proceeding without lock");
   }
   try {
     const budget = readGlobalBudget(parentDir);
@@ -455,10 +460,11 @@ export function setGlobalRateLimitHold(
  * Clear an expired global rate limit hold from global-budget.json.
  * Called by the first instance that detects expiry to avoid repeated stale reads.
  */
-export function clearGlobalRateLimitHold(parentDir: string): void {
+export function clearGlobalRateLimitHold(parentDir: string, onWarn?: WarnFn): void {
+  const warn = resolveWarnFn(onWarn);
   const locked = acquireBudgetLock(parentDir);
   if (!locked) {
-    console.warn("budget-lock: timeout acquiring lock for clearGlobalRateLimitHold, proceeding without lock");
+    warn("budget-lock: timeout acquiring lock for clearGlobalRateLimitHold, proceeding without lock");
   }
   try {
     const budget = readGlobalBudget(parentDir);
