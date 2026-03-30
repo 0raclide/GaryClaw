@@ -1396,8 +1396,8 @@ describe("buildPrioritizePrompt budget enforcement", () => {
     const config = createMockConfig();
     const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
     const tokens = estimateTokens(prompt);
-    // The fixed sections (rules + worked example) are ~6K tokens and always included,
-    // so total will be > PRIORITIZE_PROMPT_BUDGET, but budgeted sections are controlled.
+    // The fixed sections (rules + worked example) are ~2.3K tokens and always included.
+    // Budgeted sections are controlled by the waterfall; total should stay near budget.
     // Verify the TODOS section was truncated (not all 100 items present)
     const itemMatches = prompt.match(/## P3: Item \d+/g) ?? [];
     expect(itemMatches.length).toBeLessThan(100);
