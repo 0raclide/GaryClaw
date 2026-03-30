@@ -28,14 +28,20 @@ import {
   migrateToInstanceDir,
 } from "./daemon-registry.js";
 import { createWorktree, mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
+import { runAutoCleanup } from "./doctor.js";
 import {
   readPidFile as readPidFileDirect,
   isPidAlive as isPidAliveDirect,
   writePidFile as writePidFileDirect,
   removePidFile,
 } from "./pid-utils.js";
-import type { DaemonConfig, IPCRequest, IPCResponse } from "./types.js";
+import { readPipelineState } from "./pipeline.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import type { DaemonConfig, IPCRequest, IPCResponse, PipelineProgress } from "./types.js";
 import type { Server } from "node:net";
+
+const execFileAsync = promisify(execFile);
 
 const PID_FILE = "daemon.pid";
 const SOCKET_FILE = "daemon.sock";
@@ -259,6 +265,28 @@ export function createDaemonLogger(
 }
 
 /**
+ * Get commit count on a worktree branch since it diverged from base.
+ * Returns 0 on any error. Async to avoid blocking IPC event loop.
+ */
+export async function getWorktreeCommitCount(
+  worktreePath?: string,
+  projectDir?: string,
+): Promise<number> {
+  if (!worktreePath) return 0;
+  try {
+    const base = resolveBaseBranch(projectDir ?? worktreePath);
+    const { stdout } = await execFileAsync(
+      "git",
+      ["-C", worktreePath, "rev-list", "--count", `${base}..HEAD`],
+      { encoding: "utf-8", timeout: 3000 },
+    );
+    return parseInt(stdout.trim(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Build the IPC request handler for the daemon.
  */
 export function buildIPCHandler(
@@ -266,10 +294,22 @@ export function buildIPCHandler(
   startTime: number,
   projectDir?: string,
   parentCheckpointDir?: string,
+  instDir?: string,
+  worktreePath?: string,
 ): IPCHandler {
+  // Cached commit count, refreshed every 10s to avoid git subprocess on every IPC call
+  let cachedCommitCount = 0;
+  let lastCommitCountRefresh = 0;
+  const COMMIT_COUNT_REFRESH_MS = 10_000;
+
   return async (request: IPCRequest): Promise<IPCResponse> => {
     switch (request.type) {
       case "status": {
+        // Refresh commit count cache if stale
+        if (worktreePath && Date.now() - lastCommitCountRefresh > COMMIT_COUNT_REFRESH_MS) {
+          cachedCommitCount = await getWorktreeCommitCount(worktreePath, projectDir);
+          lastCommitCountRefresh = Date.now();
+        }
         const state = runner.getState();
         const runningJob = state.jobs.find((j) => j.status === "running");
         const queuedJobs = state.jobs.filter((j) => j.status === "queued");
@@ -298,6 +338,30 @@ export function buildIPCHandler(
           }
         }
 
+        // Build pipeline progress for running jobs
+        let pipelineProgress: PipelineProgress | null = null;
+        if (runningJob && instDir) {
+          try {
+            const jobDir = join(instDir, "jobs", runningJob.id);
+            const pipelineState = readPipelineState(jobDir);
+            if (pipelineState) {
+              const currentSkill = pipelineState.skills[pipelineState.currentSkillIndex];
+              pipelineProgress = {
+                currentSkill: currentSkill?.skillName ?? "unknown",
+                skillIndex: pipelineState.currentSkillIndex,
+                totalSkills: pipelineState.skills.length,
+                claimedTodoTitle: runningJob.claimedTodoTitle ?? null,
+                elapsedSeconds: runningJob.startedAt
+                  ? Math.floor((Date.now() - new Date(runningJob.startedAt).getTime()) / 1000)
+                  : 0,
+                commitCount: cachedCommitCount,
+              };
+            }
+          } catch {
+            // Non-fatal: pipeline progress is optional
+          }
+        }
+
         return {
           ok: true,
           data: {
@@ -308,6 +372,7 @@ export function buildIPCHandler(
             uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
             totalJobs: state.jobs.length,
             oracleHealth,
+            pipelineProgress,
           },
         };
       }
@@ -398,6 +463,20 @@ export async function startDaemon(checkpointDir: string, instanceName?: string):
   // Update logger with config level
   const configLog = createDaemonLogger(instDir, config.logging.level);
 
+  // 1a. Auto-cleanup stale state (dead PIDs, orphaned worktrees, stuck locks, dead budget entries)
+  try {
+    const { cleaned } = await runAutoCleanup({
+      projectDir: config.projectDir,
+      dailyCostLimitUsd: config.budget.dailyCostLimitUsd,
+      maxJobsPerDay: config.budget.maxJobsPerDay,
+    });
+    if (cleaned.length > 0) {
+      configLog("info", `Auto-cleanup: ${cleaned.join(", ")}`);
+    }
+  } catch (err) {
+    configLog("warn", `Auto-cleanup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   // 2. Check for stale PID
   const existingPid = readPidFile(instDir);
   if (existingPid !== null) {
@@ -437,7 +516,7 @@ export async function startDaemon(checkpointDir: string, instanceName?: string):
   try { if (existsSync(socketPath)) unlinkSync(socketPath); } catch { /* ignore */ }
 
   const startTime = Date.now();
-  const handler = buildIPCHandler(runner, startTime, config.projectDir, checkpointDir);
+  const handler = buildIPCHandler(runner, startTime, config.projectDir, checkpointDir, instDir, config.worktreePath);
   const server = createIPCServer(socketPath, handler);
   configLog("info", `IPC server listening on ${socketPath}`);
 
