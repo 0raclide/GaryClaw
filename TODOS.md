@@ -184,7 +184,7 @@ Implemented in commit 923c08a. Aggregates avg/min/max adaptive turns per job, se
 
 Implemented by default daemon. Rule-based skill sequence selection based on effort/priority. Skips prioritize (already picked) and eng-review for low-risk items. Saves ~$0.90 per cycle on small items.
 
-## P2: Upgrade Pipeline Composition to Oracle-Driven Skill Selection
+## ~~P2: Upgrade Pipeline Composition to Oracle-Driven Skill Selection~~ — COMPLETE (2026-03-29)
 
 **What:** Replace the rule-based pipeline composition (currently live: skips skills based on effort/priority heuristics) with Oracle-driven selection. Let the Oracle decide which skills each TODO needs by reasoning about risk, novelty, scope, and history — not just size labels.
 
@@ -222,7 +222,7 @@ The Oracle chooses the skill sequence by reasoning about:
 **Depends on:** Nothing
 **Added by:** Session 3 retrospective on 2026-03-29, refined with human input
 
-## P3: Daemon Fleet Command — Parallel Launch + Auto-Cleanup + Live Status
+## ~~P3: Daemon Fleet Command — Parallel Launch + Auto-Cleanup + Live Status~~ — COMPLETE (2026-03-30)
 
 **What:** Three capabilities that make parallel daemon operation a first-class experience:
 
@@ -240,7 +240,7 @@ The Oracle chooses the skill sequence by reasoning about:
 **Depends on:** Nothing
 **Added by:** Session 3 retrospective on 2026-03-29
 
-## P3: Oracle Intelligence — Session Reuse + Adaptive Scheduling + Resilience
+## ~~P3: Oracle Intelligence — Session Reuse + Adaptive Scheduling + Resilience~~ — COMPLETE (2026-03-30)
 
 **What:** Three capabilities that make the Oracle smarter, faster, and more robust:
 
@@ -392,7 +392,7 @@ Shipped in 5 commits on `garyclaw/overnight-3`: retry logic in `job-runner.ts` (
 
 ## ~~P4: Extract Shared Oracle Prompt Prefix (DRY Fix)~~ — COMPLETE (2026-03-29)
 
-## P3: Code Quality Sweep — Observability + Platform Safety + DRY
+## ~~P3: Code Quality Sweep — Observability + Platform Safety + DRY~~ — COMPLETE (2026-03-29)
 
 **What:** Batch of 5 code quality fixes that are individually XS but together form a meaningful improvement to daemon observability and cross-platform safety:
 
