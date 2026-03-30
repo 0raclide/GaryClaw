@@ -1,10 +1,10 @@
 {
   "date": "2026-03-30",
   "target": "GaryClaw CLI",
-  "healthScore": 95,
-  "testsPassed": 3179,
+  "healthScore": 98,
+  "testsPassed": 3185,
   "testsFailed": 0,
-  "testFiles": 197,
+  "testFiles": 199,
   "typescriptErrors": 0,
   "issues": [
     { "id": "ISSUE-001", "title": "loadAutoFixContext ignores config for SHA-based file selection", "severity": "low", "category": "code-quality", "status": "deferred" }
