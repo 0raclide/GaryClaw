@@ -726,7 +726,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses maintainability + reduces modification risk)
 
-## P3: Prioritize Prompt Size Guard — Token Budgeting to Prevent SDK Failures
+## ~~P3: Prioritize Prompt Size Guard — Token Budgeting to Prevent SDK Failures
 
 **What:** The prioritize prompt assembles 8+ dynamic sections (TODOS.md, failure patterns, category stats, skill catalog, pipeline outcomes, review findings, impact measurement, project type context) with no total token budget. Add per-section token counting and truncation so the prompt stays under a safe ceiling (50K tokens). When sections exceed their budget, truncate lowest-priority sections first: pipeline outcomes → category stats → review findings → failure patterns.
 
