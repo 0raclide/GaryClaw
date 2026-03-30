@@ -8,5 +8,14 @@
   "typescriptClean": true,
   "sourceModules": 40,
   "docsAccurate": true,
-  "issues": []
+  "issues": [
+    {
+      "id": "ISSUE-001",
+      "title": "Stale test counts in CLAUDE.md (3 entries)",
+      "severity": "medium",
+      "category": "documentation",
+      "status": "verified",
+      "commit": "8cb60f7"
+    }
+  ]
 }
