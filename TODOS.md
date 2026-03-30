@@ -662,7 +662,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses repeated Oracle confusion pattern)
 
-## ~~P3: Prioritize Prompt Token Budgeting — Prevent Prompt Bloat
+## ~~P3: Prioritize Prompt Token Budgeting — Prevent Prompt Bloat~~ — COMPLETE (2026-03-31)
 
 **What:** The prioritize prompt has grown with every feature: failure patterns, category stats, skill catalog, pipeline outcomes, unresolved review findings, impact measurement, and project type context are all injected without a total token budget. Cap the total prompt size and enforce per-section budgets so low-priority sections get trimmed when the prompt approaches limits.
 
@@ -726,7 +726,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses maintainability + reduces modification risk)
 
-## ~~P3: Prioritize Prompt Size Guard — Token Budgeting to Prevent SDK Failures
+## ~~P3: Prioritize Prompt Size Guard — Token Budgeting to Prevent SDK Failures~~ — COMPLETE (2026-03-31)
 
 **What:** The prioritize prompt assembles 8+ dynamic sections (TODOS.md, failure patterns, category stats, skill catalog, pipeline outcomes, review findings, impact measurement, project type context) with no total token budget. Add per-section token counting and truncation so the prompt stays under a safe ceiling (50K tokens). When sections exceed their budget, truncate lowest-priority sections first: pipeline outcomes → category stats → review findings → failure patterns.
 
