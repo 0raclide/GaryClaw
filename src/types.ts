@@ -567,6 +567,8 @@ export interface DashboardData {
     rebaseConflicts: number;      // subset of blocked where reason contains "conflicts"
     postMergeReverts: number;     // count of auto-reverts today
     revertRate: number;           // reverts / merged (0-100)
+    prsCreated: number;           // PRs created today (strategy: "pr")
+    prsAutoMergeEnabled: number;  // PRs with auto-merge enabled
   };
   composition: {
     composedJobs: number;           // Jobs where composition changed skill list

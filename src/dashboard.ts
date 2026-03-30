@@ -250,6 +250,14 @@ export function aggregateMergeStats(
   const postMergeReverts = todayReverts.filter((e) => e.autoReverted).length;
   const revertRate = merged > 0 ? (postMergeReverts / merged) * 100 : 0;
 
+  // PR stats — entries with reason matching "PR #N created" are PR-strategy merges
+  const prEntries = todayEntries.filter((e) => e.reason !== undefined && /^PR #\d+ created/.test(e.reason));
+  const prsCreated = prEntries.length;
+  // Entries that also mention auto-merge (from merge-audit logged by job-runner)
+  // We count all PR entries as auto-merge-enabled since the audit doesn't track that separately;
+  // the job-runner only creates PR audit entries when createPullRequest succeeds.
+  const prsAutoMergeEnabled = prsCreated; // conservative: could refine later with a dedicated field
+
   return {
     totalAttempts,
     merged,
@@ -260,6 +268,8 @@ export function aggregateMergeStats(
     rebaseConflicts,
     postMergeReverts,
     revertRate,
+    prsCreated,
+    prsAutoMergeEnabled,
   };
 }
 
@@ -546,6 +556,9 @@ export function formatDashboard(data: DashboardData): string {
     );
     if (data.mergeHealth.postMergeReverts > 0) {
       lines.push(`| Reverts | ${data.mergeHealth.postMergeReverts} (${data.mergeHealth.revertRate.toFixed(1)}% revert rate) |`);
+    }
+    if (data.mergeHealth.prsCreated > 0) {
+      lines.push(`| PRs Created | ${data.mergeHealth.prsCreated} |`);
     }
   }
 
