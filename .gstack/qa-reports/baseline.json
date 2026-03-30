@@ -1,10 +1,11 @@
 {
   "date": "2026-03-30",
   "url": "cli-project",
-  "healthScore": 100,
+  "healthScore": 98,
   "issues": [
-    {"id": "ISSUE-001", "title": "Fleet display .replace() colors wrong column", "severity": "critical", "category": "functional"},
-    {"id": "ISSUE-002", "title": "Commit count cache race condition in IPC handler", "severity": "medium", "category": "functional"}
+    {"id": "ISSUE-001", "title": "CLAUDE.md stale test counts (169/2822 vs 170/2828)", "severity": "medium", "category": "content", "status": "fixed"},
+    {"id": "ISSUE-002", "title": "Missing test table entry for cli-fleet-display.regression-2.test.ts", "severity": "medium", "category": "content", "status": "fixed"},
+    {"id": "ISSUE-003", "title": "Unused projectDir parameter in displayAllInstances", "severity": "low", "category": "code-quality", "status": "deferred"}
   ],
   "categoryScores": {
     "console": 100,
@@ -13,7 +14,14 @@
     "functional": 100,
     "ux": 100,
     "performance": 100,
-    "content": 100,
+    "content": 90,
     "accessibility": 100
+  },
+  "testSuite": {
+    "files": 170,
+    "tests": 2828,
+    "passed": 2828,
+    "failed": 0,
+    "duration": "31.86s"
   }
 }
