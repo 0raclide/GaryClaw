@@ -287,6 +287,7 @@ export interface DaemonConfig {
     prLabels?: string[];                   // labels to add to PR
     prReviewers?: string[];                // request reviewers (human gate mode)
     prDraft?: boolean;                     // default: false — create as draft PR
+    autoFixOnRevert?: boolean;             // default: false — auto-enqueue implement->qa after post-merge revert
   };
   autoResearch?: AutoResearchConfig;
 }
@@ -319,7 +320,7 @@ export type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelle
 
 export interface Job {
   id: string;
-  triggeredBy: "git_poll" | "cron" | "manual" | "auto_research" | "continuous";
+  triggeredBy: "git_poll" | "cron" | "manual" | "auto_research" | "continuous" | "post-merge-revert";
   triggerDetail: string;
   skills: string[];
   projectDir: string;
