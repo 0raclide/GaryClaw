@@ -379,7 +379,13 @@ describe("formatProjectContext", () => {
 });
 
 describe("buildProjectTypeSection", () => {
-  beforeEach(() => { rmSync(TEST_DIR, { recursive: true, force: true }); });
+  beforeEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true });
+    // Explicit cache cleanup — ensureProjectType writes project-type.json on first
+    // call, and if it survives into the next test the "unknown" assertion fails.
+    const cacheFile = join(GARYCLAW_DIR, "project-type.json");
+    rmSync(cacheFile, { force: true });
+  });
   afterEach(() => { rmSync(TEST_DIR, { recursive: true, force: true }); });
 
   it("returns markdown section for known project type", () => {
