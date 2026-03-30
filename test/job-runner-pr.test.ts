@@ -275,6 +275,27 @@ describe("Job Runner PR strategy routing", () => {
     expect(callArgs[2].title).toContain("GitHub PR Workflow");
   });
 
+  // Regression: ISSUE-004 — PR title truncation at 256 chars
+  // Found by /qa on 2026-03-30
+  // Report: .gstack/qa-reports/qa-report-garyclaw-2026-03-30.md
+  it("truncates PR title to 256 characters for GitHub limit", async () => {
+    const config = createTestConfig({ merge: { strategy: "pr" } });
+    const deps = createMockDeps();
+    const runner = createJobRunner(config, TEST_DIR, deps, "worker-1");
+
+    const jobId = runner.enqueue(["qa"], "manual", "test");
+    const state = runner.getState();
+    const job = state.jobs.find((j) => j.id === jobId);
+    // Create a title that exceeds 256 chars when prefixed with "GaryClaw: "
+    if (job) job.claimedTodoTitle = "P1: " + "A".repeat(300);
+
+    await runner.processNext();
+
+    const callArgs = (createPullRequest as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[2].title.length).toBeLessThanOrEqual(256);
+    expect(callArgs[2].title).toMatch(/^GaryClaw: P1: A+$/);
+  });
+
   it("skips PR creation when pre-merge tests fail", async () => {
     // Make execFileSync throw for the test command (sh -c "npm test")
     (execFileSync as ReturnType<typeof vi.fn>).mockImplementation((cmd: string, args: string[]) => {
