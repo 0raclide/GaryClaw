@@ -36,7 +36,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
 **GitHub PR Workflow: COMPLETE** (2026-03-30) — Optional `merge.strategy: "pr"` creates structured GitHub PRs instead of direct merge. PR body includes pipeline summary, oracle decisions, test results. Auto-merge via `gh pr merge --auto`. Fallback to direct merge when `gh` unavailable. New "pr-created" TODO state. Dashboard PR stats.
-- 40 source modules, 192 test files, 3058 tests
+- 40 source modules, 193 test files, 3114 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -273,7 +273,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
 | `test/pipeline-compose.test.ts` | 59 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
 | `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
-| `test/pipeline-history.test.ts` | 41 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker |
+| `test/pipeline-history.test.ts` | 51 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker, computeCategoryStats |
 | `test/pipeline-compose-oracle.regression-1.test.ts` | 4 | Oracle override same-length different-skills: set-membership check, identical no-op, length diff, empty |
 | `test/skill-catalog.test.ts` | 15 | SKILL_CATALOG: completeness, required fields, cost bounds, mode values, formatSkillCatalogForPrompt output |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
@@ -315,7 +315,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/reflection-pipeline-outcome.test.ts` | 19 | buildPipelineOutcome: success/acceptable/failure, skipped skills, compositionMethod; countPipelineOutcomes: null/empty/positive/mixed |
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
-| `test/prioritize.test.ts` | 69 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact |
+| `test/prioritize.test.ts` | 80 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact, per-category stats injection |
 | `test/prioritize-review-findings.test.ts` | 11 | loadUnresolvedReviewFindings: flat/instance layouts, action keywords, skip filters, review skill gating, job dir limit, error handling |
 | `test/worktree.test.ts` | 28 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
 | `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
@@ -404,6 +404,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner.regression-6.test.ts` | 2 | Job runner regression: 'continuous' trigger source validity on Job.triggeredBy |
 | `test/job-runner.regression-7.test.ts` | 2 | Job runner regression: 'daemon-crash' must be valid FailureCategory |
 | `test/job-runner.regression-8.test.ts` | 2 | Job runner regression: readTodoState import resolves and round-trips state |
+| `test/job-runner-task-category.test.ts` | 35 | parseTaskCategory, parseEffort, parsePriority, VALID_TASK_CATEGORIES, VALID_EFFORTS edge cases |
 | `test/job-runner-continuous-requeue.regression-1.test.ts` | 3 | Continuous re-enqueue uses composedFrom original skills, not trimmed set |
 | `test/job-runner-post-merge.regression-1.test.ts` | 3 | Post-merge verification regression: git rev-parse failure, HEAD re-read failure, bug TODO markdown format |
 | `test/job-runner-post-merge.regression-2.test.ts` | 3 | Post-merge verification regression: branchName() sanitization in bug TODO body |
