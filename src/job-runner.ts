@@ -123,6 +123,128 @@ const defaultDeps: JobRunnerDeps = {
   log: () => {},
 };
 
+// ── Post-merge verification helper ──────────────────────────────
+
+export interface PostMergeVerificationContext {
+  projectDir: string;
+  instanceName: string;
+  jobId: string;
+  skills: string[];
+  checkpointDir: string;
+  mergeConfig?: DaemonConfig["merge"];
+  testsPassed?: boolean;
+  commitCount: number;
+  log: (level: string, message: string) => void;
+  notifyMergeReverted?: (job: Job, verifyResult: PostMergeVerifyResult, config: DaemonConfig) => void;
+  job: Job;
+  config: DaemonConfig;
+}
+
+/**
+ * Run post-merge test verification and auto-revert on failure.
+ *
+ * Extracted from the inline block in processNext() for readability.
+ * Handles: smart skip, test execution, revert, audit, failure record,
+ * bug TODO creation, and notification.
+ */
+export function handlePostMergeVerification(ctx: PostMergeVerificationContext): void {
+  if (!ctx.commitCount || ctx.commitCount <= 0) return;
+
+  const skipPostVerify = ctx.mergeConfig?.skipPostMergeVerification ?? false;
+  const forcePostVerify = ctx.mergeConfig?.forcePostMergeVerification ?? false;
+  const preMergePassed = ctx.testsPassed === true;
+  const shouldVerify = !skipPostVerify && (!preMergePassed || forcePostVerify);
+
+  if (!shouldVerify) return;
+
+  try {
+    const mainHead = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: ctx.projectDir, stdio: "pipe", encoding: "utf-8",
+    }).trim();
+
+    const verifyResult = verifyPostMerge(ctx.projectDir, mainHead, {
+      testCommand: ctx.mergeConfig?.testCommand,
+      testTimeout: ctx.mergeConfig?.testTimeout,
+    });
+
+    if (verifyResult.verified) {
+      ctx.log("info", `Post-merge verified: tests pass on main` +
+        (verifyResult.testDurationMs ? ` (${Math.round(verifyResult.testDurationMs / 1000)}s)` : ""));
+    } else if (verifyResult.reverted) {
+      ctx.log("warn", `POST-MERGE REVERT: ${verifyResult.reason}` +
+        (verifyResult.testOutput ? `\n${verifyResult.testOutput.slice(0, 500)}` : ""));
+
+      // Audit log
+      appendMergeRevert(ctx.projectDir, {
+        timestamp: new Date().toISOString(),
+        instanceName: ctx.instanceName,
+        mergeSha: verifyResult.mergeSha,
+        revertSha: verifyResult.revertSha,
+        branch: branchName(ctx.instanceName),
+        testOutput: verifyResult.testOutput?.slice(0, 2000),
+        testDurationMs: verifyResult.testDurationMs,
+        jobId: ctx.jobId,
+        reason: verifyResult.reason ?? "Post-merge tests failed",
+        autoReverted: true,
+      });
+
+      // Failure taxonomy record
+      const syntheticErr = Object.assign(
+        new Error(verifyResult.reason ?? "Post-merge tests failed"),
+        { name: "PostMergeRegressionError" },
+      );
+      const record = buildFailureRecord(syntheticErr, ctx.jobId, ctx.skills, ctx.instanceName);
+      appendFailureRecord(record, ctx.checkpointDir);
+
+      // Bug TODO creation
+      try {
+        const todosPath = join(ctx.projectDir, "TODOS.md");
+        if (existsSync(todosPath)) {
+          const todoTitle = `P2: Fix post-merge regression from ${ctx.instanceName} (job ${ctx.jobId})`;
+          const todoBody = [
+            `\n## ${todoTitle}\n`,
+            `**What:** Post-merge test verification failed after auto-merge to main. The merge was auto-reverted.`,
+            `**Priority:** P2 (auto-generated safety item)`,
+            `**Effort:** S`,
+            `**Test output (truncated):**`,
+            "```",
+            (verifyResult.testOutput ?? "").slice(0, 1000),
+            "```",
+            `**Branch:** \`garyclaw/${ctx.instanceName}\` (still exists after revert, check out to debug)`,
+            `**Added by:** Post-merge safety net on ${new Date().toISOString().slice(0, 10)}`,
+            "",
+          ].join("\n");
+          appendFileSync(todosPath, todoBody, "utf-8");
+          ctx.log("info", `Created P2 bug TODO for post-merge regression`);
+        }
+      } catch (todoErr) {
+        ctx.log("warn", `Failed to create bug TODO: ${todoErr instanceof Error ? todoErr.message : String(todoErr)}`);
+      }
+
+      // Notification
+      ctx.notifyMergeReverted?.(ctx.job, verifyResult, ctx.config);
+    } else {
+      // Tests failed but revert skipped (HEAD moved or conflict)
+      ctx.log("warn", `Post-merge verification failed but revert skipped: ${verifyResult.reason}`);
+
+      // Still audit even when revert was skipped
+      appendMergeRevert(ctx.projectDir, {
+        timestamp: new Date().toISOString(),
+        instanceName: ctx.instanceName,
+        mergeSha: verifyResult.mergeSha,
+        branch: branchName(ctx.instanceName),
+        testOutput: verifyResult.testOutput?.slice(0, 2000),
+        testDurationMs: verifyResult.testDurationMs,
+        jobId: ctx.jobId,
+        reason: verifyResult.reason ?? "Post-merge tests failed (revert skipped)",
+        autoReverted: false,
+      });
+    }
+  } catch (err) {
+    ctx.log("warn", `Post-merge verification error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 /**
  * Create a job runner bound to a daemon config and checkpoint directory.
  *
@@ -781,104 +903,20 @@ export function createJobRunner(
             }
 
             // Post-merge verification (defense-in-depth)
-            if (mergeResult.commitCount && mergeResult.commitCount > 0) {
-              const mergeConfig = jobConfig.merge;
-              const skipPostVerify = mergeConfig?.skipPostMergeVerification ?? false;
-              const forcePostVerify = mergeConfig?.forcePostMergeVerification ?? false;
-              // Smart skip: if pre-merge tests already passed, skip unless forced
-              const preMergePassed = mergeResult.testsPassed === true;
-              const shouldVerify = !skipPostVerify && (!preMergePassed || forcePostVerify);
-
-              if (shouldVerify) {
-                try {
-                  // Read HEAD immediately after merge — this is the merge commit SHA
-                  const mainHead = execFileSync("git", ["rev-parse", "HEAD"], {
-                    cwd: jobConfig.projectDir, stdio: "pipe", encoding: "utf-8",
-                  }).trim();
-
-                  const verifyResult = verifyPostMerge(jobConfig.projectDir, mainHead, {
-                    testCommand: mergeConfig?.testCommand,
-                    testTimeout: mergeConfig?.testTimeout,
-                  });
-
-                  if (verifyResult.verified) {
-                    d.log("info", `Post-merge verified: tests pass on main` +
-                      (verifyResult.testDurationMs ? ` (${Math.round(verifyResult.testDurationMs / 1000)}s)` : ""));
-                  } else if (verifyResult.reverted) {
-                    d.log("warn", `POST-MERGE REVERT: ${verifyResult.reason}` +
-                      (verifyResult.testOutput ? `\n${verifyResult.testOutput.slice(0, 500)}` : ""));
-
-                    // Audit log
-                    appendMergeRevert(jobConfig.projectDir, {
-                      timestamp: new Date().toISOString(),
-                      instanceName: resolvedInstanceName,
-                      mergeSha: verifyResult.mergeSha,
-                      revertSha: verifyResult.revertSha,
-                      branch: branchName(resolvedInstanceName),
-                      testOutput: verifyResult.testOutput?.slice(0, 2000),
-                      testDurationMs: verifyResult.testDurationMs,
-                      jobId: nextJob.id,
-                      reason: verifyResult.reason ?? "Post-merge tests failed",
-                      autoReverted: true,
-                    });
-
-                    // Failure taxonomy record
-                    const syntheticErr = Object.assign(
-                      new Error(verifyResult.reason ?? "Post-merge tests failed"),
-                      { name: "PostMergeRegressionError" },
-                    );
-                    const record = buildFailureRecord(syntheticErr, nextJob.id, nextJob.skills, resolvedInstanceName);
-                    appendFailureRecord(record, checkpointDir);
-
-                    // Bug TODO creation
-                    try {
-                      const todosPath = join(jobConfig.projectDir, "TODOS.md");
-                      if (existsSync(todosPath)) {
-                        const todoTitle = `P2: Fix post-merge regression from ${resolvedInstanceName} (job ${nextJob.id})`;
-                        const todoBody = [
-                          `\n## ${todoTitle}\n`,
-                          `**What:** Post-merge test verification failed after auto-merge to main. The merge was auto-reverted.`,
-                          `**Priority:** P2 (auto-generated safety item)`,
-                          `**Effort:** S`,
-                          `**Test output (truncated):**`,
-                          "```",
-                          (verifyResult.testOutput ?? "").slice(0, 1000),
-                          "```",
-                          `**Branch:** \`garyclaw/${resolvedInstanceName}\` (still exists after revert, check out to debug)`,
-                          `**Added by:** Post-merge safety net on ${new Date().toISOString().slice(0, 10)}`,
-                          "",
-                        ].join("\n");
-                        appendFileSync(todosPath, todoBody, "utf-8");
-                        d.log("info", `Created P2 bug TODO for post-merge regression`);
-                      }
-                    } catch (todoErr) {
-                      d.log("warn", `Failed to create bug TODO: ${todoErr instanceof Error ? todoErr.message : String(todoErr)}`);
-                    }
-
-                    // Notification
-                    d.notifyMergeReverted?.(nextJob, verifyResult, jobConfig);
-                  } else {
-                    // Tests failed but revert skipped (HEAD moved or conflict)
-                    d.log("warn", `Post-merge verification failed but revert skipped: ${verifyResult.reason}`);
-
-                    // Still audit even when revert was skipped
-                    appendMergeRevert(jobConfig.projectDir, {
-                      timestamp: new Date().toISOString(),
-                      instanceName: resolvedInstanceName,
-                      mergeSha: verifyResult.mergeSha,
-                      branch: branchName(resolvedInstanceName),
-                      testOutput: verifyResult.testOutput?.slice(0, 2000),
-                      testDurationMs: verifyResult.testDurationMs,
-                      jobId: nextJob.id,
-                      reason: verifyResult.reason ?? "Post-merge tests failed (revert skipped)",
-                      autoReverted: false,
-                    });
-                  }
-                } catch (err) {
-                  d.log("warn", `Post-merge verification error: ${err instanceof Error ? err.message : String(err)}`);
-                }
-              }
-            }
+            handlePostMergeVerification({
+              projectDir: jobConfig.projectDir,
+              instanceName: resolvedInstanceName,
+              jobId: nextJob.id,
+              skills: nextJob.skills,
+              checkpointDir,
+              mergeConfig: jobConfig.merge,
+              testsPassed: mergeResult.testsPassed,
+              commitCount: mergeResult.commitCount ?? 0,
+              log: d.log,
+              notifyMergeReverted: d.notifyMergeReverted,
+              job: nextJob,
+              config: jobConfig,
+            });
           } else {
             d.log("warn", `Auto-merge blocked: ${mergeResult.reason}` +
               (mergeResult.testOutput ? `\n${mergeResult.testOutput.slice(0, 500)}` : ""));
