@@ -34,7 +34,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
-- 38 source modules + CLI, 165 test files, 2803 tests
+- 38 source modules + CLI, 167 test files, 2810 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -408,6 +408,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/cli-parallel.test.ts` | 11 | `--parallel N` flag parsing: valid N, out of range, mutually exclusive with --name, worker naming |
 | `test/daemon-ipc-progress.test.ts` | 10 | pipelineProgress in IPC status, getWorktreeCommitCount, backward compat, fallback |
 | `test/cli-fleet-display.test.ts` | 15 | Fleet table formatting, PipelineProgress interface, formatUptime, truncation, formatElapsed, CLI commands, IPC fallback |
+| `test/cli-fleet-display.regression-1.test.ts` | 4 | Fleet display column-safe color injection: status word in instance name, TODO title, multiple columns |
+| `test/daemon-ipc-progress.regression-1.test.ts` | 3 | Commit count cache timestamp ordering, getWorktreeCommitCount edge cases |
 
 ---
 

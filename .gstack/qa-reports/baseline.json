@@ -3,9 +3,8 @@
   "url": "cli-project",
   "healthScore": 100,
   "issues": [
-    {"id": "ISSUE-001", "title": "collectAllDecisions missing onWarn parameter", "severity": "medium", "category": "functional"},
-    {"id": "ISSUE-002", "title": "Stale test counts in CLAUDE.md", "severity": "low", "category": "content"},
-    {"id": "ISSUE-003", "title": "Missing test file entries in CLAUDE.md table", "severity": "low", "category": "content"}
+    {"id": "ISSUE-001", "title": "Fleet display .replace() colors wrong column", "severity": "critical", "category": "functional"},
+    {"id": "ISSUE-002", "title": "Commit count cache race condition in IPC handler", "severity": "medium", "category": "functional"}
   ],
   "categoryScores": {
     "console": 100,
