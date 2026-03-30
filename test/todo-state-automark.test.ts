@@ -201,4 +201,55 @@ describe("markTodoCompleteInFile", () => {
     const today = new Date().toISOString().slice(0, 10);
     expect(updated).toContain(`COMPLETE (${today})`);
   });
+
+  // Regression: ISSUE-002 — claimedTodoTitle lacks P\d: prefix but heading has it
+  // Found by /qa on 2026-03-30
+  // Report: .gstack/qa-reports/qa-report-garyclaw-2026-03-30.md
+  it("matches title WITHOUT P\\d: prefix against heading WITH P\\d: prefix", () => {
+    writeFileSync(TODOS_PATH, [
+      "# TODOS",
+      "",
+      "## P2: Fix Login Bug",
+      "Login fails on mobile.",
+      "",
+      "## P3: Add Dark Mode",
+      "User requested dark mode.",
+    ].join("\n"));
+
+    // parseTodoItems strips the P\d: prefix from title, so claimedTodoTitle
+    // arrives as "Fix Login Bug" while the heading is "## P2: Fix Login Bug"
+    const result = markTodoCompleteInFile(
+      TODOS_PATH,
+      "Fix Login Bug",
+      "Completed by worker-1.",
+    );
+
+    expect(result).toBe(true);
+    const updated = readFileSync(TODOS_PATH, "utf-8");
+    expect(updated).toContain("~~P2: Fix Login Bug~~ — COMPLETE");
+    expect(updated).toContain("Completed by worker-1.");
+    // Other heading untouched
+    expect(updated).toContain("## P3: Add Dark Mode");
+    expect(updated).not.toContain("~~P3:");
+  });
+
+  it("matches title WITH P\\d: prefix against heading WITHOUT prefix", () => {
+    writeFileSync(TODOS_PATH, [
+      "# TODOS",
+      "",
+      "## Fix Login Bug",
+      "Login fails on mobile.",
+    ].join("\n"));
+
+    // Reverse case: title has prefix but heading doesn't
+    const result = markTodoCompleteInFile(
+      TODOS_PATH,
+      "P2: Fix Login Bug",
+      "Done.",
+    );
+
+    expect(result).toBe(true);
+    const updated = readFileSync(TODOS_PATH, "utf-8");
+    expect(updated).toContain("~~Fix Login Bug~~ — COMPLETE");
+  });
 });
