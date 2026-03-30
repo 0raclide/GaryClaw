@@ -15,6 +15,7 @@ import { join, relative, extname, basename } from "node:path";
 
 import { estimateTokens, readCheckpoint, generateRelayPrompt } from "./checkpoint.js";
 import { analyzeBootstrapQuality } from "./evaluate.js";
+import { detectProjectType, saveProjectType } from "./project-type.js";
 import type { GaryClawConfig, PipelineSkillEntry } from "./types.js";
 
 // ── Constants ────────────────────────────────────────────────────
@@ -492,6 +493,14 @@ export async function analyzeCodebase(projectDir: string): Promise<CodebaseAnaly
 
   // Detect tech stack
   const techStack = detectTechStack(projectDir, files, packageJson);
+
+  // Save project type for other skills (side effect — always fresh during bootstrap)
+  try {
+    const projectTypeResult = detectProjectType(projectDir);
+    saveProjectType(projectDir, projectTypeResult);
+  } catch {
+    // Non-fatal — project type cache is a convenience, not a requirement
+  }
 
   // Find test directory
   const testDir = findTestDir(projectDir, files);
