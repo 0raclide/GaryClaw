@@ -33,7 +33,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Session Reuse: COMPLETE** (2026-03-29) — Stateful queryFn with SDK resume, buildResumePrompt strips 43K prefix, MAX_REUSE=25 reset, batch bypass, graceful fallback, observability events
 **Adaptive Pipeline Composition: COMPLETE** (2026-03-29) — Static lookup table maps (effort, priority, hasDesignDoc) to minimal skill sequences, 4x throughput on XS/S items
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
-- 38 source modules + CLI, 161 test files, 2758 tests
+**Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
+- 38 source modules + CLI, 165 test files, 2803 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -84,6 +85,7 @@ npx tsx src/cli.ts oracle init                   # create memory dirs + template
 # Daemon mode (background process, supports parallel instances)
 npx tsx src/cli.ts daemon start                    # start default daemon instance
 npx tsx src/cli.ts daemon start --name review-bot  # start named parallel instance
+npx tsx src/cli.ts daemon start --parallel 5       # launch 5 parallel workers (auto-cleanup + budget check)
 npx tsx src/cli.ts daemon status                   # show default instance status
 npx tsx src/cli.ts daemon status --all             # show all instances
 npx tsx src/cli.ts daemon list                     # alias for status --all
@@ -212,6 +214,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 - **Oracle session reuse** — `createSdkOracleQueryFn()` is stateful: first call creates a fresh SDK session with full 43K prompt, subsequent calls resume with just the question (~700 tokens via `buildResumePrompt()`). `ORACLE_QUESTION_MARKER` shared constant prevents marker drift. `MAX_REUSE=25` resets session to bound context growth. Batch calls (`ORACLE_BATCH_MARKER`) bypass session reuse. Graceful fallback: resume failure → single cold-start retry. `OracleSessionEvent` callback for observability. Per-skill scope (orchestrator creates fresh queryFn per skill).
 - **Adaptive pipeline composition** — `composePipeline()` in `pipeline-compose.ts` maps `(effort, priority, hasDesignDoc)` to minimal skill sequences via static lookup table. XS items → `implement + qa` ($0.50 vs $3-4). Intersection with `requestedSkills` ensures composition can only remove skills, never add. Wired into job-runner between pre-assignment and todo-state trimming. `pipeline_composed` event for observability. `composedFrom` on Job for dashboard tracking. Fail-open on errors.
 - **Oracle-driven pipeline composition** — Prioritize prompt outputs `### Recommended Pipeline` section. `parsePipelineRecommendation()` in job-runner parses it. Cold-start gate: `countPipelineOutcomes()` requires 10+ pipeline outcome entries in decision-outcomes.md before oracle overrides static table. `buildPipelineOutcome()` in reflection writes human-readable outcome lines (success/acceptable/failure based on QA issue count). `compositionMethod` on Job tracks "static" vs "oracle". Learning loop: composition → QA outcome → reflection → decision-outcomes.md → next prioritize reads outcomes.
+- **Daemon fleet command** — `daemon start --parallel N` creates `worker-1` through `worker-N` instances. Auto-cleanup via `runAutoCleanup()` extracted from doctor.ts runs before any fork (stale PIDs, orphaned worktrees, stuck locks, dead budget entries, orphaned TODO state). Budget pre-validation: `N * perJobCostLimitUsd` must fit within remaining daily budget. Staggered 1s delay between forks prevents git worktree race. PID file verification polls up to 3s per instance. IPC status enriched with `PipelineProgress` (current skill, skill index, claimed TODO, elapsed time, commit count). Commit count cached every 10s via async `getWorktreeCommitCount()`. Fleet table in `displayAllInstances()` queries running instances via parallel IPC with disk fallback for stopped instances. `--parallel` mutually exclusive with `--name`.
 
 ---
 
@@ -401,6 +404,10 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/worktree-validation.regression-1.test.ts` | 5 | Worktree validation regression: stdout+stderr capture, dynamic lock timeout |
 | `test/worktree-warn.test.ts` | 5 | Worktree warn routing: listWorktrees onWarn, mergeWorktreeBranch stash pop onWarn |
 | `test/worktree.regression-3.test.ts` | 8 | Worktree regression: merge lock acquire/release edge cases |
+| `test/doctor-auto-cleanup.test.ts` | 9 | runAutoCleanup: stale PIDs, locks, budget, TODO state, running guard, fail-open |
+| `test/cli-parallel.test.ts` | 11 | `--parallel N` flag parsing: valid N, out of range, mutually exclusive with --name, worker naming |
+| `test/daemon-ipc-progress.test.ts` | 10 | pipelineProgress in IPC status, getWorktreeCommitCount, backward compat, fallback |
+| `test/cli-fleet-display.test.ts` | 8 | Fleet table formatting, PipelineProgress interface, formatUptime, truncation, formatElapsed |
 
 ---
 
