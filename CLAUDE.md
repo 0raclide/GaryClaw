@@ -8,7 +8,7 @@ Push code. Go to sleep. GaryClaw runs QA, remembers what failed last Tuesday, ap
 
 GaryClaw wraps Claude Code in an external harness that monitors context usage, checkpoints state, and automatically relays work across fresh sessions — making skills effectively context-infinite. On top of that foundation, it adds autonomous decision-making (Oracle with 7 principles + memory), a persistent background daemon with parallel instances, and a self-improvement loop that prioritizes its own backlog, designs solutions, implements them, reviews the implementation, and fixes bugs — all without human intervention.
 
-**The meta-story:** 767 commits. 43 source modules. The daemon built 22 of them itself — it designed its own oracle, built its own skill selection, QA'd its own code, and invented new features when the backlog ran dry. 96% of commits are daemon-generated. This isn't a tool that runs tasks — it's a system that evolves.
+**The meta-story:** 768 commits. 43 source modules. The daemon built 22 of them itself — it designed its own oracle, built its own skill selection, QA'd its own code, and invented new features when the backlog ran dry. 96% of commits are daemon-generated. This isn't a tool that runs tasks — it's a system that evolves.
 
 ---
 
