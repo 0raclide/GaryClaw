@@ -645,7 +645,7 @@ export function createJobRunner(
             try {
               const slug = slugify(item.title);
               const stored = readTodoState(preAssignStateDir, slug);
-              if (stored && (stored.state === "merged" || stored.state === "complete")) {
+              if (stored && (stored.state === "merged" || stored.state === "complete" || stored.state === "pr-created")) {
                 d.log("debug", `Pre-assignment: skipping "${item.title}" (state: ${stored.state})`);
                 return false;
               }
@@ -852,16 +852,19 @@ export function createJobRunner(
               d.log("info", `TODO "${todoTitle}" promoted ${reconciledState.state} → ${finalState}`);
             }
 
-            // Auto-mark TODOS.md heading as ~~complete~~
-            try {
-              const todosPath = join(jobConfig.projectDir, "TODOS.md");
-              const summary = `Completed (detected by artifact reconciliation, job ${nextJob.id}).`;
-              const marked = markTodoCompleteInFile(todosPath, todoTitle, summary);
-              if (marked) {
-                d.log("info", `Auto-marked TODO "${todoTitle}" complete in TODOS.md`);
+            // Auto-mark TODOS.md heading as ~~complete~~ only for terminal states.
+            // pr-created is NOT terminal — the PR hasn't merged yet.
+            if (finalState === "complete" || finalState === "merged") {
+              try {
+                const todosPath = join(jobConfig.projectDir, "TODOS.md");
+                const summary = `Completed (detected by artifact reconciliation, job ${nextJob.id}).`;
+                const marked = markTodoCompleteInFile(todosPath, todoTitle, summary);
+                if (marked) {
+                  d.log("info", `Auto-marked TODO "${todoTitle}" complete in TODOS.md`);
+                }
+              } catch (markErr) {
+                d.log("warn", `Auto-mark TODOS.md failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`);
               }
-            } catch (markErr) {
-              d.log("warn", `Auto-mark TODOS.md failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`);
             }
           } catch {
             // Fail-open
