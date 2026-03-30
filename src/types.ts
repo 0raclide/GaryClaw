@@ -186,7 +186,10 @@ export type OrchestratorEvent =
   | { type: "oracle_session"; event: OracleSessionEvent }
   | { type: "pipeline_composed"; originalSkills: string[]; composedSkills: string[]; reason: string }
   | { type: "pipeline_oracle_adjustment"; skill: string; skipRisk: number; action: "restored" | "kept_skipped" }
-  | { type: "segment_retry"; sessionIndex: number; segmentIndex: number; attempt: number; maxRetries: number; error: string; delayMs: number };
+  | { type: "segment_retry"; sessionIndex: number; segmentIndex: number; attempt: number; maxRetries: number; error: string; delayMs: number }
+  | { type: "oracle_cache_hit"; question: string; chosen: string; hitCount: number }
+  | { type: "oracle_cache_miss"; question: string }
+  | { type: "oracle_cache_invalidated"; question: string };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;
@@ -293,6 +296,7 @@ export interface DaemonConfig {
     autoFixOnRevert?: boolean;             // default: false — auto-enqueue implement->qa after post-merge revert
   };
   autoResearch?: AutoResearchConfig;
+  oracleCache?: OracleCacheConfig;
 }
 
 export type TriggerConfig = GitPollTrigger | CronTrigger;
@@ -487,6 +491,13 @@ export interface AutoResearchConfig {
   lowConfidenceThreshold: number;  // default: 6
   minDecisionsToTrigger: number;   // default: 3
   maxTopicsPerJob: number;         // default: 2 (cap to prevent budget drain)
+}
+
+// ── Oracle cache ────────────────────────────────────────────────
+
+export interface OracleCacheConfig {
+  enabled: boolean;
+  minHits: number;              // default: 5 — identical answers needed before caching
 }
 
 // ── Domain research ─────────────────────────────────────────────
