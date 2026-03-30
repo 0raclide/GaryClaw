@@ -8,7 +8,7 @@ Push code. Go to sleep. GaryClaw runs QA, remembers what failed last Tuesday, ap
 
 GaryClaw wraps Claude Code in an external harness that monitors context usage, checkpoints state, and automatically relays work across fresh sessions — making skills effectively context-infinite. On top of that foundation, it adds autonomous decision-making (Oracle with 7 principles + memory), a persistent background daemon with parallel instances, and a self-improvement loop that prioritizes its own backlog, designs solutions, implements them, reviews the implementation, and fixes bugs — all without human intervention.
 
-**The meta-story:** 750 commits. 43 source modules. The daemon built 22 of them itself — it designed its own oracle, built its own skill selection, QA'd its own code, and invented new features when the backlog ran dry. 96% of commits are daemon-generated. This isn't a tool that runs tasks — it's a system that evolves.
+**The meta-story:** 755 commits. 43 source modules. The daemon built 22 of them itself — it designed its own oracle, built its own skill selection, QA'd its own code, and invented new features when the backlog ran dry. 96% of commits are daemon-generated. This isn't a tool that runs tasks — it's a system that evolves.
 
 ---
 
@@ -44,7 +44,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **SDK Failure Segment Retry: COMPLETE** (2026-03-30) — Transient error recovery in orchestrator segment loop. `isTransientError()` reuses `classifyError()` for sdk-bug + infra-issue categories. MAX_SEGMENT_RETRIES=1, 30s abort-aware delay, segment_retry event, preserves all accumulated state (monitor, issue tracker, checkpoints). PerJobCostExceededError excluded from retry.
 **Project Type Awareness: COMPLETE** (2026-03-30) — Deterministic project classification (CLAUDE.md > package.json > file patterns), cached in `.garyclaw/project-type.json`. Injected into Oracle projectContext + skill prompts. Doctor check #10 for stale cache. Bootstrap saves on detection.
 **Oracle Decision Cache: COMPLETE** (2026-03-30) — Sticky answers for repeated Oracle questions. Keyword bag normalization strips variable tokens (paths, numbers, timestamps, quoted strings), sorted dedup keyword set as cache key. 5-hit promotion threshold, warm start from decision-outcomes.md, reflection-based invalidation on failure outcomes. Partial-batch: cached questions resolved at zero cost, uncached sent to Oracle. Per-skill scope. `onCacheEvent` emits hit/miss/invalidated events. Daemon config validation for `oracleCache.enabled` + `oracleCache.minHits`.
-- 43 source modules, 207 test files, 3349 tests
+- 43 source modules, 207 test files, 3355 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -336,7 +336,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/reflection-pipeline-outcome.test.ts` | 19 | buildPipelineOutcome: success/acceptable/failure, skipped skills, compositionMethod; countPipelineOutcomes: null/empty/positive/mixed |
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
-| `test/prioritize.test.ts` | 109 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact, per-category stats injection, Wow factor weights, filterOpenTodos, budget constants, addBudgetedSection, budget enforcement, truncateSection |
+| `test/prioritize.test.ts` | 115 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact, per-category stats injection, Wow factor weights, filterOpenTodos, budget constants, addBudgetedSection, budget enforcement, truncateSection, prioritize_prompt_size event |
 | `test/prioritize-review-findings.test.ts` | 11 | loadUnresolvedReviewFindings: flat/instance layouts, action keywords, skip filters, review skill gating, job dir limit, error handling |
 | `test/prioritize.regression-1.test.ts` | 8 | Budget keys vision/capabilities split, truncateSection marker for no-newline content, filterOpenTodos all-struck-through fallback |
 | `test/worktree.test.ts` | 28 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
@@ -359,7 +359,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/orchestrator-segment-retry.test.ts` | 10 | Segment retry: transient error retry, non-transient propagation, budget error bypass, retry exhaustion, session resume, delay timing, abort cancellation, constants |
 | `test/orchestrator.regression-1.test.ts` | 4 | Multi-tool heavy detection: non-first block, middle position, no false positive |
 | `test/orchestrator-relay-projecttype.regression-1.test.ts` | 2 | Relay preserves project type prefix: post-relay prompt contains project type context, first segment includes prefix |
-| `test/cli.test.ts` | 90 | CLI arg parsing, subcommands, daemon commands, --name/--all, --no-adaptive, adaptive_turns event, pipeline_oracle_adjustment event, segment_retry event |
+| `test/cli.test.ts` | 90 | CLI arg parsing, subcommands, daemon commands, --name/--all, --no-adaptive, adaptive_turns event, pipeline_oracle_adjustment event, segment_retry event, prioritize_prompt_size event |
 | `test/cli-main.test.ts` | 25 | CLI main entry point, error handling |
 | `test/cli.regression-1.test.ts` | 2 | CLI regression: edge cases in arg parsing |
 | `test/cli-evaluate-hook.regression-1.test.ts` | 7 | CLI evaluate hook: append candidates, skip same project, skip missing, error handling |
