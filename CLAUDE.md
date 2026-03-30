@@ -273,7 +273,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
 | `test/pipeline-compose.test.ts` | 59 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
 | `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
-| `test/pipeline-history.test.ts` | 51 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker, computeCategoryStats |
+| `test/pipeline-history.test.ts` | 52 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker, computeCategoryStats |
 | `test/pipeline-compose-oracle.regression-1.test.ts` | 4 | Oracle override same-length different-skills: set-membership check, identical no-op, length diff, empty |
 | `test/skill-catalog.test.ts` | 15 | SKILL_CATALOG: completeness, required fields, cost bounds, mode values, formatSkillCatalogForPrompt output |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
