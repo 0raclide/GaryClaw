@@ -680,7 +680,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses #1 failure category + cost increase)
 
-## ~~P3: Per-Skill Cost Attribution — Know Where the Money Goes
+## P3: Per-Skill Cost Attribution — Know Where the Money Goes
 
 **What:** Track and display per-skill cost breakdowns in the dashboard. Currently the dashboard shows total cost and per-job cost, but not which skills within a pipeline consume the most. Add per-skill cost tracking to pipeline state and surface it in the dashboard with trend detection.
 
@@ -697,7 +697,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses cost increase — measurement before optimization)
 
-## ~~P3: Oracle Memory Compaction — Bounded Growth for decision-outcomes.md
+## P3: Oracle Memory Compaction — Bounded Growth for decision-outcomes.md
 
 **What:** decision-outcomes.md is 34K and growing unbounded. Compact old entries by merging repeated patterns into summary lines and pruning outcomes older than 30 days. Keep the file under a 20K token budget.
 
@@ -716,7 +716,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses unbounded growth + Oracle latency)
 
-## ~~P3: Job Runner Modular Decomposition — Extract Subsystems from 1888-Line God Module
+## P3: Job Runner Modular Decomposition — Extract Subsystems from 1888-Line God Module
 
 **What:** `job-runner.ts` at 1888 lines is the largest module and growing. Extract four logical subsystems into focused modules: merge handling (~200 lines → `src/merge-handler.ts`), rate limit handling (~150 lines → `src/rate-limit.ts`), auto-mark/TODO management (~200 lines → `src/todo-manager.ts`), and pre-assignment/composition (~200 lines → `src/job-assignment.ts`). The job-runner becomes a ~900-line orchestrator that delegates to these modules.
 
@@ -741,51 +741,5 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 - ~80 lines of code + ~15 tests
 
 **Effort:** S (human: ~3 days / CC: ~20 min)
-**Depends on:** Nothing
-**Added by:** Prioritize on 2026-03-30 (re-added — previous entry incorrectly auto-marked complete)
-
-## P3: Per-Skill Cost Attribution — Track Where Money Goes
-
-**What:** Track and display per-skill cost breakdowns in the dashboard. Currently the dashboard shows total cost and per-job cost, but not which skills within a pipeline consume the most. Add per-skill cost tracking to pipeline state and surface it in the dashboard with trend detection.
-
-**Why:** Costs are up 19% but we can't tell which skills are getting more expensive. Without per-skill attribution, cost optimization is guesswork. This is the measurement that enables targeted optimization.
-
-**Implementation:**
-- Extend `PipelineState` with `skillCosts: Record<string, number>` — populated after each skill completes
-- In `pipeline.ts`: record `costUsd` per skill from orchestrator result
-- In `dashboard.ts`: new `aggregateSkillCosts()` function, format as table (skill | avg cost | trend)
-- Trend detection: compare last 10 jobs' per-skill costs to previous 10, flag >15% increases
-- ~100 lines of code + ~15 tests
-
-**Effort:** S (human: ~3 days / CC: ~20 min)
-**Depends on:** Nothing
-**Added by:** Prioritize on 2026-03-30 (re-added — previous entry incorrectly auto-marked complete)
-
-## P3: Decision Outcomes Compaction — Bounded Growth for Oracle Memory
-
-**What:** decision-outcomes.md is 34K and growing unbounded. Compact old entries by merging repeated patterns into summary lines and pruning outcomes older than 30 days. Keep the file under a 20K token budget.
-
-**Why:** decision-outcomes.md feeds into oracle cache warm-start, oracle memory injection, reflection outcome matching, and pipeline outcome counting. As it grows, all four consumers slow down. The warm-start already scans the full file on every skill init. At current growth rate (~1K/day with parallel instances), the file will hit 100K within 2 months.
-
-**Implementation:**
-- New function `compactDecisionOutcomes()` in `oracle-memory.ts`
-- Group outcomes by normalized question pattern (reuse oracle-cache normalization)
-- For groups with 10+ identical outcomes: replace with summary line
-- Prune individual entries older than 30 days (summaries persist)
-- Token budget enforcement: if file exceeds 20K tokens after compaction, drop oldest summaries
-- Run compaction in reflection post-job
-- ~80 lines of code + ~12 tests
-
-**Effort:** S (human: ~3 days / CC: ~20 min)
-**Depends on:** Nothing
-**Added by:** Prioritize on 2026-03-30 (re-added — previous entry incorrectly auto-marked complete)
-
-## P3: Job Runner Subsystem Extraction — Decompose 1888-Line God Module
-
-**What:** Extract four logical subsystems from `job-runner.ts` (1888 lines) into focused modules: merge handling (~200 lines → `src/merge-handler.ts`), rate limit handling (~150 lines → `src/rate-limit.ts`), auto-mark/TODO management (~200 lines → `src/todo-manager.ts`), and pre-assignment/composition (~200 lines → `src/job-assignment.ts`). The job-runner becomes a ~900-line orchestrator that delegates to these modules.
-
-**Why:** Every new feature adds to job-runner.ts because it's the natural integration point. At 1888 lines, modifications carry high risk of unintended side effects. Decomposition makes each subsystem independently testable and reduces merge conflicts for parallel instances.
-
-**Effort:** M (human: ~1 week / CC: ~45 min)
 **Depends on:** Nothing
 **Added by:** Prioritize on 2026-03-30 (re-added — previous entry incorrectly auto-marked complete)
