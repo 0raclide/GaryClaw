@@ -37,6 +37,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
 **GitHub PR Workflow: COMPLETE** (2026-03-30) — Optional `merge.strategy: "pr"` creates structured GitHub PRs instead of direct merge. PR body includes pipeline summary, oracle decisions, test results. Auto-merge via `gh pr merge --auto`. Fallback to direct merge when `gh` unavailable. New "pr-created" TODO state. Dashboard PR stats.
 **Auto-Fix Loop After Revert: COMPLETE** (2026-03-30) — Post-merge revert triggers immediate `implement → qa` re-attempt. Retry cap (MAX_AUTO_FIX_RETRIES=2), budget cap (2x original job cost), enqueue-before-persist ordering, mkdir-based advisory lock, context file for implement skill discovery, doctor check #8 for stale auto-fix state, dashboard auto-fix stats.
+**SDK Failure Segment Retry: COMPLETE** (2026-03-30) — Transient error recovery in orchestrator segment loop. `isTransientError()` reuses `classifyError()` for sdk-bug + infra-issue categories. MAX_SEGMENT_RETRIES=1, 30s abort-aware delay, segment_retry event, preserves all accumulated state (monitor, issue tracker, checkpoints). PerJobCostExceededError excluded from retry.
 - 41 source modules, 200 test files, 3203 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
@@ -160,7 +161,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/oracle.ts` | Decision Oracle — 7 Principles, confidence scoring, escalation, memory injection, batch decisions, shared prompt prefix |
 | `src/issue-extractor.ts` | Hybrid issue extraction from SDK stream + git log |
 | `src/pipeline.ts` | Sequential skill chaining, context handoff, pipeline state, git HEAD tracking, text accumulation for post-skill analysis |
-| `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay |
+| `src/orchestrator.ts` | Two-level loop (sessions × segments), deferred relay, transient error segment retry |
 | `src/daemon.ts` | Daemon process: PID, IPC server, pollers, signal handling, instance-aware |
 | `src/daemon-ipc.ts` | Unix socket IPC: `createIPCServer`, `sendIPCRequest` |
 | `src/daemon-registry.ts` | Multi-instance coordination: discovery, global budget, cross-instance dedup |
@@ -332,7 +333,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
 | `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
 | `test/doctor.test.ts` | 59 | 9 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state, stale budget locks, stale auto-fix state |
-| `test/failure-taxonomy.test.ts` | 77 | 10 failure categories, table-driven classification, failures.jsonl, notification integration, isTransientError |
+| `test/failure-taxonomy.test.ts` | 79 | 10 failure categories, table-driven classification, failures.jsonl, notification integration, isTransientError |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
 | `test/orchestrator.test.ts` | 47 | auth, success, maxTurns, errors, abort, relay, adaptive turns, heavy tool tracking, --no-adaptive config, codebase summary extraction |
 | `test/orchestrator-helpers.test.ts` | 38 | orchestrator helper functions, prompt building |
