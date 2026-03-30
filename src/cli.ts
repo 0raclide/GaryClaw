@@ -1333,11 +1333,11 @@ async function displayAllInstances(checkpointDir: string, projectDir?: string): 
       statusRaw = "stopped";
     }
 
-    // Use raw (un-colored) status for padding calculation
-    const line = `  ${inst.name.padEnd(17)}${statusRaw.padEnd(10)}${skillStr.padEnd(16)}${todoStr.padEnd(28)}${timeStr.padEnd(8)}${commitStr}`;
-    // Re-apply color to status
-    const coloredLine = line.replace(statusRaw, statusStr.padEnd(statusRaw.length + (statusStr.length - statusRaw.length)));
-    console.log(coloredLine);
+    // Build line with ANSI-colored status inserted at the correct column
+    const nameCol = `  ${inst.name.padEnd(17)}`;
+    const statusCol = statusStr + " ".repeat(Math.max(0, 10 - statusRaw.length));
+    const restCols = `${skillStr.padEnd(16)}${todoStr.padEnd(28)}${timeStr.padEnd(8)}${commitStr}`;
+    console.log(`${nameCol}${statusCol}${restCols}`);
   }
 
   const todayJobCount = globalBudget.jobCount;
