@@ -33,7 +33,8 @@ export const PRIORITIZE_PROMPT_BUDGET = 40_000;
  *  If a section is smaller than its cap, unused budget flows to later sections. */
 export const PRIORITIZE_SECTION_BUDGETS = {
   todosContent: 8_000,
-  capabilities: 4_000,
+  vision: 1_500,
+  capabilities: 2_500,
   oracleContext: 6_000,
   failurePatterns: 2_000,
   qualityTrends: 1_500,
@@ -55,8 +56,13 @@ export const PRIORITIZE_SECTION_BUDGETS = {
  */
 export function filterOpenTodos(content: string): string {
   const blocks = content.split(/^(?=## )/m);
+  const hadStructuredItems = blocks.some(b => b.match(/^## /));
   const open = blocks.filter(b => !b.match(/^## ~~/));
-  return open.join("\n").trim();
+  const result = open.join("\n").trim();
+  // If there were structured ## blocks but none survived filtering (all struck-through),
+  // return empty so the caller falls through to the "No TODOS.md found" path.
+  if (hadStructuredItems && !open.some(b => b.match(/^## /))) return "";
+  return result;
 }
 
 // ── Budget helpers ───────────────────────────────────────────────
@@ -80,11 +86,11 @@ export function truncateSection(content: string, maxTokens: number, keepEnd = tr
     const nl = sliced.indexOf("\n");
     return nl >= 0 && nl < sliced.length - 1
       ? "[...truncated oldest]\n" + sliced.slice(nl + 1)
-      : sliced;
+      : "[...truncated oldest]\n" + sliced;
   } else {
     const sliced = content.slice(0, maxChars);
     const nl = sliced.lastIndexOf("\n");
-    return nl > 0 ? sliced.slice(0, nl) + "\n[...truncated]" : sliced;
+    return nl > 0 ? sliced.slice(0, nl) + "\n[...truncated]" : sliced + "\n[...truncated]";
   }
 }
 
@@ -843,7 +849,7 @@ export async function buildPrioritizePrompt(
       "\nIMPORTANT: Do NOT invent features that already exist. Check the Current Capabilities section below — these describe everything the system already does.";
 
     tokensUsed += addBudgetedSection(lines, "### Product Vision (from CLAUDE.md)",
-      visionBlock, SB.capabilities, remaining(), false);
+      visionBlock, SB.vision, remaining(), false);
 
     // Inject current capabilities from CLAUDE.md — the system's self-description.
     const statusMatch = claudeMdContent.match(/## Current Status\n([\s\S]*?)(?=\n---)/);
