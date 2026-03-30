@@ -9,6 +9,8 @@ import {
   computeSkipRiskScores,
   shouldUseOracleComposition,
   computeFailureRates,
+  computeCategoryStats,
+  MIN_CATEGORY_SAMPLES,
   DEFAULT_DECAY_HALF_LIFE,
   MIN_SKIP_SAMPLES,
   CIRCUIT_BREAKER_MARGIN,
@@ -458,5 +460,132 @@ describe("constants", () => {
 
   it("CIRCUIT_BREAKER_MARGIN is 0.1", () => {
     expect(CIRCUIT_BREAKER_MARGIN).toBe(0.1);
+  });
+});
+
+// ── computeCategoryStats ────────────────────────────────────────
+
+describe("computeCategoryStats", () => {
+  it("returns empty array for empty outcomes", () => {
+    expect(computeCategoryStats([])).toEqual([]);
+  });
+
+  it("returns empty array when no (category, skill) pair has enough samples", () => {
+    const outcomes = [
+      makeRecord({ taskCategory: "bug-fix", skills: ["implement", "qa"], skippedSkills: [] }),
+      makeRecord({ taskCategory: "bug-fix", skills: ["implement", "qa"], skippedSkills: [] }),
+    ];
+    // Only 2 samples per pair, below MIN_CATEGORY_SAMPLES=3
+    expect(computeCategoryStats(outcomes)).toEqual([]);
+  });
+
+  it("produces stats when a (category, skill) pair has 3+ samples", () => {
+    const outcomes = [
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "failure" }),
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "failure" }),
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "success" }),
+    ];
+    const stats = computeCategoryStats(outcomes);
+    // design-review was skipped 3 times (2 failures) → skippedFailureRate ≈ 66.67%
+    const dr = stats.find(s => s.skill === "design-review" && s.category === "visual-ux");
+    expect(dr).toBeDefined();
+    expect(dr!.skippedCount).toBe(3);
+    expect(dr!.skippedFailureRate).toBeCloseTo(66.67, 0);
+    expect(dr!.includedCount).toBe(0);
+    expect(dr!.includedFailureRate).toBe(0);
+  });
+
+  it("tracks both skipped and included for the same skill", () => {
+    const outcomes = [
+      // Skipped design-review, failed
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "failure" }),
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "failure" }),
+      // Included design-review, succeeded
+      makeRecord({ taskCategory: "visual-ux", skills: ["design-review", "implement", "qa"], skippedSkills: [], outcome: "success" }),
+    ];
+    const stats = computeCategoryStats(outcomes);
+    const dr = stats.find(s => s.skill === "design-review" && s.category === "visual-ux");
+    expect(dr).toBeDefined();
+    expect(dr!.skippedCount).toBe(2);
+    expect(dr!.skippedFailureRate).toBe(100);
+    expect(dr!.includedCount).toBe(1);
+    expect(dr!.includedFailureRate).toBe(0);
+  });
+
+  it("sorts by failure rate delta (biggest gap first)", () => {
+    const outcomes = [
+      // visual-ux: skip design-review = always fails
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "failure" }),
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "failure" }),
+      makeRecord({ taskCategory: "visual-ux", skills: ["design-review", "implement", "qa"], skippedSkills: [], outcome: "success" }),
+      // refactor: skip design-review = no failures
+      makeRecord({ taskCategory: "refactor", skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "success" }),
+      makeRecord({ taskCategory: "refactor", skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "success" }),
+      makeRecord({ taskCategory: "refactor", skills: ["design-review", "implement", "qa"], skippedSkills: [], outcome: "success" }),
+    ];
+    const stats = computeCategoryStats(outcomes);
+    // visual-ux delta = 100 - 0 = 100, refactor delta = 0 - 0 = 0
+    const categories = stats.filter(s => s.skill === "design-review").map(s => s.category);
+    expect(categories[0]).toBe("visual-ux");
+  });
+
+  it("groups undefined taskCategory as 'unknown'", () => {
+    const outcomes = [
+      makeRecord({ skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "failure" }),
+      makeRecord({ skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "failure" }),
+      makeRecord({ skills: ["implement", "qa"], skippedSkills: ["design-review"], outcome: "success" }),
+    ];
+    // taskCategory is undefined on makeRecord by default
+    const stats = computeCategoryStats(outcomes);
+    const dr = stats.find(s => s.skill === "design-review");
+    expect(dr).toBeDefined();
+    expect(dr!.category).toBe("unknown");
+  });
+
+  it("handles multiple categories independently", () => {
+    const outcomes = [
+      makeRecord({ taskCategory: "bug-fix", skills: ["implement", "qa"], skippedSkills: [], outcome: "success" }),
+      makeRecord({ taskCategory: "bug-fix", skills: ["implement", "qa"], skippedSkills: [], outcome: "success" }),
+      makeRecord({ taskCategory: "bug-fix", skills: ["implement", "qa"], skippedSkills: [], outcome: "success" }),
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: [], outcome: "failure" }),
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: [], outcome: "failure" }),
+      makeRecord({ taskCategory: "visual-ux", skills: ["implement", "qa"], skippedSkills: [], outcome: "failure" }),
+    ];
+    const stats = computeCategoryStats(outcomes);
+    const bugFixQa = stats.find(s => s.category === "bug-fix" && s.skill === "qa");
+    const visualQa = stats.find(s => s.category === "visual-ux" && s.skill === "qa");
+    expect(bugFixQa).toBeDefined();
+    expect(bugFixQa!.includedFailureRate).toBe(0);
+    expect(visualQa).toBeDefined();
+    expect(visualQa!.includedFailureRate).toBe(100);
+  });
+
+  it("failure rate is 0 when all outcomes are success", () => {
+    const outcomes = [
+      makeRecord({ taskCategory: "refactor", skills: ["implement", "qa"], skippedSkills: [], outcome: "success" }),
+      makeRecord({ taskCategory: "refactor", skills: ["implement", "qa"], skippedSkills: [], outcome: "success" }),
+      makeRecord({ taskCategory: "refactor", skills: ["implement", "qa"], skippedSkills: [], outcome: "success" }),
+    ];
+    const stats = computeCategoryStats(outcomes);
+    for (const s of stats) {
+      expect(s.includedFailureRate).toBe(0);
+      expect(s.skippedFailureRate).toBe(0);
+    }
+  });
+
+  it("treats 'partial' outcome as non-success (failure)", () => {
+    const outcomes = [
+      makeRecord({ taskCategory: "infra", skills: ["implement"], skippedSkills: ["qa"], outcome: "partial" as "success" | "partial" | "failure" }),
+      makeRecord({ taskCategory: "infra", skills: ["implement"], skippedSkills: ["qa"], outcome: "partial" as "success" | "partial" | "failure" }),
+      makeRecord({ taskCategory: "infra", skills: ["implement"], skippedSkills: ["qa"], outcome: "success" }),
+    ];
+    const stats = computeCategoryStats(outcomes);
+    const qa = stats.find(s => s.skill === "qa" && s.category === "infra");
+    expect(qa).toBeDefined();
+    expect(qa!.skippedFailureRate).toBeCloseTo(66.67, 0);
+  });
+
+  it("MIN_CATEGORY_SAMPLES constant is 3", () => {
+    expect(MIN_CATEGORY_SAMPLES).toBe(3);
   });
 });

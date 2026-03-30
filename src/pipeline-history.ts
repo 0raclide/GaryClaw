@@ -220,3 +220,93 @@ export function computeFailureRates(
     staticOnlyCount: staticOnly.length,
   };
 }
+
+// ── Per-category stats ──────────────────────────────────────────
+
+/** Minimum total outcomes (skipped + included) per (category, skill) pair to include in stats. */
+export const MIN_CATEGORY_SAMPLES = 3;
+
+export interface CategorySkillStat {
+  category: string;
+  skill: string;
+  skippedCount: number;
+  skippedFailureRate: number;   // 0-100
+  includedCount: number;
+  includedFailureRate: number;  // 0-100
+}
+
+/**
+ * Compute per-category, per-skill outcome stats from pipeline history.
+ *
+ * For each (category, skill) pair across all outcomes:
+ *   "skipped"  = skill appears in record.skippedSkills
+ *   "included" = skill appears in record.skills
+ *
+ * Filters to pairs with MIN_CATEGORY_SAMPLES+ total outcomes.
+ * Returns sorted by failure rate delta (skippedFailureRate - includedFailureRate), biggest gap first.
+ *
+ * Pure function — no I/O.
+ */
+export function computeCategoryStats(
+  outcomes: PipelineOutcomeRecord[],
+): CategorySkillStat[] {
+  if (outcomes.length === 0) return [];
+
+  // Accumulator: Map<"category|skill", { skipped: { total, failures }, included: { total, failures } }>
+  const acc = new Map<string, {
+    skipped: { total: number; failures: number };
+    included: { total: number; failures: number };
+  }>();
+
+  for (const o of outcomes) {
+    const cat = o.taskCategory ?? "unknown";
+
+    for (const skill of o.skippedSkills) {
+      const key = `${cat}|${skill}`;
+      if (!acc.has(key)) acc.set(key, { skipped: { total: 0, failures: 0 }, included: { total: 0, failures: 0 } });
+      const entry = acc.get(key)!;
+      entry.skipped.total++;
+      if (o.outcome !== "success") entry.skipped.failures++;
+    }
+
+    for (const skill of o.skills) {
+      const key = `${cat}|${skill}`;
+      if (!acc.has(key)) acc.set(key, { skipped: { total: 0, failures: 0 }, included: { total: 0, failures: 0 } });
+      const entry = acc.get(key)!;
+      entry.included.total++;
+      if (o.outcome !== "success") entry.included.failures++;
+    }
+  }
+
+  const stats: CategorySkillStat[] = [];
+  for (const [key, data] of acc) {
+    const totalSamples = data.skipped.total + data.included.total;
+    if (totalSamples < MIN_CATEGORY_SAMPLES) continue;
+
+    const [category, skill] = key.split("|");
+    const skippedFailureRate = data.skipped.total > 0
+      ? (data.skipped.failures / data.skipped.total) * 100
+      : 0;
+    const includedFailureRate = data.included.total > 0
+      ? (data.included.failures / data.included.total) * 100
+      : 0;
+
+    stats.push({
+      category,
+      skill,
+      skippedCount: data.skipped.total,
+      skippedFailureRate,
+      includedCount: data.included.total,
+      includedFailureRate,
+    });
+  }
+
+  // Sort by delta (biggest gap first — where skipping hurts most)
+  stats.sort((a, b) => {
+    const deltaA = a.skippedFailureRate - a.includedFailureRate;
+    const deltaB = b.skippedFailureRate - b.includedFailureRate;
+    return deltaB - deltaA;
+  });
+
+  return stats;
+}
