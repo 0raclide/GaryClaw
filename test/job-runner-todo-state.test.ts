@@ -10,6 +10,22 @@ import { writeTodoState } from "../src/todo-state.js";
 import type { DaemonConfig, DaemonState, GaryClawConfig, OrchestratorCallbacks } from "../src/types.js";
 import type { TodoState } from "../src/todo-state.js";
 
+// Mock detectArtifacts to prevent git env leak from parent repo.
+// TEST_DIR is inside the GaryClaw repo, so without this mock, detectArtifacts
+// finds real commits matching "test" / "feature" keywords and infers
+// commitsOnMain=true → "merged", which overrides the stored state.
+vi.mock("../src/todo-state.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/todo-state.js")>();
+  return {
+    ...actual,
+    detectArtifacts: vi.fn().mockReturnValue({
+      branchExists: false,
+      branchCommitCount: 0,
+      commitsOnMain: false,
+    }),
+  };
+});
+
 const TEST_DIR = join(process.cwd(), ".test-jr-todostate-tmp");
 const PARENT_DIR = join(TEST_DIR, "parent");
 
