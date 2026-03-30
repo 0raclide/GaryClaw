@@ -272,7 +272,6 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/ask-handler-batch.test.ts` | 11 | Batch wiring: multi-question batching, decision log, escalation per-question, serial fallback, human mode unaffected |
 | `test/ask-handler-batch.regression-1.test.ts` | 4 | Guard clause: batchResults length mismatch, fallback low-confidence escalation, empty array, escalated log |
 | `test/ask-handler-batch.regression-2.test.ts` | 3 | onWarn threading: config.onWarn passed to askOracleBatch, undefined when absent, single-question bypass |
-| `test/ask-handler-cache.test.ts` | 14 | Cache integration: cache hit skips Oracle, cache miss records, partial-batch behavior, events, decision log, backward compat, human mode unaffected |
 | `test/oracle.test.ts` | 38 | Oracle decisions, confidence, escalation, error handling, 7 principles, memory injection, Other |
 | `test/oracle-prompt-prefix.test.ts` | 11 | buildOraclePromptPrefix: preamble, principles, memory injection, recent decisions, projectContext truncation |
 | `test/oracle-batch.test.ts` | 32 | askOracleBatch: single delegation, multi-question batching, batch prompt, parseBatchOracleResponse, fallback chain, otherProposal |
