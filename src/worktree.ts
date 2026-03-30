@@ -670,6 +670,216 @@ function isOwnMergeLock(pidFile: string): boolean {
   }
 }
 
+// ── Post-merge verification + auto-revert ───────────────────────
+
+export interface PostMergeVerifyResult {
+  verified: boolean;          // true = tests passed on main
+  reverted: boolean;          // true = auto-revert executed
+  revertSha?: string;         // SHA of the revert commit (if reverted)
+  mergeSha: string;           // SHA of the merge commit being verified
+  testOutput?: string;        // truncated stderr (max 2000 chars)
+  testDurationMs?: number;
+  reason?: string;            // human-readable failure reason
+}
+
+export interface MergeRevertEntry {
+  timestamp: string;
+  instanceName: string;
+  mergeSha: string;
+  revertSha?: string;        // undefined if revert failed/skipped
+  branch: string;            // e.g., "garyclaw/worker-1"
+  testOutput?: string;       // truncated to 2000 chars
+  testDurationMs?: number;
+  jobId?: string;
+  reason: string;            // "post-merge tests failed" or specific error
+  autoReverted: boolean;     // true if git revert succeeded
+}
+
+/**
+ * Post-merge verification: run tests on main after merge, auto-revert if they fail.
+ *
+ * SHA-targeted revert: if HEAD has moved past mergeSha (another instance merged
+ * on top), skip revert and return "manual revert needed". This is the safe default
+ * for parallel instance operation.
+ *
+ * Must be called AFTER the merge lock is released — does not hold the lock.
+ */
+export function verifyPostMerge(
+  repoDir: string,
+  mergeSha: string,
+  options?: {
+    testCommand?: string;     // default: "npm test"
+    testTimeout?: number;     // default: 120000
+  },
+): PostMergeVerifyResult {
+  const testCommand = options?.testCommand ?? "npm test";
+  const testTimeout = options?.testTimeout ?? 120_000;
+
+  // Verify HEAD is at or ahead of mergeSha
+  let currentHead: string;
+  try {
+    currentHead = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repoDir,
+      stdio: "pipe",
+      encoding: "utf-8",
+    }).trim();
+  } catch {
+    return {
+      verified: false,
+      reverted: false,
+      mergeSha,
+      reason: "Cannot read HEAD — git repo may be in a bad state",
+    };
+  }
+
+  // Run tests on main repo
+  const testStart = Date.now();
+  try {
+    execSync(testCommand, {
+      cwd: repoDir,
+      timeout: testTimeout,
+      stdio: "pipe",
+      shell: "/bin/sh",
+    });
+    // Tests passed
+    return {
+      verified: true,
+      reverted: false,
+      mergeSha,
+      testDurationMs: Date.now() - testStart,
+    };
+  } catch (testErr: unknown) {
+    const testDurationMs = Date.now() - testStart;
+
+    // Extract test output
+    let testOutput = "";
+    if (testErr instanceof Error && ("stdout" in testErr || "stderr" in testErr)) {
+      const errObj = testErr as { stdout?: unknown; stderr?: unknown };
+      const stdout = errObj.stdout ? String(errObj.stdout) : "";
+      const stderr = errObj.stderr ? String(errObj.stderr) : "";
+      testOutput = (stdout + (stdout && stderr ? "\n" : "") + stderr).slice(0, 2000);
+    } else if (testErr instanceof Error) {
+      testOutput = testErr.message.slice(0, 2000);
+    }
+
+    // Re-read HEAD — it may have moved during test execution
+    let headNow: string;
+    try {
+      headNow = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: repoDir,
+        stdio: "pipe",
+        encoding: "utf-8",
+      }).trim();
+    } catch {
+      return {
+        verified: false,
+        reverted: false,
+        mergeSha,
+        testOutput,
+        testDurationMs,
+        reason: "Tests failed and cannot read HEAD for revert check",
+      };
+    }
+
+    // If HEAD has moved past mergeSha, another instance merged — can't safely revert
+    if (headNow !== mergeSha) {
+      // Log what's between mergeSha and HEAD for diagnosis
+      let commitsBetween = "";
+      try {
+        commitsBetween = execFileSync(
+          "git",
+          ["log", "--oneline", `${mergeSha}..HEAD`],
+          { cwd: repoDir, stdio: "pipe", encoding: "utf-8" },
+        ).trim();
+      } catch {
+        // best-effort
+      }
+      return {
+        verified: false,
+        reverted: false,
+        mergeSha,
+        testOutput,
+        testDurationMs,
+        reason: `HEAD moved past merge SHA — manual revert needed` +
+          (commitsBetween ? `\nCommits since merge:\n${commitsBetween}` : ""),
+      };
+    }
+
+    // HEAD === mergeSha — safe to revert
+    try {
+      execFileSync("git", ["revert", mergeSha, "--no-edit"], {
+        cwd: repoDir,
+        stdio: "pipe",
+      });
+      // Read the revert commit SHA
+      const revertSha = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: repoDir,
+        stdio: "pipe",
+        encoding: "utf-8",
+      }).trim();
+
+      return {
+        verified: false,
+        reverted: true,
+        revertSha,
+        mergeSha,
+        testOutput,
+        testDurationMs,
+        reason: "Post-merge tests failed",
+      };
+    } catch {
+      return {
+        verified: false,
+        reverted: false,
+        mergeSha,
+        testOutput,
+        testDurationMs,
+        reason: "Revert had conflicts — manual intervention needed",
+      };
+    }
+  }
+}
+
+/**
+ * Append a merge revert entry to .garyclaw/merge-reverts.jsonl.
+ * Best-effort — never throws.
+ */
+export function appendMergeRevert(
+  repoDir: string,
+  entry: MergeRevertEntry,
+): void {
+  try {
+    const gcDir = join(repoDir, ".garyclaw");
+    mkdirSync(gcDir, { recursive: true });
+    appendFileSync(join(gcDir, "merge-reverts.jsonl"), JSON.stringify(entry) + "\n", "utf-8");
+  } catch {
+    // Best-effort — don't crash the job runner if write fails
+  }
+}
+
+/**
+ * Read all merge revert entries from .garyclaw/merge-reverts.jsonl.
+ * Best-effort: returns empty array on any error.
+ */
+export function readMergeReverts(repoDir: string): MergeRevertEntry[] {
+  const entries: MergeRevertEntry[] = [];
+  try {
+    const filePath = join(repoDir, ".garyclaw", "merge-reverts.jsonl");
+    if (!existsSync(filePath)) return entries;
+    const lines = readFileSync(filePath, "utf-8").trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        entries.push(JSON.parse(line) as MergeRevertEntry);
+      } catch {
+        // Skip malformed lines
+      }
+    }
+  } catch {
+    // Best-effort
+  }
+  return entries;
+}
+
 function isStaleMergeLock(pidFile: string): boolean {
   try {
     const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);

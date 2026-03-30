@@ -15,7 +15,8 @@ import {
   shouldUseOracleComposition,
   computeFailureRates,
 } from "./pipeline-history.js";
-import type { MergeAuditEntry } from "./worktree.js";
+import type { MergeAuditEntry, MergeRevertEntry } from "./worktree.js";
+import { readMergeReverts } from "./worktree.js";
 import type {
   DashboardData,
   DaemonState,
@@ -222,6 +223,7 @@ export function aggregateBootstrapEnrichmentStats(
 export function aggregateMergeStats(
   entries: MergeAuditEntry[],
   todayStr?: string,
+  revertEntries?: MergeRevertEntry[],
 ): DashboardData["mergeHealth"] {
   const today = todayStr ?? new Date().toISOString().slice(0, 10);
   const todayEntries = entries.filter((e) => e.timestamp.startsWith(today));
@@ -243,6 +245,11 @@ export function aggregateMergeStats(
     (e) => !e.merged && e.reason !== undefined && e.reason.toLowerCase().includes("conflicts"),
   ).length;
 
+  // Post-merge reverts from merge-reverts.jsonl
+  const todayReverts = (revertEntries ?? []).filter((e) => e.timestamp.startsWith(today));
+  const postMergeReverts = todayReverts.filter((e) => e.autoReverted).length;
+  const revertRate = merged > 0 ? (postMergeReverts / merged) * 100 : 0;
+
   return {
     totalAttempts,
     merged,
@@ -251,6 +258,8 @@ export function aggregateMergeStats(
     avgTestDurationMs,
     testFailures,
     rebaseConflicts,
+    postMergeReverts,
+    revertRate,
   };
 }
 
@@ -388,7 +397,9 @@ export function computeHealthScore(
   // Top concern selection (first matching rule wins)
   let topConcern: string | null = null;
 
-  if (data.oracle.circuitBreakerTripped) {
+  if (mh && mh.postMergeReverts > 0) {
+    topConcern = `${mh.postMergeReverts} merge(s) auto-reverted — check merge-reverts.jsonl`;
+  } else if (data.oracle.circuitBreakerTripped) {
     topConcern = "Oracle memory disabled — accuracy below 60%";
   } else if (data.jobs.successRate < 50) {
     topConcern = "More jobs failing than succeeding — check failure breakdown";
@@ -533,6 +544,9 @@ export function formatDashboard(data: DashboardData): string {
       `| Blocked | ${blockedStr} |`,
       `| Avg test time | ${avgTestSec}s |`,
     );
+    if (data.mergeHealth.postMergeReverts > 0) {
+      lines.push(`| Reverts | ${data.mergeHealth.postMergeReverts} (${data.mergeHealth.revertRate.toFixed(1)}% revert rate) |`);
+    }
   }
 
   // Composition Savings section (only when composition has been applied)
@@ -621,6 +635,7 @@ export function buildDashboard(
   todayStr?: string,
   mergeAuditEntries?: MergeAuditEntry[],
   pipelineOutcomes?: PipelineOutcomeRecord[],
+  mergeRevertEntries?: MergeRevertEntry[],
 ): DashboardData {
   const jobs = aggregateJobStats(state.jobs, todayStr);
   const oracle = aggregateOracleStats(metrics);
@@ -633,8 +648,8 @@ export function buildDashboard(
   // Default to empty until we have a persistence path for enrichment events.
   const bootstrapEnrichment = aggregateBootstrapEnrichmentStats([]);
 
-  // Merge health from audit log entries
-  const mergeHealth = aggregateMergeStats(mergeAuditEntries ?? [], todayStr);
+  // Merge health from audit log entries + revert entries
+  const mergeHealth = aggregateMergeStats(mergeAuditEntries ?? [], todayStr, mergeRevertEntries);
 
   // Pipeline composition stats
   const composition = aggregateCompositionStats(state.jobs, todayStr);
@@ -699,7 +714,10 @@ export function generateDashboard(
   const outcomesPath = join(parentDir ?? instanceDir, "pipeline-outcomes.jsonl");
   const pipelineOutcomes = readPipelineOutcomes(outcomesPath);
 
-  const data = buildDashboard(state, metrics, globalBudget, config, undefined, mergeAuditEntries, pipelineOutcomes);
+  // Read merge revert entries
+  const mergeRevertEntries = readMergeReverts(config.projectDir);
+
+  const data = buildDashboard(state, metrics, globalBudget, config, undefined, mergeAuditEntries, pipelineOutcomes, mergeRevertEntries);
   const markdown = formatDashboard(data);
 
   // Write to parent dir (unified dashboard) or instance dir

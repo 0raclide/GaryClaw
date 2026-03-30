@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Job, DaemonConfig } from "./types.js";
-import type { MergeResult } from "./worktree.js";
+import type { MergeResult, PostMergeVerifyResult } from "./worktree.js";
 
 /**
  * Send a macOS notification for a completed job.
@@ -85,6 +85,23 @@ export function notifyRateLimitResume(instanceName: string, config: DaemonConfig
   const instanceLabel = instanceName && instanceName !== "default" ? ` [${instanceName}]` : "";
   const title = `GaryClaw${instanceLabel} Resumed`;
   const message = "Rate limit hold expired — jobs resuming";
+  sendNotification(title, message);
+}
+
+/**
+ * Send a macOS notification when a merge is auto-reverted after post-merge test failure.
+ * Gated by notifications.onError — reverts are error-class events.
+ */
+export function notifyMergeReverted(
+  job: Job,
+  verifyResult: PostMergeVerifyResult,
+  config: DaemonConfig,
+): void {
+  if (!config.notifications.enabled || !config.notifications.onError) return;
+
+  const instanceLabel = config.name ? ` [${config.name}]` : "";
+  const title = `GaryClaw${instanceLabel} MERGE REVERTED`;
+  const message = `Post-merge tests failed for /${job.skills.join(" → /")}. Auto-reverted ${verifyResult.mergeSha.slice(0, 8)}. Bug TODO created.`;
   sendNotification(title, message);
 }
 

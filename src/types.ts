@@ -279,6 +279,8 @@ export interface DaemonConfig {
     testCommand?: string;       // default: "npm test"
     testTimeout?: number;       // default: 120000 (2 min)
     skipValidation?: boolean;   // default: false
+    skipPostMergeVerification?: boolean;   // default: false — skip post-merge test verification
+    forcePostMergeVerification?: boolean;  // default: false — always verify post-merge, even when pre-merge passed
   };
   autoResearch?: AutoResearchConfig;
 }
@@ -449,6 +451,7 @@ export type FailureCategory =
   | "infra-issue"     // Disk, network, OOM, timeout
   | "budget-exceeded" // Per-job or daily cost limit hit
   | "merge-failed"    // Pre-merge test failure or rebase conflict
+  | "test-regression" // Post-merge test failure, auto-reverted
   | "daemon-crash"    // Job abandoned after repeated daemon restarts
   | "unknown";        // Unclassifiable — conservative fallback
 
@@ -555,6 +558,8 @@ export interface DashboardData {
     avgTestDurationMs: number;
     testFailures: number;         // subset of blocked where testsPassed === false
     rebaseConflicts: number;      // subset of blocked where reason contains "conflicts"
+    postMergeReverts: number;     // count of auto-reverts today
+    revertRate: number;           // reverts / merged (0-100)
   };
   composition: {
     composedJobs: number;           // Jobs where composition changed skill list

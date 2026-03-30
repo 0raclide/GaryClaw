@@ -134,6 +134,12 @@ export function validateDaemonConfig(data: unknown): string | null {
     if (m.skipValidation !== undefined && typeof m.skipValidation !== "boolean") {
       return "merge.skipValidation must be a boolean";
     }
+    if (m.skipPostMergeVerification !== undefined && typeof m.skipPostMergeVerification !== "boolean") {
+      return "merge.skipPostMergeVerification must be a boolean";
+    }
+    if (m.forcePostMergeVerification !== undefined && typeof m.forcePostMergeVerification !== "boolean") {
+      return "merge.forcePostMergeVerification must be a boolean";
+    }
   }
 
   // Validate autoResearch if provided (optional field)

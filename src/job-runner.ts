@@ -6,13 +6,13 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { readFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync, readdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { safeWriteJSON, safeReadJSON } from "./safe-json.js";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runPipeline, resumePipeline, readPipelineState } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
-import { notifyJobComplete, notifyJobError, notifyJobResumed, notifyMergeBlocked, notifyRateLimitHold, notifyRateLimitResume, writeSummary } from "./notifier.js";
+import { notifyJobComplete, notifyJobError, notifyJobResumed, notifyMergeBlocked, notifyMergeReverted, notifyRateLimitHold, notifyRateLimitResume, writeSummary } from "./notifier.js";
 import { generateDashboard } from "./dashboard.js";
 import {
   readGlobalBudget,
@@ -31,8 +31,8 @@ import {
   DEFAULT_FILE_DEPS,
 } from "./file-conflict.js";
 import type { FileDependencyMap } from "./file-conflict.js";
-import { mergeWorktreeBranch, resolveBaseBranch } from "./worktree.js";
-import type { MergeResult } from "./worktree.js";
+import { mergeWorktreeBranch, resolveBaseBranch, verifyPostMerge, appendMergeRevert, branchName } from "./worktree.js";
+import type { MergeResult, PostMergeVerifyResult } from "./worktree.js";
 import { safeReadText } from "./safe-json.js";
 import { parseTodoItems } from "./prioritize.js";
 import { composePipeline } from "./pipeline-compose.js";
@@ -99,6 +99,7 @@ export interface JobRunnerDeps {
   notifyJobError: typeof notifyJobError;
   notifyJobResumed: typeof notifyJobResumed;
   notifyMergeBlocked?: (job: Job, result: MergeResult, config: DaemonConfig) => void;
+  notifyMergeReverted?: (job: Job, verifyResult: PostMergeVerifyResult, config: DaemonConfig) => void;
   notifyRateLimitHold?: (resetAt: Date, instanceName: string, config: DaemonConfig) => void;
   notifyRateLimitResume?: (instanceName: string, config: DaemonConfig) => void;
   writeSummary: typeof writeSummary;
@@ -114,6 +115,7 @@ const defaultDeps: JobRunnerDeps = {
   notifyJobError,
   notifyJobResumed,
   notifyMergeBlocked,
+  notifyMergeReverted,
   notifyRateLimitHold,
   notifyRateLimitResume,
   writeSummary,
@@ -773,6 +775,107 @@ export function createJobRunner(
                 }
               } catch {
                 // Fail-open: state write failure should never break post-merge
+              }
+            }
+
+            // Post-merge verification (defense-in-depth)
+            if (mergeResult.commitCount && mergeResult.commitCount > 0) {
+              const mergeConfig = jobConfig.merge;
+              const skipPostVerify = mergeConfig?.skipPostMergeVerification ?? false;
+              const forcePostVerify = mergeConfig?.forcePostMergeVerification ?? false;
+              // Smart skip: if pre-merge tests already passed, skip unless forced
+              const preMergePassed = mergeResult.testsPassed === true;
+              const shouldVerify = !skipPostVerify && (!preMergePassed || forcePostVerify);
+
+              if (shouldVerify) {
+                try {
+                  // Read HEAD immediately after merge — this is the merge commit SHA
+                  const { execFileSync: efs } = await import("node:child_process");
+                  const mainHead = efs("git", ["rev-parse", "HEAD"], {
+                    cwd: jobConfig.projectDir, stdio: "pipe", encoding: "utf-8",
+                  }).trim();
+
+                  const verifyResult = verifyPostMerge(jobConfig.projectDir, mainHead, {
+                    testCommand: mergeConfig?.testCommand,
+                    testTimeout: mergeConfig?.testTimeout,
+                  });
+
+                  if (verifyResult.verified) {
+                    d.log("info", `Post-merge verified: tests pass on main` +
+                      (verifyResult.testDurationMs ? ` (${Math.round(verifyResult.testDurationMs / 1000)}s)` : ""));
+                  } else if (verifyResult.reverted) {
+                    d.log("warn", `POST-MERGE REVERT: ${verifyResult.reason}` +
+                      (verifyResult.testOutput ? `\n${verifyResult.testOutput.slice(0, 500)}` : ""));
+
+                    // Audit log
+                    appendMergeRevert(jobConfig.projectDir, {
+                      timestamp: new Date().toISOString(),
+                      instanceName: resolvedInstanceName,
+                      mergeSha: verifyResult.mergeSha,
+                      revertSha: verifyResult.revertSha,
+                      branch: branchName(resolvedInstanceName),
+                      testOutput: verifyResult.testOutput?.slice(0, 2000),
+                      testDurationMs: verifyResult.testDurationMs,
+                      jobId: nextJob.id,
+                      reason: verifyResult.reason ?? "Post-merge tests failed",
+                      autoReverted: true,
+                    });
+
+                    // Failure taxonomy record
+                    const syntheticErr = Object.assign(
+                      new Error(verifyResult.reason ?? "Post-merge tests failed"),
+                      { name: "PostMergeRegressionError" },
+                    );
+                    const record = buildFailureRecord(syntheticErr, nextJob.id, nextJob.skills, resolvedInstanceName);
+                    appendFailureRecord(record, checkpointDir);
+
+                    // Bug TODO creation
+                    try {
+                      const todosPath = join(jobConfig.projectDir, "TODOS.md");
+                      if (existsSync(todosPath)) {
+                        const todoTitle = `P2: Fix post-merge regression from ${resolvedInstanceName} (job ${nextJob.id})`;
+                        const todoBody = [
+                          `\n## ${todoTitle}\n`,
+                          `**What:** Post-merge test verification failed after auto-merge to main. The merge was auto-reverted.`,
+                          `**Priority:** P2 (auto-generated safety item)`,
+                          `**Effort:** S`,
+                          `**Test output (truncated):**`,
+                          "```",
+                          (verifyResult.testOutput ?? "").slice(0, 1000),
+                          "```",
+                          `**Branch:** \`garyclaw/${resolvedInstanceName}\` (still exists after revert, check out to debug)`,
+                          `**Added by:** Post-merge safety net on ${new Date().toISOString().slice(0, 10)}`,
+                          "",
+                        ].join("\n");
+                        appendFileSync(todosPath, todoBody, "utf-8");
+                        d.log("info", `Created P2 bug TODO for post-merge regression`);
+                      }
+                    } catch (todoErr) {
+                      d.log("warn", `Failed to create bug TODO: ${todoErr instanceof Error ? todoErr.message : String(todoErr)}`);
+                    }
+
+                    // Notification
+                    d.notifyMergeReverted?.(nextJob, verifyResult, jobConfig);
+                  } else {
+                    // Tests failed but revert skipped (HEAD moved or conflict)
+                    d.log("warn", `Post-merge verification failed but revert skipped: ${verifyResult.reason}`);
+
+                    // Still audit even when revert was skipped
+                    appendMergeRevert(jobConfig.projectDir, {
+                      timestamp: new Date().toISOString(),
+                      instanceName: resolvedInstanceName,
+                      mergeSha: verifyResult.mergeSha,
+                      branch: branchName(resolvedInstanceName),
+                      testOutput: verifyResult.testOutput?.slice(0, 2000),
+                      testDurationMs: verifyResult.testDurationMs,
+                      jobId: nextJob.id,
+                      reason: verifyResult.reason ?? "Post-merge tests failed (revert skipped)",
+                      autoReverted: false,
+                    });
+                  }
+                } catch (err) {
+                  d.log("warn", `Post-merge verification error: ${err instanceof Error ? err.message : String(err)}`);
+                }
               }
             }
           } else {

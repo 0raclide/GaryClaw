@@ -44,6 +44,14 @@ export const RULES: readonly ClassificationRule[] = [
     errorNames: ["MergeValidationError"],
   },
 
+  // ── Post-merge test regression (auto-reverted) ──
+  {
+    category: "test-regression",
+    retryable: false,
+    suggestion: "Post-merge tests failed — merge auto-reverted, bug TODO created for next cycle",
+    errorNames: ["PostMergeRegressionError"],
+  },
+
   // ── Auth issues ──
   {
     category: "auth-issue",
