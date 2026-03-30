@@ -1009,11 +1009,13 @@ export async function buildPrioritizePrompt(
       ptSection, SB.projectType, remaining(), false);
   }
 
-  // Fixed: Rules + format + worked example (always included — essential)
+  // Fixed: Rules + format + worked example (always included — essential, counted for budget accuracy)
   lines.push(PRIORITIZE_RULES);
   lines.push("");
+  tokensUsed += estimateTokens(PRIORITIZE_RULES);
   lines.push(WORKED_EXAMPLE);
   lines.push("");
+  tokensUsed += estimateTokens(WORKED_EXAMPLE);
 
   return lines.join("\n");
 }
