@@ -23,8 +23,8 @@ describe("ISSUE-001: vision vs capabilities budget keys", () => {
     expect(SB.vision).not.toBe(SB.capabilities);
   });
 
-  it("vision + capabilities sum to 4K (design doc spec)", () => {
-    expect(SB.vision + SB.capabilities).toBe(4_000);
+  it("vision + capabilities sum to 5K (design doc spec)", () => {
+    expect(SB.vision + SB.capabilities).toBe(5_000);
   });
 
   it("vision budget is smaller than capabilities (vision is a short description)", () => {
@@ -36,13 +36,13 @@ describe("ISSUE-002: truncateSection marker for no-newline content", () => {
   it("keepEnd=true adds marker even without newlines", () => {
     const content = "A".repeat(5000);
     const result = truncateSection(content, 100, true);
-    expect(result).toContain("[...truncated oldest]");
+    expect(result).toContain("[...older entries truncated]");
   });
 
   it("keepEnd=false adds marker even without newlines", () => {
     const content = "A".repeat(5000);
     const result = truncateSection(content, 100, false);
-    expect(result).toContain("[...truncated]");
+    expect(result).toContain("[...truncated to fit token budget]");
   });
 });
 

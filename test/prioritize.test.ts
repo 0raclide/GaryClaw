@@ -1610,8 +1610,8 @@ describe("prioritize_prompt_size event", () => {
     await buildPrioritizePrompt(config, [], TEST_DIR);
 
     const sizeEvent = events.find(e => e.type === "prioritize_prompt_size");
-    // No TODOS.md → todosContent should not be in sections
-    expect(sizeEvent!.sections!.todosContent).toBeUndefined();
+    // No TODOS.md → todos should not be in sections
+    expect(sizeEvent!.sections!.todos).toBeUndefined();
     // No CLAUDE.md → vision should not be in sections
     expect(sizeEvent!.sections!.vision).toBeUndefined();
     // Oracle disabled → oracleContext should not be in sections
