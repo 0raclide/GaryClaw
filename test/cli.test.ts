@@ -639,4 +639,38 @@ describe("formatEvent", () => {
     expect(result).toContain("45%");
     expect(result).toContain("Restored");
   });
+
+  it("formats segment_retry event with truncated error", () => {
+    const result = formatEvent({
+      type: "segment_retry",
+      sessionIndex: 0,
+      segmentIndex: 2,
+      attempt: 1,
+      maxRetries: 1,
+      error: "stream error in the SDK that is quite long and should be truncated at sixty characters for display",
+      delayMs: 30000,
+    });
+    expect(result).toContain("⟳");
+    expect(result).toContain("segment 2");
+    expect(result).toContain("attempt 1/1");
+    expect(result).toContain("30s");
+    expect(result).toContain("...");  // truncated
+    // Error should be truncated to ~60 chars
+    expect(result.length).toBeLessThan(250);
+  });
+
+  it("formats segment_retry event with short error (no truncation)", () => {
+    const result = formatEvent({
+      type: "segment_retry",
+      sessionIndex: 1,
+      segmentIndex: 0,
+      attempt: 1,
+      maxRetries: 1,
+      error: "ECONNRESET",
+      delayMs: 30000,
+    });
+    expect(result).toContain("ECONNRESET");
+    // Short error should appear in full (not truncated with "..." suffix)
+    expect(result).toContain("ECONNRESET.");  // followed by period, not "..."
+  });
 });

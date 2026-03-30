@@ -372,6 +372,11 @@ export function formatEvent(event: OrchestratorEvent): string {
 
     case "pipeline_oracle_adjustment":
       return `${YELLOW}[Oracle Composition]${RESET} ${event.action === "restored" ? "Restored" : "Kept skipped"} ${event.skill} (skip-risk: ${(event.skipRisk * 100).toFixed(0)}%)`;
+
+    case "segment_retry": {
+      const truncatedError = event.error.length > 60 ? event.error.slice(0, 57) + "..." : event.error;
+      return `${YELLOW}⟳ Retrying segment ${event.segmentIndex} (attempt ${event.attempt}/${event.maxRetries}) after transient error: ${truncatedError}. Waiting ${event.delayMs / 1000}s...${RESET}`;
+    }
   }
 }
 

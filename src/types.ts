@@ -185,7 +185,8 @@ export type OrchestratorEvent =
   | { type: "bootstrap_quality_recheck"; qualityScore: number; previousScore: number }
   | { type: "oracle_session"; event: OracleSessionEvent }
   | { type: "pipeline_composed"; originalSkills: string[]; composedSkills: string[]; reason: string }
-  | { type: "pipeline_oracle_adjustment"; skill: string; skipRisk: number; action: "restored" | "kept_skipped" };
+  | { type: "pipeline_oracle_adjustment"; skill: string; skipRisk: number; action: "restored" | "kept_skipped" }
+  | { type: "segment_retry"; sessionIndex: number; segmentIndex: number; attempt: number; maxRetries: number; error: string; delayMs: number };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;

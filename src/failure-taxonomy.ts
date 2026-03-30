@@ -333,6 +333,17 @@ export function readFailureRecords(checkpointDir: string): FailureRecord[] {
   return records;
 }
 
+/**
+ * Check if an error is transient and safe to retry at the segment level.
+ * Uses classifyError() under the hood — retryable sdk-bug and infra-issue
+ * categories qualify. Budget, auth, and project errors do not.
+ */
+export function isTransientError(err: unknown): boolean {
+  const { category, retryable } = classifyError(err);
+  if (!retryable) return false;
+  return category === "sdk-bug" || category === "infra-issue";
+}
+
 // ── Helpers ─────────────────────────────────────────────────────
 
 /**

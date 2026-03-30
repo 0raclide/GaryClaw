@@ -64,6 +64,7 @@ import {
   extractFailedApproaches,
   buildCodebaseSummary,
 } from "./codebase-summary.js";
+import { isTransientError } from "./failure-taxonomy.js";
 
 import type {
   GaryClawConfig,
@@ -74,6 +75,12 @@ import type {
   SegmentResult,
 } from "./types.js";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+
+/** Maximum number of retries for a single segment after a transient error. */
+export const MAX_SEGMENT_RETRIES = 1;
+
+/** Delay in milliseconds before retrying a segment after a transient error. */
+export const SEGMENT_RETRY_DELAY_MS = 30_000;
 
 /**
  * Extract assistant text content from an SDK message for live progress.
@@ -344,148 +351,187 @@ async function runSkillInternal(
         segmentIndex,
       });
 
-      const segment = startSegment({
-        prompt: segmentIndex === 0 ? currentPrompt : "Continue.",
-        maxTurns: adaptiveMaxTurns,
-        cwd: config.projectDir,
-        env: config.env,
-        settingSources: config.settingSources,
-        canUseTool: askHandler.canUseTool,
-        ...(segmentIndex > 0 && sessionId ? { resume: sessionId } : {}),
-      });
-
       let segmentResult: SegmentResult | null = null;
+      let segmentRetries = 0;
+      let segmentSucceeded = false;
 
-      // 4. Process messages
-      // Wrapped in try/catch to save checkpoint if PerJobCostExceededError
-      // is thrown from callbacks.onEvent (per-job budget enforcement).
-      try {
-        for await (const msg of segment) {
-          // Live progress: assistant text
-          const text = extractAssistantText(msg);
-          if (text) {
-            callbacks.onEvent({ type: "assistant_text", text });
+      while (!segmentSucceeded) {
+        const segment = startSegment({
+          prompt: segmentIndex === 0 ? currentPrompt : "Continue.",
+          maxTurns: adaptiveMaxTurns,
+          cwd: config.projectDir,
+          env: config.env,
+          settingSources: config.settingSources,
+          canUseTool: askHandler.canUseTool,
+          ...(segmentIndex > 0 && sessionId ? { resume: sessionId } : {}),
+        });
 
-            // Codebase summary: mine observations from assistant narration
-            const obs = extractObservations(text);
-            const failed = extractFailedApproaches(text);
-            pendingObservations.push(...obs);
-            pendingFailed.push(...failed);
+        // 4. Process messages
+        // Wrapped in try/catch to save checkpoint if PerJobCostExceededError
+        // is thrown from callbacks.onEvent (per-job budget enforcement).
+        try {
+          for await (const msg of segment) {
+            // Live progress: assistant text
+            const text = extractAssistantText(msg);
+            if (text) {
+              callbacks.onEvent({ type: "assistant_text", text });
+
+              // Codebase summary: mine observations from assistant narration
+              const obs = extractObservations(text);
+              const failed = extractFailedApproaches(text);
+              pendingObservations.push(...obs);
+              pendingFailed.push(...failed);
+            }
+
+            // Live progress: tool use
+            const toolUse = extractToolUse(msg);
+            if (toolUse) {
+              callbacks.onEvent({
+                type: "tool_use",
+                toolName: toolUse.toolName,
+                inputSummary: toolUse.inputSummary,
+              });
+            }
+
+            // Issue extraction + heavy tool tracking: check ALL tool_use blocks,
+            // not just the first. A message like [Read, WebFetch] must detect
+            // WebFetch as heavy even though Read comes first.
+            const allToolUses = extractAllToolUse(msg);
+            for (const tu of allToolUses) {
+              // Track heavy tools for adaptive maxTurns in the next segment
+              if (HEAVY_TOOLS.has(tu.toolName)) {
+                previousHeavyToolSeen = true;
+              }
+              issueTracker.trackToolUse(tu.toolName, tu.input);
+              if (tu.toolName === "Bash" && typeof tu.input.command === "string") {
+                const extracted = issueTracker.trackCommit(tu.input.command);
+                if (extracted) {
+                  callbacks.onEvent({ type: "issue_extracted", issue: extracted });
+                }
+              }
+            }
+
+            // Per-turn monitoring
+            const turnUsage = extractTurnUsage(msg);
+            if (turnUsage) {
+              const contextSize = recordTurnUsage(monitor, turnUsage);
+              if (contextSize !== null) {
+                totalTurns++;
+                callbacks.onEvent({
+                  type: "turn_usage",
+                  sessionIndex,
+                  turn: monitor.turnCounter,
+                  contextSize,
+                  contextWindow: monitor.contextWindow,
+                });
+
+                // Check relay threshold (deferred — just set flag)
+                const decision = shouldRelay(monitor, config.relayThresholdRatio);
+                if (decision.relay && !relayFlag) {
+                  relayFlag = true;
+                  relayReason = decision.reason;
+                  relayContextSize = decision.contextSize;
+                }
+              }
+            }
+
+            // Result message — segment complete
+            const result = extractResultData(msg);
+            if (result) {
+              segmentResult = result;
+              sessionId = result.sessionId;
+
+              // Set context window denominator
+              setContextWindow(monitor, result.modelUsage);
+
+              // Update cost before relay re-check so checkpoint has accurate data.
+              // result.totalCostUsd is the session's cumulative cost (not a delta).
+              // Track per-session cost separately and accumulate across sessions
+              // to avoid losing prior sessions' costs on relay.
+              if (result.totalCostUsd > 0) {
+                setCost(monitor, result.totalCostUsd);
+                currentSessionCost = result.totalCostUsd;
+                callbacks.onEvent({
+                  type: "cost_update",
+                  costUsd: estimatedCostUsd + currentSessionCost,
+                  sessionIndex,
+                });
+              }
+
+              // Re-check relay now that contextWindow is known
+              // (shouldRelay returns false when contextWindow is null,
+              // which is the case during assistant message processing
+              // before the first result message arrives)
+              if (!relayFlag) {
+                const decision = shouldRelay(monitor, config.relayThresholdRatio);
+                if (decision.relay) {
+                  relayFlag = true;
+                  relayReason = decision.reason;
+                  relayContextSize = decision.contextSize;
+                }
+              }
+
+              totalTurns = Math.max(totalTurns, result.numTurns);
+
+              callbacks.onEvent({
+                type: "segment_end",
+                sessionIndex,
+                segmentIndex,
+                numTurns: result.numTurns,
+              });
+            }
           }
 
-          // Live progress: tool use
-          const toolUse = extractToolUse(msg);
-          if (toolUse) {
+          segmentSucceeded = true; // Normal exit from for-await
+        } catch (err) {
+          if (err instanceof PerJobCostExceededError) {
+            // Save checkpoint before propagating so work can be resumed
+            const checkpoint = buildCheckpoint(
+              runId, config, monitor, askHandler.getDecisions(),
+              sessionIndex, checkpoints, issueTracker,
+              pendingObservations, pendingFailed,
+            );
+            writeCheckpoint(checkpoint, config.checkpointDir);
             callbacks.onEvent({
-              type: "tool_use",
-              toolName: toolUse.toolName,
-              inputSummary: toolUse.inputSummary,
+              type: "checkpoint_saved",
+              path: join(config.checkpointDir, "checkpoint.json"),
             });
+            throw err;
           }
 
-          // Issue extraction + heavy tool tracking: check ALL tool_use blocks,
-          // not just the first. A message like [Read, WebFetch] must detect
-          // WebFetch as heavy even though Read comes first.
-          const allToolUses = extractAllToolUse(msg);
-          for (const tu of allToolUses) {
-            // Track heavy tools for adaptive maxTurns in the next segment
-            if (HEAVY_TOOLS.has(tu.toolName)) {
-              previousHeavyToolSeen = true;
-            }
-            issueTracker.trackToolUse(tu.toolName, tu.input);
-            if (tu.toolName === "Bash" && typeof tu.input.command === "string") {
-              const extracted = issueTracker.trackCommit(tu.input.command);
-              if (extracted) {
-                callbacks.onEvent({ type: "issue_extracted", issue: extracted });
-              }
-            }
-          }
-
-          // Per-turn monitoring
-          const turnUsage = extractTurnUsage(msg);
-          if (turnUsage) {
-            const contextSize = recordTurnUsage(monitor, turnUsage);
-            if (contextSize !== null) {
-              totalTurns++;
-              callbacks.onEvent({
-                type: "turn_usage",
-                sessionIndex,
-                turn: monitor.turnCounter,
-                contextSize,
-                contextWindow: monitor.contextWindow,
-              });
-
-              // Check relay threshold (deferred — just set flag)
-              const decision = shouldRelay(monitor, config.relayThresholdRatio);
-              if (decision.relay && !relayFlag) {
-                relayFlag = true;
-                relayReason = decision.reason;
-                relayContextSize = decision.contextSize;
-              }
-            }
-          }
-
-          // Result message — segment complete
-          const result = extractResultData(msg);
-          if (result) {
-            segmentResult = result;
-            sessionId = result.sessionId;
-
-            // Set context window denominator
-            setContextWindow(monitor, result.modelUsage);
-
-            // Update cost before relay re-check so checkpoint has accurate data.
-            // result.totalCostUsd is the session's cumulative cost (not a delta).
-            // Track per-session cost separately and accumulate across sessions
-            // to avoid losing prior sessions' costs on relay.
-            if (result.totalCostUsd > 0) {
-              setCost(monitor, result.totalCostUsd);
-              currentSessionCost = result.totalCostUsd;
-              callbacks.onEvent({
-                type: "cost_update",
-                costUsd: estimatedCostUsd + currentSessionCost,
-                sessionIndex,
-              });
-            }
-
-            // Re-check relay now that contextWindow is known
-            // (shouldRelay returns false when contextWindow is null,
-            // which is the case during assistant message processing
-            // before the first result message arrives)
-            if (!relayFlag) {
-              const decision = shouldRelay(monitor, config.relayThresholdRatio);
-              if (decision.relay) {
-                relayFlag = true;
-                relayReason = decision.reason;
-                relayContextSize = decision.contextSize;
-              }
-            }
-
-            totalTurns = Math.max(totalTurns, result.numTurns);
-
+          if (segmentRetries < MAX_SEGMENT_RETRIES && isTransientError(err)) {
+            segmentRetries++;
+            const errMsg = err instanceof Error ? err.message : String(err);
             callbacks.onEvent({
-              type: "segment_end",
+              type: "segment_retry",
               sessionIndex,
               segmentIndex,
-              numTurns: result.numTurns,
+              attempt: segmentRetries,
+              maxRetries: MAX_SEGMENT_RETRIES,
+              error: errMsg,
+              delayMs: SEGMENT_RETRY_DELAY_MS,
             });
+
+            // Wait before retry (abort-aware)
+            if (config.abortSignal?.aborted) throw err;
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, SEGMENT_RETRY_DELAY_MS);
+              config.abortSignal?.addEventListener("abort", () => {
+                clearTimeout(timer);
+                resolve();
+              }, { once: true });
+            });
+
+            // Check abort after sleep
+            if (config.abortSignal?.aborted) throw err;
+
+            // Retry: loop back to startSegment with same parameters
+            continue;
           }
+
+          // Non-transient or exhausted retries — propagate
+          throw err;
         }
-      } catch (err) {
-        if (err instanceof PerJobCostExceededError) {
-          // Save checkpoint before propagating so work can be resumed
-          const checkpoint = buildCheckpoint(
-            runId, config, monitor, askHandler.getDecisions(),
-            sessionIndex, checkpoints, issueTracker,
-            pendingObservations, pendingFailed,
-          );
-          writeCheckpoint(checkpoint, config.checkpointDir);
-          callbacks.onEvent({
-            type: "checkpoint_saved",
-            path: join(config.checkpointDir, "checkpoint.json"),
-          });
-        }
-        throw err;
       }
 
       // 5. Post-segment decisions

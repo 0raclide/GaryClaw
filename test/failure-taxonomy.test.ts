@@ -9,6 +9,7 @@ import {
   classifyError,
   buildFailureRecord,
   appendFailureRecord,
+  isTransientError,
   RULES,
 } from "../src/failure-taxonomy.js";
 import { PerJobCostExceededError } from "../src/types.js";
@@ -564,6 +565,37 @@ describe("Failure Taxonomy", () => {
         const hasStackPatterns = rule.stackPatterns && rule.stackPatterns.length > 0;
         expect(hasErrorNames || hasMessagePatterns || hasStackPatterns).toBe(true);
       }
+    });
+  });
+
+  // ── isTransientError ────────────────────────────────────────────
+
+  describe("isTransientError", () => {
+    it("returns true for sdk-bug (stack in @anthropic-ai)", () => {
+      const err = new Error("something broke");
+      err.stack = `Error: something broke\n    at node_modules/@anthropic-ai/claude-agent-sdk/dist/index.js:42:10`;
+      expect(isTransientError(err)).toBe(true);
+    });
+
+    it("returns true for infra-issue (ECONNRESET)", () => {
+      expect(isTransientError(new Error("ECONNRESET"))).toBe(true);
+    });
+
+    it("returns false for budget-exceeded", () => {
+      const err = new PerJobCostExceededError(5.0, 3.0);
+      expect(isTransientError(err)).toBe(false);
+    });
+
+    it("returns false for auth-issue (unauthorized)", () => {
+      expect(isTransientError(new Error("unauthorized"))).toBe(false);
+    });
+
+    it("returns false for project-bug (test failed)", () => {
+      expect(isTransientError(new Error("test failed"))).toBe(false);
+    });
+
+    it("returns false for unknown (generic error)", () => {
+      expect(isTransientError(new Error("something random"))).toBe(false);
     });
   });
 });
