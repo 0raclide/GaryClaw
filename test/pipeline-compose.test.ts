@@ -206,20 +206,34 @@ describe("composePipeline — intersection logic", () => {
       priority: 5,
       requestedSkills: ["implement", "qa", "custom-skill"],
     });
-    // XS selects implement+qa, custom-skill is not in selection, gets dropped
-    expect(r.skills).toEqual(["implement", "qa"]);
+    // XS selects implement+qa, custom-skill is unknown to table so passes through
+    expect(r.skills).toEqual(["implement", "qa", "custom-skill"]);
   });
 
-  it("requestedSkills with only non-standard skills returns them unchanged when composition selects implement+qa", () => {
-    // Edge case: requestedSkills has no overlap with composition
+  it("requestedSkills with only non-standard skills all pass through", () => {
+    // Edge case: requestedSkills has no overlap with composition table
     const r = compose({
       effort: "XS",
       priority: 5,
       requestedSkills: ["bootstrap", "evaluate"],
     });
-    // Intersection is empty → falls back to original
+    // Both are unknown to the static table, so both pass through
     expect(r.skills).toEqual(["bootstrap", "evaluate"]);
-    expect(r.reason).toContain("empty set");
+  });
+
+  it("design skills survive composition for UI tasks", () => {
+    // The bug that prompted this fix: plan-design-review and design-review
+    // were stripped because they're not in FULL_PIPELINE
+    const r = compose({
+      effort: null,
+      priority: 1,
+      requestedSkills: ["prioritize", "office-hours", "plan-design-review", "implement", "design-review", "qa"],
+    });
+    // Unknown effort → full pipeline, but design skills pass through
+    expect(r.skills).toContain("plan-design-review");
+    expect(r.skills).toContain("design-review");
+    expect(r.skills).toContain("implement");
+    expect(r.skills).toContain("qa");
   });
 });
 

@@ -473,6 +473,35 @@ Already implemented in commit b8c5ac8. Invented by prioritize without checking e
 **Depends on:** Post-merge test verification (COMPLETE)
 **Added by:** /plan-eng-review recommendation, added by /qa on 2026-03-30
 
+## P2: Oracle-Driven Skill Selection + Deterministic Override Mode
+
+**What:** Replace the static 5-skill lookup table in `pipeline-compose.ts` with two modes:
+
+**Mode 1 — Deterministic Override:** When the user specifies both a TODO item and a skill sequence via `daemon trigger --todo "Title" skill1 skill2 ...`, bypass composition entirely. No intersection, no stripping. The user owns the pipeline. Requires new `--todo` flag on `daemon trigger` + a `skipComposition` flag on Job.
+
+**Mode 2 — Oracle Task Analysis:** When no skills are specified (or the daemon auto-picks via prioritize/continuous), the Oracle reasons about what the task actually needs by:
+1. Reading the TODO description and classifying the task nature (visual/UX, architectural, bug fix, refactor, performance, infra)
+2. Consulting a **skill catalog** — a structured description of every available gstack skill (what it does, when it's useful, what it produces). Built by scanning `.claude/skills/` directories or a static registry.
+3. Selecting the optimal skill sequence based on task nature + skill capabilities + history
+4. Learning from outcomes: "last time we skipped design-review on a UI task, QA found 8 visual issues"
+
+**Why:** The current static table only knows 5 skills (`prioritize, office-hours, implement, plan-eng-review, qa`). Any gstack skill (`plan-design-review`, `design-review`, `design-consultation`, `browse`, `qa-only`, etc.) gets silently killed by the intersection logic in `composePipeline()`. This caused a P0 mobile UI/UX task to have its design skills stripped and then get deprioritized because the pipeline couldn't do design work. The Oracle should understand that a visual UX task needs design skills, an architectural change needs eng review, and a simple bug fix just needs implement + qa.
+
+**Immediate fix (ship first):** Pass through unknown skills in `composePipeline()` — skills not in `FULL_PIPELINE` should survive intersection untouched. This unblocks manual triggers with gstack skills while the Oracle skill selection is built.
+
+**Implementation:**
+- `src/pipeline-compose.ts`: Fix intersection to preserve unknown skills (immediate)
+- `src/cli.ts`: Add `--todo` flag to `daemon trigger` for deterministic mode
+- `src/types.ts`: Add `skipComposition` flag on Job, `todoTitle` on trigger
+- `src/job-runner.ts`: When `skipComposition` is true, bypass `composePipeline()` entirely
+- New: `src/skill-catalog.ts` — scan available skills, build structured descriptions
+- `src/oracle.ts` or `src/prioritize.ts`: Oracle prompt for skill selection given task + catalog
+- `src/pipeline-history.ts`: Track per-skill outcomes by task category for learning
+
+**Effort:** M (human: ~1 week / CC: ~1 hour)
+**Depends on:** Nothing (immediate fix is XS, full Oracle mode is M)
+**Added by:** Human on 2026-03-30 (discovered when daemon stripped design skills from P0 mobile vault task)
+
 ## P4: Consolidate Lock Modules — Shared Advisory Lock Base
 
 **What:** `budget-lock.ts` (151 lines) and `reflection-lock.ts` (153 lines) are ~98% identical. Same for their doctor checks (`checkStaleBudgetLocks` ~120 lines, `checkReflectionLocks` ~100 lines). Total duplication: ~440 lines across 4 code paths.

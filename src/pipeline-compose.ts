@@ -126,9 +126,13 @@ export function composePipeline(input: ComposeInput): ComposeResult {
 
   const { skills: selectedSkills, reason } = selectSkills(effort, priority, hasDesignDoc);
 
-  // Intersect: keep only skills that are in both selectedSkills AND requestedSkills,
-  // preserving the order from requestedSkills
-  const composed = requestedSkills.filter(s => selectedSkills.includes(s));
+  // Intersect: for skills the static table knows about, keep only those in selectedSkills.
+  // For skills the table doesn't recognize (gstack skills like plan-design-review,
+  // design-review, etc.), pass them through untouched — the user explicitly requested them.
+  const knownSkills = new Set(FULL_PIPELINE);
+  const composed = requestedSkills.filter(s =>
+    !knownSkills.has(s) || selectedSkills.includes(s),
+  );
 
   // If intersection is empty (shouldn't happen since implement+qa are always present),
   // fall back to requestedSkills

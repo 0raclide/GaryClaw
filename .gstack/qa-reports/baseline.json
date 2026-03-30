@@ -1,27 +1,21 @@
 {
   "date": "2026-03-30",
-  "url": "cli-tool",
-  "healthScore": 100,
+  "url": "cli://garyclaw",
+  "healthScore": 98,
   "issues": [
-    { "id": "ISSUE-001", "title": "Doubled prefix REFLECTION_REFLECTION_LOCK_DIR_NAME broke all reflection-lock callers", "severity": "critical", "category": "functional", "status": "fixed", "commit": "d542127" },
-    { "id": "ISSUE-002", "title": "CLAUDE.md module count off by one (39 vs 38+CLI)", "severity": "low", "category": "content", "status": "fixed", "commit": "bb82fb4" }
+    {
+      "id": "ISSUE-001",
+      "title": "as any type casts at SDK boundary",
+      "severity": "low",
+      "category": "code-quality",
+      "status": "deferred"
+    }
   ],
   "categoryScores": {
     "console": 100,
-    "links": 100,
-    "visual": 100,
     "functional": 100,
-    "ux": 100,
-    "performance": 100,
+    "codeQuality": 95,
     "content": 100,
-    "accessibility": 100
-  },
-  "testResults": {
-    "files": 178,
-    "tests": 2930,
-    "passed": 2930,
-    "failed": 0,
-    "duration": "32.54s"
-  },
-  "typeCheck": "clean"
+    "performance": 95
+  }
 }
