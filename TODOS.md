@@ -725,3 +725,67 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Effort:** M (human: ~1 week / CC: ~45 min)
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses maintainability + reduces modification risk)
+
+## P3: Prioritize Prompt Size Guard — Token Budgeting to Prevent SDK Failures
+
+**What:** The prioritize prompt assembles 8+ dynamic sections (TODOS.md, failure patterns, category stats, skill catalog, pipeline outcomes, review findings, impact measurement, project type context) with no total token budget. Add per-section token counting and truncation so the prompt stays under a safe ceiling (50K tokens). When sections exceed their budget, truncate lowest-priority sections first: pipeline outcomes → category stats → review findings → failure patterns.
+
+**Why:** sdk-bug is the #1 failure category (15 failures), with 11 of 15 in the prioritize skill. The prioritize prompt is the most complex prompt in the system. As context grows (decision-outcomes.md at 34K and climbing, TODOS.md expanding), the prompt risks hitting SDK limits or degrading response quality. Costs are also trending up 19% — smaller, more focused prompts are cheaper. This is the single most likely root cause of both the failure pattern and the cost increase.
+
+**Implementation:**
+- Add `countTokens(text: string): number` utility (word-count heuristic, ~4 chars/token)
+- In `buildPrioritizePrompt()`: measure each section's token count after generation
+- Define per-section budgets: TODOS.md (40%), rules/format (30%), context sections (30%)
+- When total exceeds 50K tokens, truncate lowest-priority sections first
+- Add `prompt_size` event for observability
+- ~80 lines of code + ~15 tests
+
+**Effort:** S (human: ~3 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** Prioritize on 2026-03-30 (re-added — previous entry incorrectly auto-marked complete)
+
+## P3: Per-Skill Cost Attribution — Track Where Money Goes
+
+**What:** Track and display per-skill cost breakdowns in the dashboard. Currently the dashboard shows total cost and per-job cost, but not which skills within a pipeline consume the most. Add per-skill cost tracking to pipeline state and surface it in the dashboard with trend detection.
+
+**Why:** Costs are up 19% but we can't tell which skills are getting more expensive. Without per-skill attribution, cost optimization is guesswork. This is the measurement that enables targeted optimization.
+
+**Implementation:**
+- Extend `PipelineState` with `skillCosts: Record<string, number>` — populated after each skill completes
+- In `pipeline.ts`: record `costUsd` per skill from orchestrator result
+- In `dashboard.ts`: new `aggregateSkillCosts()` function, format as table (skill | avg cost | trend)
+- Trend detection: compare last 10 jobs' per-skill costs to previous 10, flag >15% increases
+- ~100 lines of code + ~15 tests
+
+**Effort:** S (human: ~3 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** Prioritize on 2026-03-30 (re-added — previous entry incorrectly auto-marked complete)
+
+## P3: Decision Outcomes Compaction — Bounded Growth for Oracle Memory
+
+**What:** decision-outcomes.md is 34K and growing unbounded. Compact old entries by merging repeated patterns into summary lines and pruning outcomes older than 30 days. Keep the file under a 20K token budget.
+
+**Why:** decision-outcomes.md feeds into oracle cache warm-start, oracle memory injection, reflection outcome matching, and pipeline outcome counting. As it grows, all four consumers slow down. The warm-start already scans the full file on every skill init. At current growth rate (~1K/day with parallel instances), the file will hit 100K within 2 months.
+
+**Implementation:**
+- New function `compactDecisionOutcomes()` in `oracle-memory.ts`
+- Group outcomes by normalized question pattern (reuse oracle-cache normalization)
+- For groups with 10+ identical outcomes: replace with summary line
+- Prune individual entries older than 30 days (summaries persist)
+- Token budget enforcement: if file exceeds 20K tokens after compaction, drop oldest summaries
+- Run compaction in reflection post-job
+- ~80 lines of code + ~12 tests
+
+**Effort:** S (human: ~3 days / CC: ~20 min)
+**Depends on:** Nothing
+**Added by:** Prioritize on 2026-03-30 (re-added — previous entry incorrectly auto-marked complete)
+
+## P3: Job Runner Subsystem Extraction — Decompose 1888-Line God Module
+
+**What:** Extract four logical subsystems from `job-runner.ts` (1888 lines) into focused modules: merge handling (~200 lines → `src/merge-handler.ts`), rate limit handling (~150 lines → `src/rate-limit.ts`), auto-mark/TODO management (~200 lines → `src/todo-manager.ts`), and pre-assignment/composition (~200 lines → `src/job-assignment.ts`). The job-runner becomes a ~900-line orchestrator that delegates to these modules.
+
+**Why:** Every new feature adds to job-runner.ts because it's the natural integration point. At 1888 lines, modifications carry high risk of unintended side effects. Decomposition makes each subsystem independently testable and reduces merge conflicts for parallel instances.
+
+**Effort:** M (human: ~1 week / CC: ~45 min)
+**Depends on:** Nothing
+**Added by:** Prioritize on 2026-03-30 (re-added — previous entry incorrectly auto-marked complete)
