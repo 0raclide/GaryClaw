@@ -25,8 +25,9 @@ import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, Decision, Daemo
 
 // ── Token budget constants ───────────────────────────────────────
 
-/** Total token budget for the prioritize prompt. */
-export const PRIORITIZE_PROMPT_BUDGET = 25_000;
+/** Total token budget for the prioritize prompt.
+ *  Section caps sum to ~31K + ~6K fixed sections = ~37K max. 40K provides headroom. */
+export const PRIORITIZE_PROMPT_BUDGET = 40_000;
 
 /** Per-section soft caps (tokens). Sections are assembled in priority order.
  *  If a section is smaller than its cap, unused budget flows to later sections. */
@@ -61,8 +62,36 @@ export function filterOpenTodos(content: string): string {
 // ── Budget helpers ───────────────────────────────────────────────
 
 /**
+ * Truncate text to fit within a token budget.
+ * Uses estimateTokens (chars/3.5) consistently for both measurement and target.
+ *
+ * NOTE: Do NOT use truncateToTokenBudget from oracle-memory.ts here — it uses
+ * maxTokens * 4 for char budget while estimateTokens uses chars / 3.5, causing
+ * ~14% overrun. This local helper uses estimateTokens consistently.
+ *
+ * keepEnd=true: drop from beginning (keep newest, for historical data like outcomes)
+ * keepEnd=false: drop from end (keep beginning, for TODOS.md P1/P2 items, capabilities)
+ */
+export function truncateSection(content: string, maxTokens: number, keepEnd = true): string {
+  if (estimateTokens(content) <= maxTokens) return content;
+  const maxChars = Math.floor(maxTokens * 3.5);
+  if (keepEnd) {
+    const sliced = content.slice(-maxChars);
+    const nl = sliced.indexOf("\n");
+    return nl >= 0 && nl < sliced.length - 1
+      ? "[...truncated oldest]\n" + sliced.slice(nl + 1)
+      : sliced;
+  } else {
+    const sliced = content.slice(0, maxChars);
+    const nl = sliced.lastIndexOf("\n");
+    return nl > 0 ? sliced.slice(0, nl) + "\n[...truncated]" : sliced;
+  }
+}
+
+/**
  * Add a section to the prompt lines if it fits within the remaining budget.
  * Returns tokens consumed. Truncates content if it exceeds sectionCap or remaining budget.
+ * keepEnd: truncation direction (true=keep newest, false=keep beginning)
  */
 export function addBudgetedSection(
   lines: string[],
@@ -70,6 +99,7 @@ export function addBudgetedSection(
   content: string,
   sectionCap: number,
   remainingBudget: number,
+  keepEnd = true,
 ): number {
   if (!content || content.trim().length === 0) return 0;
 
@@ -78,7 +108,7 @@ export function addBudgetedSection(
 
   const tokens = estimateTokens(content);
   const finalContent = tokens > effectiveCap
-    ? truncateToTokenBudget(content, effectiveCap)
+    ? truncateSection(content, effectiveCap, keepEnd)
     : content;
 
   if (header) {
@@ -792,7 +822,7 @@ export async function buildPrioritizePrompt(
   const filteredTodos = todosContent ? filterOpenTodos(todosContent) : null;
   if (filteredTodos) {
     tokensUsed += addBudgetedSection(lines, "### Backlog (TODOS.md)",
-      filteredTodos, SB.todosContent, remaining());
+      filteredTodos, SB.todosContent, remaining(), false);
   } else {
     lines.push("### Backlog (TODOS.md)");
     lines.push("");
@@ -813,7 +843,7 @@ export async function buildPrioritizePrompt(
       "\nIMPORTANT: Do NOT invent features that already exist. Check the Current Capabilities section below — these describe everything the system already does.";
 
     tokensUsed += addBudgetedSection(lines, "### Product Vision (from CLAUDE.md)",
-      visionBlock, SB.capabilities, remaining());
+      visionBlock, SB.capabilities, remaining(), false);
 
     // Inject current capabilities from CLAUDE.md — the system's self-description.
     const statusMatch = claudeMdContent.match(/## Current Status\n([\s\S]*?)(?=\n---)/);
@@ -823,7 +853,7 @@ export async function buildPrioritizePrompt(
     if (capabilities) {
       const capBlock = "The system already has these features. Do NOT re-invent any of them:\n\n" + capabilities;
       tokensUsed += addBudgetedSection(lines, "### Current Capabilities (from CLAUDE.md)",
-        capBlock, SB.capabilities, remaining());
+        capBlock, SB.capabilities, remaining(), false);
     }
   }
 
@@ -831,7 +861,7 @@ export async function buildPrioritizePrompt(
   const goal = loadOvernightGoal(projectDir);
   if (goal) {
     tokensUsed += addBudgetedSection(lines, "### Overnight Goal",
-      goal, SB.overnightGoal, remaining());
+      goal, SB.overnightGoal, remaining(), false);
   }
 
   // Budgeted: Oracle context (metrics + outcomes)
@@ -937,7 +967,7 @@ export async function buildPrioritizePrompt(
     "Architectural changes need plan-eng-review. " +
     "Bug fixes and small refactors need only implement → qa.";
   tokensUsed += addBudgetedSection(lines, "## Available Skills",
-    skillBlock, SB.skillCatalog, remaining());
+    skillBlock, SB.skillCatalog, remaining(), false);
 
   // Budgeted: Per-category pipeline outcome stats (only inject with 10+ outcomes)
   const outcomeHistoryPath = join(projectDir, ".garyclaw", "pipeline-outcomes.jsonl");
@@ -970,7 +1000,7 @@ export async function buildPrioritizePrompt(
   const ptSection = buildProjectTypeSection(projectDir);
   if (ptSection) {
     tokensUsed += addBudgetedSection(lines, "",
-      ptSection, SB.projectType, remaining());
+      ptSection, SB.projectType, remaining(), false);
   }
 
   // Fixed: Rules + format + worked example (always included — essential)
