@@ -35,7 +35,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
-- 40 source modules + CLI, 184 test files, 2980 tests
+- 40 source modules + CLI, 200 test files, 2983 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -400,6 +400,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner.regression-6.test.ts` | 2 | Job runner regression: 'continuous' trigger source validity on Job.triggeredBy |
 | `test/job-runner.regression-7.test.ts` | 2 | Job runner regression: 'daemon-crash' must be valid FailureCategory |
 | `test/job-runner.regression-8.test.ts` | 2 | Job runner regression: readTodoState import resolves and round-trips state |
+| `test/job-runner-continuous-requeue.regression-1.test.ts` | 3 | Continuous re-enqueue uses composedFrom original skills, not trimmed set |
 | `test/job-runner-post-merge.regression-1.test.ts` | 3 | Post-merge verification regression: git rev-parse failure, HEAD re-read failure, bug TODO markdown format |
 | `test/job-runner-post-merge.regression-2.test.ts` | 3 | Post-merge verification regression: branchName() sanitization in bug TODO body |
 | `test/job-runner-post-merge.test.ts` | 12 | Post-merge verification: verifyPostMerge wiring, smart skip, force override, revert flow, HEAD-moved, default instance skip, error swallowing |
