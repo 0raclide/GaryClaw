@@ -32,6 +32,7 @@ import {
   DEFAULT_FILE_DEPS,
 } from "./file-conflict.js";
 import type { FileDependencyMap } from "./file-conflict.js";
+import { maybeEnqueueAutoFix, updateAutoFixCost } from "./auto-fix.js";
 import { mergeWorktreeBranch, resolveBaseBranch, verifyPostMerge, appendMergeRevert, branchName, createPullRequest, buildPrBody, appendMergeAudit } from "./worktree.js";
 import type { MergeResult, PostMergeVerifyResult, PullRequestResult } from "./worktree.js";
 import { safeReadText } from "./safe-json.js";
@@ -141,6 +142,8 @@ export interface PostMergeVerificationContext {
   notifyMergeReverted?: (job: Job, verifyResult: PostMergeVerifyResult, config: DaemonConfig) => void;
   job: Job;
   config: DaemonConfig;
+  /** Enqueue function for auto-fix jobs. If not provided, auto-fix is disabled. */
+  enqueue?: (skills: string[], triggeredBy: Job["triggeredBy"], detail: string) => string | null;
 }
 
 /**
@@ -226,6 +229,33 @@ export function handlePostMergeVerification(ctx: PostMergeVerificationContext): 
 
       // Notification
       ctx.notifyMergeReverted?.(ctx.job, verifyResult, ctx.config);
+
+      // Auto-fix: immediately attempt to fix the regression
+      if (ctx.enqueue) {
+        try {
+          const todoTitle = `P2: Fix post-merge regression from ${ctx.instanceName} (job ${ctx.jobId})`;
+          const autoFixResult = maybeEnqueueAutoFix({
+            projectDir: ctx.projectDir,
+            checkpointDir: ctx.checkpointDir,
+            mergeSha: verifyResult.mergeSha,
+            jobId: ctx.jobId,
+            jobCost: ctx.job.costUsd ?? 0,
+            instanceName: ctx.instanceName,
+            skills: ctx.skills,
+            testOutput: verifyResult.testOutput,
+            revertSha: verifyResult.revertSha,
+            bugTodoTitle: todoTitle,
+            enqueue: ctx.enqueue,
+            log: ctx.log,
+            config: { autoFixOnRevert: ctx.mergeConfig?.autoFixOnRevert ?? false },
+          });
+          if (autoFixResult.enqueued) {
+            ctx.log("info", `Auto-fix loop activated for reverted merge`);
+          }
+        } catch (autoFixErr) {
+          ctx.log("warn", `Auto-fix enqueue failed: ${autoFixErr instanceof Error ? autoFixErr.message : String(autoFixErr)}`);
+        }
+      }
     } else {
       // Tests failed but revert skipped (HEAD moved or conflict)
       ctx.log("warn", `Post-merge verification failed but revert skipped: ${verifyResult.reason}`);
@@ -704,7 +734,7 @@ export function createJobRunner(
     // ── Adaptive pipeline composition ────────────────────────────
     let oracleAdjustedComposition = false;
     const todoTitle = nextJob.claimedTodoTitle ?? preAssignedTitle;
-    if (nextJob.skipComposition) {
+    if (nextJob.skipComposition || nextJob.triggeredBy === "post-merge-revert") {
       d.log("info", `Deterministic override: skipping composition for [${nextJob.skills.join(", ")}]`);
     } else if (todoTitle && nextJob.skills.length > 1) {
       try {
@@ -967,6 +997,15 @@ export function createJobRunner(
       d.notifyJobComplete(nextJob, jobConfig);
       d.log("info", `Completed ${nextJob.id}: $${nextJob.costUsd.toFixed(3)}`);
 
+      // Auto-fix cost accumulation: track spending for budget cap enforcement
+      if (nextJob.triggeredBy === "post-merge-revert") {
+        try {
+          updateAutoFixCost(checkpointDir, nextJob.triggerDetail, nextJob.costUsd);
+        } catch (err) {
+          d.log("warn", `Auto-fix cost update failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
       // Auto-merge: named instances merge their branch to main after successful jobs
       if (jobConfig.worktreePath && resolvedInstanceName !== "default") {
         try {
@@ -1102,6 +1141,7 @@ export function createJobRunner(
                       notifyMergeReverted: d.notifyMergeReverted,
                       job: nextJob,
                       config: jobConfig,
+                      enqueue,
                     });
                   } else {
                     d.log("warn", `Fallback direct merge also blocked: ${mergeResult.reason}`);
@@ -1150,6 +1190,7 @@ export function createJobRunner(
                 notifyMergeReverted: d.notifyMergeReverted,
                 job: nextJob,
                 config: jobConfig,
+                enqueue,
               });
             } else {
               d.log("warn", `Auto-merge blocked: ${mergeResult.reason}` +
