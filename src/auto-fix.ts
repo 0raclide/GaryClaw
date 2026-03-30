@@ -218,8 +218,11 @@ export function maybeEnqueueAutoFix(ctx: MaybeEnqueueAutoFixContext): AutoFixRes
   let lockAcquired = false;
   try {
     lockAcquired = acquireAutoFixLock(ctx.checkpointDir);
-  } catch {
-    // Lock failure is non-fatal — proceed without lock (fail-open)
+    if (!lockAcquired) {
+      ctx.log("warn", "Auto-fix lock acquisition timed out, proceeding without lock");
+    }
+  } catch (lockErr) {
+    ctx.log("warn", `Auto-fix lock acquisition failed: ${lockErr instanceof Error ? lockErr.message : String(lockErr)}`);
   }
 
   try {
