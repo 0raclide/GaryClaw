@@ -139,6 +139,7 @@ export function parseArgs(argv: string[]): {
   all: boolean;
   cleanup: boolean;
   parallel?: number;
+  todoTitle?: string;
   doctorFix: boolean;
   doctorJson: boolean;
   doctorSkipAuth: boolean;
@@ -164,6 +165,7 @@ export function parseArgs(argv: string[]): {
   let all = false;
   let cleanup = false;
   let parallel: number | undefined;
+  let todoTitle: string | undefined;
   let doctorFix = false;
   let doctorJson = false;
   let doctorSkipAuth = false;
@@ -232,6 +234,8 @@ export function parseArgs(argv: string[]): {
             process.exit(1);
           }
           tailLines = parsed;
+        } else if (args[i] === "--todo" && args[i + 1]) {
+          todoTitle = args[++i];
         }
       } else {
         // Positional args after subcommand = skill names for trigger
@@ -288,7 +292,7 @@ export function parseArgs(argv: string[]): {
   // Merge shared flags back into return value
   ({ projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, noAdaptive, designDoc } = shared);
 
-  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, noAdaptive, tailLines, designDoc, force, researchTopic, name, all, cleanup, parallel, doctorFix, doctorJson, doctorSkipAuth };
+  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, noAdaptive, tailLines, designDoc, force, researchTopic, name, all, cleanup, parallel, todoTitle, doctorFix, doctorJson, doctorSkipAuth };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -1221,18 +1225,25 @@ async function main(): Promise<void> {
     }
 
     if (parsed.subcommand === "trigger") {
+      if (parsed.todoTitle && parsed.skills.length === 0) {
+        console.error(`${RED}Error:${RESET} --todo requires at least one skill. Usage: garyclaw daemon trigger --todo "Title" <skill> [skill2 ...]`);
+        process.exit(1);
+      }
       if (parsed.skills.length === 0) {
         console.error(`${RED}Error:${RESET} skill name required. Usage: garyclaw daemon trigger [--name <instance>] <skill> [skill2 ...]`);
         process.exit(1);
       }
 
       try {
-        const resp = await sendIPCRequest(socketPath, { type: "trigger", skills: parsed.skills, designDoc: parsed.designDoc }, 3000);
+        const resp = await sendIPCRequest(socketPath, { type: "trigger", skills: parsed.skills, designDoc: parsed.designDoc, todoTitle: parsed.todoTitle }, 3000);
         if (resp.ok) {
           const d = resp.data as any;
           const instanceLabel = instName !== "default" ? ` [${instName}]` : "";
           console.log(`${GREEN}Job enqueued${instanceLabel}:${RESET} ${d.jobId}`);
           console.log(`${DIM}  Skills: ${parsed.skills.map((s) => `/${s}`).join(", ")}${RESET}`);
+          if (parsed.todoTitle) {
+            console.log(`${DIM}  TODO: ${parsed.todoTitle} (deterministic override — no composition)${RESET}`);
+          }
         } else {
           console.error(`${RED}Rejected:${RESET} ${resp.error}`);
           process.exit(1);
