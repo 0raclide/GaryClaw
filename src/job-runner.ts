@@ -380,6 +380,8 @@ export function createJobRunner(
         const todosContent = safeReadText(todosPath);
         if (todosContent) {
           const items = parseTodoItems(todosContent);
+          // State dir needed for both strikethrough check and later state filtering
+          const preAssignStateDir = join(jobConfig.worktreePath ?? jobConfig.projectDir, ".garyclaw");
           // State files are the sole authority for completion status.
           // ~~complete~~ markup in TODOS.md is cosmetic (human readability only).
           // Items without state files fall back to ~~complete~~ as bootstrap signal.
@@ -432,7 +434,6 @@ export function createJobRunner(
           }
 
           // Filter out items already complete via TODO state tracking (fail-open)
-          const preAssignStateDir = join(jobConfig.worktreePath ?? jobConfig.projectDir, ".garyclaw");
           const stateFiltered = actionable.filter(item => {
             try {
               const slug = slugify(item.title);
