@@ -335,6 +335,7 @@ export interface Job {
   claimedFiles?: string[];    // Predicted files this job will modify (for conflict prevention)
   composedFrom?: string[];    // Original skills before adaptive composition (undefined if no composition happened)
   compositionMethod?: "static" | "oracle";  // How pipeline was composed: static table or oracle recommendation
+  skipComposition?: boolean;  // true = bypass composePipeline() entirely (deterministic --todo override)
 }
 
 export interface DaemonState {
@@ -348,7 +349,7 @@ export interface DaemonState {
 
 export type IPCRequest =
   | { type: "status" }
-  | { type: "trigger"; skills: string[]; designDoc?: string }
+  | { type: "trigger"; skills: string[]; designDoc?: string; todoTitle?: string }
   | { type: "queue" }
   | { type: "instances" };
 
@@ -641,6 +642,7 @@ export interface PipelineOutcomeRecord {
   //             "partial" if job completed but had non-critical issues,
   //             "success" if no failures and no reopens
   oracleAdjusted: boolean;    // true if Oracle restored any skills beyond static rules
+  taskCategory?: string;      // visual-ux | architectural | bug-fix | refactor | performance | infra | unknown (extension point — nothing populates or reads this yet)
 }
 
 // ── Evaluation (dogfood campaign evaluator) ──────────────────────
