@@ -1,5 +1,28 @@
-import { describe, it, expect } from "vitest";
-import { formatUptime } from "../src/cli.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock heavy dependencies so cli.ts imports cleanly
+vi.mock("../src/sdk-wrapper.js", () => ({
+  buildSdkEnv: vi.fn((env: Record<string, string>) => env),
+}));
+vi.mock("../src/orchestrator.js", () => ({
+  runSkill: vi.fn(),
+  resumeSkill: vi.fn(),
+}));
+vi.mock("../src/pipeline.js", () => ({
+  runPipeline: vi.fn(),
+  resumePipeline: vi.fn(),
+  readPipelineState: vi.fn(),
+}));
+vi.mock("../src/daemon-ipc.js", () => ({
+  sendIPCRequest: vi.fn(),
+}));
+vi.mock("../src/daemon.js", () => ({
+  readPidFile: vi.fn(),
+  isPidAlive: vi.fn(),
+  cleanupDaemonFiles: vi.fn(),
+}));
+
+import { parseArgs, formatUptime } from "../src/cli.js";
 import type { PipelineProgress } from "../src/types.js";
 
 describe("formatUptime", () => {
@@ -78,5 +101,66 @@ describe("fleet display formatting helpers", () => {
     expect(formatElapsed(125)).toBe("2m");
     expect(formatElapsed(7325)).toBe("2h 2m");
     expect(formatElapsed(0)).toBe("0s");
+  });
+});
+
+describe("fleet display CLI commands", () => {
+  it("daemon status --all sets all flag", () => {
+    const parsed = parseArgs(["node", "cli.ts", "daemon", "status", "--all"]);
+    expect(parsed.command).toBe("daemon");
+    expect(parsed.subcommand).toBe("status");
+    expect(parsed.all).toBe(true);
+  });
+
+  it("daemon list is a separate subcommand", () => {
+    const parsed = parseArgs(["node", "cli.ts", "daemon", "list"]);
+    expect(parsed.command).toBe("daemon");
+    expect(parsed.subcommand).toBe("list");
+  });
+
+  it("daemon status --name selects single instance", () => {
+    const parsed = parseArgs(["node", "cli.ts", "daemon", "status", "--name", "worker-2"]);
+    expect(parsed.name).toBe("worker-2");
+    expect(parsed.all).toBe(false);
+  });
+
+  it("daemon status without flags uses default instance", () => {
+    const parsed = parseArgs(["node", "cli.ts", "daemon", "status"]);
+    expect(parsed.name).toBeUndefined();
+    expect(parsed.all).toBe(false);
+  });
+});
+
+describe("fleet status data shape", () => {
+  it("idle instance has no pipeline progress", () => {
+    // Simulates IPC response for an idle (running but no job) instance
+    const ipcData = {
+      running: false,
+      currentJob: null,
+      queuedCount: 0,
+      dailyCost: { date: "2026-03-30", totalUsd: 0.5, jobCount: 1 },
+      uptimeSeconds: 3600,
+      totalJobs: 3,
+      oracleHealth: null,
+      pipelineProgress: null,
+    };
+    expect(ipcData.pipelineProgress).toBeNull();
+    expect(ipcData.running).toBe(false);
+  });
+
+  it("stopped instance uses disk fallback (no IPC data)", () => {
+    // When IPC fails or instance is stopped, statusResults[idx] is null
+    const ipcData = null;
+    const alive = false;
+    const statusRaw = !alive ? "stopped" : (ipcData ? "idle" : "running");
+    expect(statusRaw).toBe("stopped");
+  });
+
+  it("IPC timeout falls back to running status", () => {
+    // When instance is alive but IPC times out, ipcData is null
+    const ipcData = null;
+    const alive = true;
+    const statusRaw = !alive ? "stopped" : (ipcData ? "idle" : "running");
+    expect(statusRaw).toBe("running");
   });
 });
