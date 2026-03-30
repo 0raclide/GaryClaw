@@ -970,6 +970,13 @@ export function createJobRunner(
               } catch {
                 try { execFileSync("git", ["rebase", "--abort"], { cwd: wtDir, stdio: "pipe" }); } catch { /* noop */ }
                 d.log("warn", `Rebase of garyclaw/${resolvedInstanceName} onto ${baseBranch} had conflicts — skipping PR creation`);
+                // Log rebase conflict to failures.jsonl for dashboard observability
+                const syntheticErr = Object.assign(
+                  new Error(`Rebase conflict: garyclaw/${resolvedInstanceName} onto ${baseBranch}`),
+                  { name: "RebaseConflictError" },
+                );
+                const record = buildFailureRecord(syntheticErr, nextJob.id, nextJob.skills, resolvedInstanceName);
+                appendFailureRecord(record, checkpointDir);
                 // Fall through — don't create PR on rebase conflict
                 testsPassed = false;
               }
