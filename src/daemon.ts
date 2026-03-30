@@ -305,10 +305,10 @@ export function buildIPCHandler(
   return async (request: IPCRequest): Promise<IPCResponse> => {
     switch (request.type) {
       case "status": {
-        // Refresh commit count cache if stale
+        // Refresh commit count cache if stale (set timestamp before await to prevent duplicate requests)
         if (worktreePath && Date.now() - lastCommitCountRefresh > COMMIT_COUNT_REFRESH_MS) {
-          cachedCommitCount = await getWorktreeCommitCount(worktreePath, projectDir);
           lastCommitCountRefresh = Date.now();
+          cachedCommitCount = await getWorktreeCommitCount(worktreePath, projectDir);
         }
         const state = runner.getState();
         const runningJob = state.jobs.find((j) => j.status === "running");
