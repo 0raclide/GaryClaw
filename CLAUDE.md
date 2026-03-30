@@ -35,7 +35,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
-- 38 source modules + CLI, 178 test files, 2931 tests
+- 38 source modules + CLI, 178 test files, 2932 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -268,7 +268,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline.test.ts` | 27 | state persistence, context handoff, pipeline report, validation |
 | `test/pipeline-extended.test.ts` | 10 | pipeline edge cases, resume, error propagation |
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
-| `test/pipeline-compose.test.ts` | 58 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
+| `test/pipeline-compose.test.ts` | 59 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
 | `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
 | `test/pipeline-history.test.ts` | 41 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker |
 | `test/pipeline-compose-oracle.regression-1.test.ts` | 4 | Oracle override same-length different-skills: set-membership check, identical no-op, length diff, empty |
