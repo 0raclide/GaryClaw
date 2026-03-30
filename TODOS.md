@@ -446,17 +446,27 @@ Already implemented in commit b8c5ac8. Invented by prioritize without checking e
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-30 (ISSUE-005, deferred)
 
-## P4: IPC Server Connection Timeout
+## ~~P4: IPC Server Connection Timeout~~ — COMPLETE (2026-03-30)
+
+Fixed by /qa on main, 2026-03-30. Commit d95a15b: socket.setTimeout(30_000) + 1 MiB buffer cap. Regression test: daemon-ipc.regression-1.test.ts.
 
 **What:** The Unix domain socket IPC server in `daemon-ipc.ts` has no per-connection timeout. A hung CLI process that connects but never sends data keeps the connection open indefinitely, with the data buffer accumulating with no cap.
-
-**Note:** Falsely marked COMPLETE by artifact reconciliation (stale todo-state file). Reverted by /qa on 2026-03-30.
 
 **Fix:** Add `socket.setTimeout(30000)` with cleanup handler.
 
 **Effort:** XS (human: ~1 hour / CC: ~5 min)
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-30 (ISSUE-006, deferred)
+
+## P5: Dead Code in Auto-Mark Guard
+
+**What:** Line 857 of `job-runner.ts`: `finalState === "complete" || finalState === "merged"` — the `"merged"` branch is unreachable because the ternary on lines 840-844 always promotes merged → complete before the guard runs. Not a behavioral bug, but misleading code.
+
+**Fix:** Change to `if (finalState === "complete")` with a comment explaining why merged is covered (promoted upstream).
+
+**Effort:** XS (human: ~15 min / CC: ~2 min)
+**Depends on:** Nothing
+**Added by:** /qa on 2026-03-30 (ISSUE-002, deferred)
 
 ## P3: Auto-Fix Loop After Post-Merge Revert
 
