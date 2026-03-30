@@ -1510,14 +1510,14 @@ describe("truncateSection", () => {
     const content = "A".repeat(5000);
     const result = truncateSection(content, 100, true);
     expect(result.length).toBeLessThan(content.length);
-    expect(result).toContain("[...truncated oldest]");
+    expect(result).toContain("[...older entries truncated]");
   });
 
   it("handles content with no newlines (keepEnd=false)", () => {
     const content = "A".repeat(5000);
     const result = truncateSection(content, 100, false);
     expect(result.length).toBeLessThan(content.length);
-    expect(result).toContain("[...truncated]");
+    expect(result).toContain("[...truncated to fit token budget]");
   });
 });
 
@@ -1545,8 +1545,8 @@ describe("prioritize_prompt_size event", () => {
     expect(sizeEvents).toHaveLength(1);
     expect(sizeEvents[0].tokens).toBeGreaterThan(0);
     expect(sizeEvents[0].sections).toBeDefined();
-    expect(typeof sizeEvents[0].sections!.todosContent).toBe("number");
-    expect(sizeEvents[0].sections!.todosContent).toBeGreaterThan(0);
+    expect(typeof sizeEvents[0].sections!.todos).toBe("number");
+    expect(sizeEvents[0].sections!.todos).toBeGreaterThan(0);
   });
 
   it("does not emit event when onEvent is not provided", async () => {
