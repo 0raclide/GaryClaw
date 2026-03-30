@@ -757,7 +757,7 @@ Expected output in priority.md:
 
 **Priority:** P2
 **Effort:** XS
-**Weighted Score:** 7.8/10
+**Weighted Score:** 6.9/10
 **Confidence:** 9
 
 ### Why This Item
