@@ -1,5 +1,25 @@
 # TODOS
 
+## P1: Live Evolution Dashboard — Real-Time Web UI for the Self-Improving Daemon
+
+**What:** A public-facing web page that shows GaryClaw evolving in real-time. Not a static dashboard — a living feed of the daemon's mind: what it's building, why it chose it, what it invented and pruned, how its capabilities grow over time. Think Twitch for an AI coding agent.
+
+**Core views:**
+1. **Live feed** — Current job, skill in progress, commit stream as they land, oracle decisions with confidence + reasoning. WebSocket or SSE from daemon IPC.
+2. **Mutation timeline** — Every invention cycle: what was invented (3-5 candidates), what the critique protocol pruned (pride test < 7), what survived and shipped. Visual diff of TODOS.md before/after each cycle.
+3. **Growth over time** — Module count, test count, commits, cost per job, jobs per day. Animated growth chart from Session 1 (8 modules) to now (46 modules, 3,179 tests). Each module colored by builder (human vs daemon). Note: oracle "accuracy" is self-graded (reflection marks most outcomes neutral) — don't display as a quality metric until external validation exists.
+4. **Oracle mind** — Decision history with full reasoning chains. Taste profile contents. Domain expertise topics. Confidence trend (this IS meaningful — shows when the oracle is uncertain). The "why" behind every autonomous choice.
+
+**Design principle:** Observability, not vanity metrics. Show what the daemon is thinking, what it chose and why, what it pruned, where it struggled. Don't celebrate 100% accuracy when it's self-graded — show the raw decision log and let the reader judge.
+
+**Why:** GaryClaw's most impressive quality is invisible. The daemon built 22 of its own 46 modules, invented features when the backlog ran dry, QA'd its own code, and shipped 694 commits — but you can only see this by reading logs. A live web UI makes the self-improvement loop watchable and the daemon's reasoning auditable.
+
+**Tech:** Static site (Next.js or plain HTML+JS) that reads from `.garyclaw/` files. For live updates: lightweight SSE endpoint in daemon IPC, or filesystem watcher. For the public version: daemon pushes snapshots to a GitHub Pages repo or Vercel deploy on each job completion.
+
+**Effort:** M (human: ~1 week / CC: ~1 hour)
+**Depends on:** Nothing — all data sources already exist (.garyclaw/ files, daemon-state.json, decisions.jsonl, dogfood-report.md, priority.md, TODOS.md)
+**Added by:** Human on 2026-03-30 (the "art experiment" — watch a daemon evolve mutations in real time)
+
 ## ~~P1: TODO State Tracking — Artifact Detection + State Files~~ — COMPLETE (2026-03-29)
 
 **What:** Track the lifecycle state of each TODO item so the daemon can resume from where it left off instead of rebuilding from scratch. Two complementary systems:
