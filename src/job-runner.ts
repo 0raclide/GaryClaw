@@ -13,7 +13,7 @@ import { safeWriteJSON, safeReadJSON } from "./safe-json.js";
 import { buildSdkEnv } from "./sdk-wrapper.js";
 import { runPipeline, resumePipeline, readPipelineState } from "./pipeline.js";
 import { runSkill } from "./orchestrator.js";
-import { notifyJobComplete, notifyJobError, notifyJobResumed, notifyMergeBlocked, notifyMergeReverted, notifyRateLimitHold, notifyRateLimitResume, writeSummary } from "./notifier.js";
+import { notifyJobComplete, notifyJobError, notifyJobResumed, notifyMergeBlocked, notifyMergeReverted, notifyPrCreated, notifyRateLimitHold, notifyRateLimitResume, writeSummary } from "./notifier.js";
 import { generateDashboard } from "./dashboard.js";
 import {
   readGlobalBudget,
@@ -32,8 +32,8 @@ import {
   DEFAULT_FILE_DEPS,
 } from "./file-conflict.js";
 import type { FileDependencyMap } from "./file-conflict.js";
-import { mergeWorktreeBranch, resolveBaseBranch, verifyPostMerge, appendMergeRevert, branchName } from "./worktree.js";
-import type { MergeResult, PostMergeVerifyResult } from "./worktree.js";
+import { mergeWorktreeBranch, resolveBaseBranch, verifyPostMerge, appendMergeRevert, branchName, createPullRequest, buildPrBody, appendMergeAudit } from "./worktree.js";
+import type { MergeResult, PostMergeVerifyResult, PullRequestResult } from "./worktree.js";
 import { safeReadText } from "./safe-json.js";
 import { parseTodoItems } from "./prioritize.js";
 import { composePipeline } from "./pipeline-compose.js";
@@ -101,6 +101,7 @@ export interface JobRunnerDeps {
   notifyJobResumed: typeof notifyJobResumed;
   notifyMergeBlocked?: (job: Job, result: MergeResult, config: DaemonConfig) => void;
   notifyMergeReverted?: (job: Job, verifyResult: PostMergeVerifyResult, config: DaemonConfig) => void;
+  notifyPrCreated?: (job: Job, prResult: PullRequestResult, config: DaemonConfig) => void;
   notifyRateLimitHold?: (resetAt: Date, instanceName: string, config: DaemonConfig) => void;
   notifyRateLimitResume?: (instanceName: string, config: DaemonConfig) => void;
   writeSummary: typeof writeSummary;
@@ -117,6 +118,7 @@ const defaultDeps: JobRunnerDeps = {
   notifyJobResumed,
   notifyMergeBlocked,
   notifyMergeReverted,
+  notifyPrCreated,
   notifyRateLimitHold,
   notifyRateLimitResume,
   writeSummary,
@@ -242,6 +244,51 @@ export function handlePostMergeVerification(ctx: PostMergeVerificationContext): 
     }
   } catch (err) {
     ctx.log("warn", `Post-merge verification error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// ── TODO state advancement helper ────────────────────────────────
+
+/**
+ * Advance TODO state to "merged" after successful auto-merge and auto-mark TODOS.md.
+ * Extracted to avoid duplication between direct merge and PR fallback paths.
+ */
+function advanceTodoToMerged(
+  job: Job,
+  instanceName: string,
+  stateCheckpointDir: string,
+  projectDir: string,
+  log: (level: string, message: string) => void,
+): void {
+  if (!job.claimedTodoTitle) return;
+  try {
+    const todoSlug = slugify(job.claimedTodoTitle);
+    const existingState = findTodoState(stateCheckpointDir, job.claimedTodoTitle);
+    writeTodoState(stateCheckpointDir, todoSlug, {
+      title: job.claimedTodoTitle,
+      slug: todoSlug,
+      state: "merged",
+      designDocPath: existingState?.designDocPath,
+      branch: existingState?.branch,
+      instanceName,
+      lastJobId: job.id,
+      updatedAt: new Date().toISOString(),
+    });
+    log("info", `TODO "${job.claimedTodoTitle}" advanced to "merged"`);
+
+    // Auto-mark TODOS.md — defense-in-depth + human readability
+    try {
+      const todosPath = join(projectDir, "TODOS.md");
+      const summary = `Auto-merged from garyclaw/${instanceName}.`;
+      const marked = markTodoCompleteInFile(todosPath, job.claimedTodoTitle, summary);
+      if (marked) {
+        log("info", `Auto-marked TODO "${job.claimedTodoTitle}" complete in TODOS.md`);
+      }
+    } catch (markErr) {
+      log("warn", `Auto-mark TODOS.md failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`);
+    }
+  } catch {
+    // Fail-open: state write failure should never break post-merge
   }
 }
 
@@ -882,91 +929,188 @@ export function createJobRunner(
         try {
           const baseBranch = resolveBaseBranch(jobConfig.projectDir);
           const mergeConfig = jobConfig.merge;
-          const mergeResult = mergeWorktreeBranch(
-            jobConfig.projectDir,
-            resolvedInstanceName,
-            baseBranch,
-            {
-              validation: mergeConfig
-                ? mergeConfig.skipValidation
-                  ? { skipValidation: true }
-                  : {
-                      testCommand: mergeConfig.testCommand,
-                      testTimeout: mergeConfig.testTimeout,
-                    }
-                : undefined,
-              jobId: nextJob.id,
-              onWarn: (msg) => d.log("warn", msg),
-            },
-          );
+          const mergeStrategy = mergeConfig?.strategy ?? "direct";
 
-          if (mergeResult.merged) {
-            d.log("info", `Auto-merge: merged ${mergeResult.commitCount ?? 0} commit(s) from garyclaw/${resolvedInstanceName} to ${baseBranch}` +
-              (mergeResult.testDurationMs ? ` (tests: ${Math.round(mergeResult.testDurationMs / 1000)}s)` : ""));
-
-            // Advance TODO state to "merged" after successful auto-merge
-            if (nextJob.claimedTodoTitle) {
+          if (mergeStrategy === "pr") {
+            // ── PR-based merge strategy ────────────────────────────
+            // Run pre-merge tests in worktree first (same as direct strategy)
+            let testsPassed: boolean | undefined;
+            let testDurationMs: number | undefined;
+            if (mergeConfig && !mergeConfig.skipValidation) {
               try {
-                const todoSlug = slugify(nextJob.claimedTodoTitle);
-                const stateCheckpointDir = parentCheckpointDir ?? checkpointDir;
-                const existingState = findTodoState(stateCheckpointDir, nextJob.claimedTodoTitle);
-                writeTodoState(stateCheckpointDir, todoSlug, {
-                  title: nextJob.claimedTodoTitle,
-                  slug: todoSlug,
-                  state: "merged",
-                  designDocPath: existingState?.designDocPath,
-                  branch: existingState?.branch,
-                  instanceName: resolvedInstanceName,
-                  lastJobId: nextJob.id,
-                  updatedAt: new Date().toISOString(),
+                const testCommand = mergeConfig.testCommand ?? "npm test";
+                const testTimeout = mergeConfig.testTimeout ?? 120_000;
+                const testStart = Date.now();
+                execFileSync("sh", ["-c", testCommand], {
+                  cwd: jobConfig.worktreePath,
+                  timeout: testTimeout,
+                  stdio: "pipe",
                 });
-                d.log("info", `TODO "${nextJob.claimedTodoTitle}" advanced to "merged"`);
-
-                // Auto-mark TODOS.md — defense-in-depth + human readability
-                try {
-                  const todosPath = join(jobConfig.projectDir, "TODOS.md"); // main repo, not worktree
-                  const summary = `${mergeResult.commitCount ?? 0} commit(s) auto-merged from garyclaw/${resolvedInstanceName}.`;
-                  const marked = markTodoCompleteInFile(todosPath, nextJob.claimedTodoTitle!, summary);
-                  if (marked) {
-                    d.log("info", `Auto-marked TODO "${nextJob.claimedTodoTitle}" complete in TODOS.md`);
-                  }
-                } catch (markErr) {
-                  d.log("warn", `Auto-mark TODOS.md failed: ${markErr instanceof Error ? markErr.message : String(markErr)}`);
-                }
+                testsPassed = true;
+                testDurationMs = Date.now() - testStart;
+                d.log("info", `Pre-merge tests passed (${Math.round((testDurationMs) / 1000)}s)`);
               } catch {
-                // Fail-open: state write failure should never break post-merge
+                testsPassed = false;
+                d.log("warn", "Pre-merge tests failed — skipping PR creation");
+                // Log merge failure
+                const syntheticErr = Object.assign(
+                  new Error("Pre-merge tests failed (PR strategy)"),
+                  { name: "MergeValidationError" },
+                );
+                const record = buildFailureRecord(syntheticErr, nextJob.id, nextJob.skills, resolvedInstanceName);
+                appendFailureRecord(record, checkpointDir);
               }
             }
 
-            // Post-merge verification (defense-in-depth)
-            handlePostMergeVerification({
-              projectDir: jobConfig.projectDir,
-              instanceName: resolvedInstanceName,
-              jobId: nextJob.id,
-              skills: nextJob.skills,
-              checkpointDir,
-              mergeConfig: jobConfig.merge,
-              testsPassed: mergeResult.testsPassed,
-              commitCount: mergeResult.commitCount ?? 0,
-              log: d.log,
-              notifyMergeReverted: d.notifyMergeReverted,
-              job: nextJob,
-              config: jobConfig,
-            });
-          } else {
-            d.log("warn", `Auto-merge blocked: ${mergeResult.reason}` +
-              (mergeResult.testOutput ? `\n${mergeResult.testOutput.slice(0, 500)}` : ""));
-            // Notify on merge failure (not a job failure, but worth alerting)
-            d.notifyMergeBlocked?.(nextJob, mergeResult, jobConfig);
+            if (testsPassed !== false) {
+              // Rebase onto baseBranch before pushing
+              const wtDir = jobConfig.worktreePath;
+              try {
+                execFileSync("git", ["rebase", baseBranch], { cwd: wtDir, stdio: "pipe" });
+              } catch {
+                try { execFileSync("git", ["rebase", "--abort"], { cwd: wtDir, stdio: "pipe" }); } catch { /* noop */ }
+                d.log("warn", `Rebase of garyclaw/${resolvedInstanceName} onto ${baseBranch} had conflicts — skipping PR creation`);
+                // Fall through — don't create PR on rebase conflict
+                testsPassed = false;
+              }
 
-            // Log merge failure to failures.jsonl for dashboard aggregation
-            if (mergeResult.testsPassed === false) {
-              const syntheticErr = Object.assign(
-                new Error(mergeResult.reason ?? "Pre-merge tests failed"),
-                { name: "MergeValidationError" },
-              );
-              const record = buildFailureRecord(syntheticErr, nextJob.id, nextJob.skills, resolvedInstanceName);
-              appendFailureRecord(record, checkpointDir);
+              if (testsPassed !== false) {
+                // Build PR body from job context
+                const prBody = buildPrBody({
+                  instanceName: resolvedInstanceName,
+                  skills: nextJob.skills.map((s) => ({ name: s, status: "complete" })),
+                  costUsd: nextJob.costUsd,
+                  todoTitle: nextJob.claimedTodoTitle,
+                  testsPassed,
+                  testDurationSec: testDurationMs !== undefined ? testDurationMs / 1000 : undefined,
+                });
+
+                const prTitle = nextJob.claimedTodoTitle
+                  ? `GaryClaw: ${nextJob.claimedTodoTitle}`
+                  : `GaryClaw: ${nextJob.skills.join(" → ")} (${resolvedInstanceName})`;
+
+                const prResult = createPullRequest(
+                  jobConfig.projectDir,
+                  resolvedInstanceName,
+                  {
+                    title: prTitle.slice(0, 256),  // GitHub title limit
+                    body: prBody,
+                    baseBranch,
+                    labels: mergeConfig?.prLabels,
+                    reviewers: mergeConfig?.prReviewers,
+                    draft: mergeConfig?.prDraft,
+                    autoMerge: mergeConfig?.prAutoMerge ?? true,
+                    mergeMethod: mergeConfig?.prMergeMethod ?? "squash",
+                    onWarn: (msg) => d.log("warn", msg),
+                  },
+                );
+
+                if (prResult.created) {
+                  d.log("info", `PR #${prResult.prNumber} created: ${prResult.prUrl}` +
+                    (prResult.autoMergeEnabled ? " (auto-merge enabled)" : ""));
+
+                  // Advance TODO state to "pr-created"
+                  if (nextJob.claimedTodoTitle) {
+                    try {
+                      const todoSlug = slugify(nextJob.claimedTodoTitle);
+                      const stateCheckpointDir = parentCheckpointDir ?? checkpointDir;
+                      const existingState = findTodoState(stateCheckpointDir, nextJob.claimedTodoTitle);
+                      writeTodoState(stateCheckpointDir, todoSlug, {
+                        title: nextJob.claimedTodoTitle,
+                        slug: todoSlug,
+                        state: "pr-created",
+                        designDocPath: existingState?.designDocPath,
+                        branch: existingState?.branch,
+                        instanceName: resolvedInstanceName,
+                        lastJobId: nextJob.id,
+                        updatedAt: new Date().toISOString(),
+                      });
+                      d.log("info", `TODO "${nextJob.claimedTodoTitle}" advanced to "pr-created"`);
+                    } catch {
+                      // Fail-open
+                    }
+                  }
+
+                  // Log to merge audit
+                  appendMergeAudit(jobConfig.projectDir, resolvedInstanceName,
+                    branchName(resolvedInstanceName), baseBranch,
+                    { merged: false, reason: `PR #${prResult.prNumber} created`, commitCount: 0 },
+                    { jobId: nextJob.id, onWarn: (msg) => d.log("warn", msg) });
+
+                  d.notifyPrCreated?.(nextJob, prResult, jobConfig);
+                } else {
+                  d.log("warn", `PR creation failed: ${prResult.reason} — falling back to direct merge`);
+                  // Fallback to direct merge
+                  const mergeResult = mergeWorktreeBranch(
+                    jobConfig.projectDir, resolvedInstanceName, baseBranch,
+                    { jobId: nextJob.id, onWarn: (msg) => d.log("warn", msg) },
+                  );
+                  if (mergeResult.merged) {
+                    d.log("info", `Fallback direct merge: merged ${mergeResult.commitCount ?? 0} commit(s)`);
+                    advanceTodoToMerged(nextJob, resolvedInstanceName, parentCheckpointDir ?? checkpointDir, jobConfig.projectDir, d.log);
+                  } else {
+                    d.log("warn", `Fallback direct merge also blocked: ${mergeResult.reason}`);
+                    d.notifyMergeBlocked?.(nextJob, mergeResult, jobConfig);
+                  }
+                }
+              }
+            }
+          } else {
+            // ── Direct merge strategy (existing behavior) ───────────
+            const mergeResult = mergeWorktreeBranch(
+              jobConfig.projectDir,
+              resolvedInstanceName,
+              baseBranch,
+              {
+                validation: mergeConfig
+                  ? mergeConfig.skipValidation
+                    ? { skipValidation: true }
+                    : {
+                        testCommand: mergeConfig.testCommand,
+                        testTimeout: mergeConfig.testTimeout,
+                      }
+                  : undefined,
+                jobId: nextJob.id,
+                onWarn: (msg) => d.log("warn", msg),
+              },
+            );
+
+            if (mergeResult.merged) {
+              d.log("info", `Auto-merge: merged ${mergeResult.commitCount ?? 0} commit(s) from garyclaw/${resolvedInstanceName} to ${baseBranch}` +
+                (mergeResult.testDurationMs ? ` (tests: ${Math.round(mergeResult.testDurationMs / 1000)}s)` : ""));
+
+              advanceTodoToMerged(nextJob, resolvedInstanceName, parentCheckpointDir ?? checkpointDir, jobConfig.projectDir, d.log);
+
+              // Post-merge verification (defense-in-depth)
+              handlePostMergeVerification({
+                projectDir: jobConfig.projectDir,
+                instanceName: resolvedInstanceName,
+                jobId: nextJob.id,
+                skills: nextJob.skills,
+                checkpointDir,
+                mergeConfig: jobConfig.merge,
+                testsPassed: mergeResult.testsPassed,
+                commitCount: mergeResult.commitCount ?? 0,
+                log: d.log,
+                notifyMergeReverted: d.notifyMergeReverted,
+                job: nextJob,
+                config: jobConfig,
+              });
+            } else {
+              d.log("warn", `Auto-merge blocked: ${mergeResult.reason}` +
+                (mergeResult.testOutput ? `\n${mergeResult.testOutput.slice(0, 500)}` : ""));
+              // Notify on merge failure (not a job failure, but worth alerting)
+              d.notifyMergeBlocked?.(nextJob, mergeResult, jobConfig);
+
+              // Log merge failure to failures.jsonl for dashboard aggregation
+              if (mergeResult.testsPassed === false) {
+                const syntheticErr = Object.assign(
+                  new Error(mergeResult.reason ?? "Pre-merge tests failed"),
+                  { name: "MergeValidationError" },
+                );
+                const record = buildFailureRecord(syntheticErr, nextJob.id, nextJob.skills, resolvedInstanceName);
+                appendFailureRecord(record, checkpointDir);
+              }
             }
           }
         } catch (err) {
