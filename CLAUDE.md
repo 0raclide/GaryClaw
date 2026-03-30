@@ -35,7 +35,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle-Driven Pipeline Composition: COMPLETE** (2026-03-29) — Prioritize skill recommends pipeline, job-runner parses + overrides static table after 10+ outcomes, reflection writes pipeline outcomes to decision-outcomes.md, learning loop closes through existing oracle memory
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
-- 39 source modules + CLI, 178 test files, 2929 tests
+- 39 source modules + CLI, 178 test files, 2930 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -372,6 +372,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/dashboard-composition.test.ts` | 10 | aggregateCompositionStats: zero jobs, single composed, multiple composed, avg calculation, savings math |
 | `test/dashboard-composition-intelligence.test.ts` | 9 | aggregateCompositionIntelligence: oracle active/tripped, skip-risk scores, failure rates, empty outcomes |
 | `test/dashboard-rate-limit.test.ts` | 5 | Dashboard rate limit display: rate_limited job aggregation, formatting |
+| `test/dashboard-post-merge.test.ts` | 11 | Dashboard post-merge: revert aggregation, health score reweighting with reverts, revert rate formatting |
 | `test/doctor.regression-1.test.ts` | 10 | Doctor regression: checkOrphanedTodoState coverage |
 | `test/doctor-injection.test.ts` | 11 | Doctor injection: hasInjectionPatterns via checkOracleMemory, all 8 patterns, false positives, corrupt metrics, circuit breaker, --fix |
 | `test/evaluate-claims.test.ts` | 26 | Claim verification: extractClaudeMdClaims, verifyClaudeMdClaims |
@@ -394,11 +395,14 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner.regression-8.test.ts` | 2 | Job runner regression: readTodoState import resolves and round-trips state |
 | `test/job-runner-post-merge.regression-1.test.ts` | 3 | Post-merge verification regression: git rev-parse failure, HEAD re-read failure, bug TODO markdown format |
 | `test/job-runner-post-merge.regression-2.test.ts` | 3 | Post-merge verification regression: branchName() sanitization in bug TODO body |
+| `test/job-runner-post-merge.test.ts` | 12 | Post-merge verification: verifyPostMerge wiring, smart skip, force override, revert flow, HEAD-moved, default instance skip, error swallowing |
+| `test/job-runner-preassign.regression-1.test.ts` | 3 | Job runner pre-assignment regression: strikethrough TDZ, state file filtering |
 | `test/merge-audit.test.ts` | 11 | Merge audit log: append, read, truncation, JSONL format |
 | `test/notifier.regression-1.test.ts` | 5 | Notifier regression: notifyJobResumed message format with notifications enabled |
 | `test/notifier.regression-2.test.ts` | 7 | Notifier regression: notifyMergeBlocked formatting, gating, instance labels |
 | `test/notifier.regression-3.test.ts` | 7 | Notifier regression: notifyRateLimitHold/Resume formatting, gating, instance labels |
 | `test/notifier-rate-limit.test.ts` | 8 | Rate limit notification tests: hold/resume formatting, gating, sendNotification mock |
+| `test/notifier-post-merge.test.ts` | 8 | Notifier post-merge: notifyMergeReverted formatting, gating, instance labels, long SHA slicing |
 | `test/oracle.regression-2.test.ts` | 3 | Oracle regression: createSdkOracleQueryFn type cast fix |
 | `test/pipeline-evaluate-wiring.regression-1.test.ts` | 4 | Pipeline evaluate wiring regression: runPostEvaluateAnalysis crash safety |
 | `test/pipeline-todo-state.regression-1.test.ts` | 6 | Pipeline regression: writeTodoState wiring after skill completion |
@@ -409,6 +413,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/worktree-validation.regression-1.test.ts` | 5 | Worktree validation regression: stdout+stderr capture, dynamic lock timeout |
 | `test/worktree-warn.test.ts` | 5 | Worktree warn routing: listWorktrees onWarn, mergeWorktreeBranch stash pop onWarn |
 | `test/worktree.regression-3.test.ts` | 8 | Worktree regression: merge lock acquire/release edge cases |
+| `test/worktree-post-merge.test.ts` | 14 | verifyPostMerge integration: pass/revert/HEAD-moved, test output capture, truncation, revert SHA, conflict handling |
 | `test/doctor-auto-cleanup.test.ts` | 9 | runAutoCleanup: stale PIDs, locks, budget, TODO state, running guard, fail-open |
 | `test/cli-parallel.test.ts` | 11 | `--parallel N` flag parsing: valid N, out of range, mutually exclusive with --name, worker naming |
 | `test/daemon-ipc-progress.test.ts` | 10 | pipelineProgress in IPC status, getWorktreeCommitCount, backward compat, fallback |
