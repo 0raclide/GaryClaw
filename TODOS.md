@@ -609,7 +609,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** /qa on 2026-03-30 (ISSUE-004, deferred — not reproducible on retry)
 
-## ~~P3: SDK Failure Segment Retry — Transient Error Recovery
+## ~~P3: SDK Failure Segment Retry — Transient Error Recovery~~ — COMPLETE (2026-03-30)
 
 **What:** When an SDK error (sdk-bug failure category) occurs mid-segment, retry the segment once with a 30-second backoff instead of immediately failing the entire job. Currently, any SDK error kills the job and creates a failure record. A single retry would recover from transient API errors, network blips, and rate-limit edge cases that resolve themselves within seconds.
 
@@ -626,7 +626,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses #1 failure category)
 
-## ~~P3: Oracle Decision Cache — Sticky Answers for Repeated Questions
+## ~~P3: Oracle Decision Cache — Sticky Answers for Repeated Questions~~ — COMPLETE (2026-03-30)
 
 **What:** When the Oracle answers the same question pattern 5+ times identically, cache the answer and auto-apply it without an API call. Recent evidence: 20+ decisions in the last 50 all answer "run test suite" to variations of "GaryClaw is a CLI tool with no web UI, what should QA do?" Each is a ~40K-token API call costing ~$0.05 + 2-5s latency.
 
@@ -645,7 +645,7 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Depends on:** Nothing
 **Added by:** Invention Protocol on 2026-03-30 (addresses cost trend + Oracle latency)
 
-## ~~P3: Project Type Awareness — Skill Routing by Project Nature
+## ~~P3: Project Type Awareness — Skill Routing by Project Nature~~ — COMPLETE (2026-03-30)
 
 **What:** Auto-detect project type (CLI tool, web app, API server, library) from CLAUDE.md and package.json, then inject project type context into skill prompts so skills don't waste turns asking "is there a web UI?" The QA skill would automatically route to test-suite mode for CLI projects, browser mode for web apps.
 
