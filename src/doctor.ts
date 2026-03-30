@@ -1,8 +1,9 @@
 /**
  * Doctor — self-diagnostic command for GaryClaw.
  *
- * Runs 7 subsystem checks: stale PIDs, oracle memory integrity, orphaned worktrees,
- * stuck reflection locks, global budget status, auth verification, and orphaned TODO state.
+ * Runs 8 subsystem checks: stale PIDs, oracle memory integrity, orphaned worktrees,
+ * stuck reflection locks, global budget status, orphaned TODO state, stale budget locks,
+ * and auth verification.
  *
  * Default mode is diagnose-only (no side effects). Pass --fix to auto-heal
  * fixable issues. Pass --json for machine-readable output.
@@ -60,6 +61,7 @@ const SOCKET_FILE = "daemon.sock";
 const GLOBAL_BUDGET_FILE = "global-budget.json";
 const METRICS_FILE = "metrics.json";
 const LOCK_DIR_NAME = ".reflection-lock";
+const BUDGET_LOCK_DIR_NAME = ".budget-lock";
 const DEFAULT_AUTH_TIMEOUT_MS = 10_000;
 const DEFAULT_DAILY_COST_LIMIT = 50;
 const DEFAULT_MAX_JOBS_PER_DAY = 20;
@@ -77,6 +79,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   checks.push(checkReflectionLocks(options));
   checks.push(checkBudgetStatus(options));
   checks.push(checkOrphanedTodoState(options));
+  checks.push(checkStaleBudgetLocks(options));
 
   // Auth check: async, with timeout
   if (!options.skipAuth) {
@@ -726,6 +729,7 @@ export async function runAutoCleanup(options: AutoCleanupOptions): Promise<{ cle
     { fn: () => checkReflectionLocks(fixOptions), label: "stuck reflection locks" },
     { fn: () => checkBudgetStatus(fixOptions), label: "budget" },
     { fn: () => checkOrphanedTodoState(fixOptions), label: "orphaned TODO state" },
+    { fn: () => checkStaleBudgetLocks(fixOptions), label: "stale budget locks" },
   ];
 
   for (const check of checks) {
@@ -946,6 +950,128 @@ export function checkOrphanedTodoState(options: DoctorOptions): CheckResult {
     details,
     fixable: true,
     fixed: options.fix && fixedCount === orphanCount,
+  };
+}
+
+// ── Check 8: Stale Budget Locks ─────────────────────────────────
+
+export function checkStaleBudgetLocks(options: DoctorOptions): CheckResult {
+  const checkpointDir = join(options.projectDir, ".garyclaw");
+  const lockDir = join(checkpointDir, BUDGET_LOCK_DIR_NAME);
+  const details: string[] = [];
+
+  if (!existsSync(lockDir)) {
+    return {
+      name: "budget-locks",
+      status: "PASS",
+      message: "No stale budget locks",
+      fixable: false,
+    };
+  }
+
+  const pidFile = join(lockDir, "pid");
+  if (!existsSync(pidFile)) {
+    // Lock dir exists but no PID file — stale
+    details.push("Budget lock directory exists but no PID file");
+    if (options.fix) {
+      try {
+        rmSync(lockDir, { recursive: true, force: true });
+        details.push("  Fixed: removed stale budget lock directory");
+        return {
+          name: "budget-locks",
+          status: "WARN",
+          message: "Fixed 1 stale budget lock",
+          details,
+          fixable: true,
+          fixed: true,
+        };
+      } catch (err) {
+        details.push(`  Fix failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return {
+      name: "budget-locks",
+      status: "WARN",
+      message: "Stale budget lock detected",
+      details,
+      fixable: true,
+    };
+  }
+
+  // Read PID from lock
+  let pid: number | null = null;
+  try {
+    pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+    if (!Number.isFinite(pid) || pid <= 0) pid = null;
+  } catch {
+    pid = null;
+  }
+
+  if (pid === null) {
+    details.push("Budget lock PID file unreadable");
+    if (options.fix) {
+      try {
+        rmSync(lockDir, { recursive: true, force: true });
+        details.push("  Fixed: removed stale budget lock directory");
+        return {
+          name: "budget-locks",
+          status: "WARN",
+          message: "Fixed 1 stale budget lock",
+          details,
+          fixable: true,
+          fixed: true,
+        };
+      } catch (err) {
+        details.push(`  Fix failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return {
+      name: "budget-locks",
+      status: "WARN",
+      message: "Stale budget lock detected",
+      details,
+      fixable: true,
+    };
+  }
+
+  // Check if holding process is alive
+  const result = isPidAlive(pid);
+  if (result.alive) {
+    details.push(`Budget lock held by active process (PID ${pid})`);
+    return {
+      name: "budget-locks",
+      status: "PASS",
+      message: "Budget lock held by active process",
+      details,
+      fixable: false,
+    };
+  }
+
+  // Dead process — stale lock
+  details.push(`Stuck budget lock (holder PID ${pid} is dead)`);
+  if (options.fix) {
+    try {
+      rmSync(lockDir, { recursive: true, force: true });
+      details.push("  Fixed: removed stuck budget lock directory");
+      return {
+        name: "budget-locks",
+        status: "WARN",
+        message: "Fixed 1 stale budget lock",
+        details,
+        fixable: true,
+        fixed: true,
+      };
+    } catch (err) {
+      details.push(`  Fix failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  return {
+    name: "budget-locks",
+    status: "WARN",
+    message: "Stale budget lock detected",
+    details,
+    fixable: true,
   };
 }
 

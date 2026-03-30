@@ -14,6 +14,7 @@ import {
   checkOrphanedWorktrees,
   checkReflectionLocks,
   checkBudgetStatus,
+  checkStaleBudgetLocks,
   checkAuth,
   formatDoctorReport,
   worktreeHasUnmergedCommits,
@@ -623,6 +624,75 @@ describe("doctor", () => {
     });
   });
 
+  // ── Check 8: Stale Budget Locks ────────────────────────────
+
+  describe("checkStaleBudgetLocks", () => {
+    it("PASS when no budget lock exists", () => {
+      mkdirSync(GARYCLAW_DIR, { recursive: true });
+      const result = checkStaleBudgetLocks(defaultOptions());
+      expect(result.status).toBe("PASS");
+      expect(result.name).toBe("budget-locks");
+    });
+
+    it("WARN when lock dir exists with dead PID", () => {
+      const lockDir = join(GARYCLAW_DIR, ".budget-lock");
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(join(lockDir, "pid"), "99999999", "utf-8");
+
+      const result = checkStaleBudgetLocks(defaultOptions());
+      expect(result.status).toBe("WARN");
+      expect(result.details!.some((d) => d.includes("Stuck budget lock"))).toBe(true);
+    });
+
+    it("PASS when lock PID is alive", () => {
+      const lockDir = join(GARYCLAW_DIR, ".budget-lock");
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(join(lockDir, "pid"), String(process.pid), "utf-8");
+
+      const result = checkStaleBudgetLocks(defaultOptions());
+      expect(result.status).toBe("PASS");
+      expect(result.details!.some((d) => d.includes("active process"))).toBe(true);
+    });
+
+    it("--fix removes stale budget lock", () => {
+      const lockDir = join(GARYCLAW_DIR, ".budget-lock");
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(join(lockDir, "pid"), "99999999", "utf-8");
+
+      const result = checkStaleBudgetLocks(defaultOptions({ fix: true }));
+      expect(result.fixed).toBe(true);
+      expect(existsSync(lockDir)).toBe(false);
+    });
+
+    it("WARN when lock dir exists with no PID file", () => {
+      const lockDir = join(GARYCLAW_DIR, ".budget-lock");
+      mkdirSync(lockDir, { recursive: true });
+
+      const result = checkStaleBudgetLocks(defaultOptions());
+      expect(result.status).toBe("WARN");
+      expect(result.details!.some((d) => d.includes("no PID file"))).toBe(true);
+    });
+
+    it("--fix removes lock dir with no PID file", () => {
+      const lockDir = join(GARYCLAW_DIR, ".budget-lock");
+      mkdirSync(lockDir, { recursive: true });
+
+      const result = checkStaleBudgetLocks(defaultOptions({ fix: true }));
+      expect(result.fixed).toBe(true);
+      expect(existsSync(lockDir)).toBe(false);
+    });
+
+    it("WARN when PID file is unreadable", () => {
+      const lockDir = join(GARYCLAW_DIR, ".budget-lock");
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(join(lockDir, "pid"), "not-a-number", "utf-8");
+
+      const result = checkStaleBudgetLocks(defaultOptions());
+      expect(result.status).toBe("WARN");
+      expect(result.details!.some((d) => d.includes("unreadable"))).toBe(true);
+    });
+  });
+
   // ── runDoctor orchestrator ───────────────────────────────────
 
   describe("runDoctor", () => {
@@ -630,11 +700,11 @@ describe("doctor", () => {
       mkdirSync(GARYCLAW_DIR, { recursive: true });
       const report = await runDoctor(defaultOptions());
 
-      // 6 checks (auth skipped)
-      expect(report.checks.length).toBe(6);
+      // 7 checks (auth skipped)
+      expect(report.checks.length).toBe(7);
       expect(report.timestamp).toBeTruthy();
       expect(report.durationMs).toBeGreaterThanOrEqual(0);
-      expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.info).toBe(6);
+      expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.info).toBe(7);
     });
 
     it("includes auth check when skipAuth is false", async () => {

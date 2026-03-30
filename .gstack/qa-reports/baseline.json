@@ -1,25 +1,17 @@
 {
   "date": "2026-03-30",
-  "url": "cli-project",
-  "healthScore": 100,
+  "url": "cli-tool",
+  "healthScore": 95,
   "issues": [
-    {"id": "ISSUE-001", "title": "Stale per-file test counts in CLAUDE.md (3 files, 18-test gap)", "severity": "medium", "category": "content", "status": "fixed"}
+    { "id": "LOW-001", "title": "Developer TODO comment in job-runner.ts:1030", "severity": "low", "category": "code-quality" },
+    { "id": "LOW-002", "title": "CLAUDE.md test table scaling concern", "severity": "low", "category": "documentation" }
   ],
-  "categoryScores": {
-    "console": 100,
-    "links": 100,
-    "visual": 100,
-    "functional": 100,
-    "ux": 100,
-    "performance": 100,
-    "content": 100,
-    "accessibility": 100
-  },
-  "testSuite": {
-    "files": 170,
-    "tests": 2828,
-    "passed": 2828,
+  "testResults": {
+    "files": 175,
+    "tests": 2900,
+    "passed": 2900,
     "failed": 0,
-    "duration": "31.94s"
-  }
+    "duration": "31.87s"
+  },
+  "typeCheck": "clean"
 }
