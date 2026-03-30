@@ -407,7 +407,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/doctor-auto-cleanup.test.ts` | 9 | runAutoCleanup: stale PIDs, locks, budget, TODO state, running guard, fail-open |
 | `test/cli-parallel.test.ts` | 11 | `--parallel N` flag parsing: valid N, out of range, mutually exclusive with --name, worker naming |
 | `test/daemon-ipc-progress.test.ts` | 10 | pipelineProgress in IPC status, getWorktreeCommitCount, backward compat, fallback |
-| `test/cli-fleet-display.test.ts` | 8 | Fleet table formatting, PipelineProgress interface, formatUptime, truncation, formatElapsed |
+| `test/cli-fleet-display.test.ts` | 15 | Fleet table formatting, PipelineProgress interface, formatUptime, truncation, formatElapsed, CLI commands, IPC fallback |
 
 ---
 
