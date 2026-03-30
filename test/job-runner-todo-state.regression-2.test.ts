@@ -123,6 +123,10 @@ describe("Default instance qa-complete → complete promotion", () => {
       updatedAt: new Date().toISOString(),
     });
 
+    // Verify the state file round-trips before processNext
+    const preState = readTodoState(TEST_DIR, "fix-login-bug");
+    expect(preState!.state).toBe("merged");
+
     const jobId = runner.enqueue(["implement", "qa"], "manual", "test");
     const state = runner.getState();
     const job = state.jobs.find(j => j.id === jobId);
