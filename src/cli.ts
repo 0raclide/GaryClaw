@@ -377,6 +377,15 @@ export function formatEvent(event: OrchestratorEvent): string {
       const truncatedError = event.error.length > 60 ? event.error.slice(0, 57) + "..." : event.error;
       return `${YELLOW}⟳ Retrying segment ${event.segmentIndex} (attempt ${event.attempt}/${event.maxRetries}) after transient error: ${truncatedError}. Waiting ${event.delayMs / 1000}s...${RESET}`;
     }
+
+    case "oracle_cache_hit":
+      return `${DIM}[Oracle Cache] Hit for "${event.question.slice(0, 50)}${event.question.length > 50 ? "..." : ""}" → ${event.chosen} (${event.hitCount} hits)${RESET}`;
+
+    case "oracle_cache_miss":
+      return `${DIM}[Oracle Cache] Miss for "${event.question.slice(0, 50)}${event.question.length > 50 ? "..." : ""}"${RESET}`;
+
+    case "oracle_cache_invalidated":
+      return `${YELLOW}[Oracle Cache] Invalidated: "${event.question.slice(0, 50)}${event.question.length > 50 ? "..." : ""}"${RESET}`;
   }
 }
 
