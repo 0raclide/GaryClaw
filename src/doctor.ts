@@ -1,15 +1,15 @@
 /**
  * Doctor — self-diagnostic command for GaryClaw.
  *
- * Runs 9 subsystem checks: stale PIDs, oracle memory integrity, orphaned worktrees,
+ * Runs 10 subsystem checks: stale PIDs, oracle memory integrity, orphaned worktrees,
  * stuck reflection locks, global budget status, orphaned TODO state, stale budget locks,
- * stale auto-fix state, and auth verification.
+ * stale auto-fix state, stale project type cache, and auth verification.
  *
  * Default mode is diagnose-only (no side effects). Pass --fix to auto-heal
  * fixable issues. Pass --json for machine-readable output.
  */
 
-import { existsSync, readdirSync, readFileSync, rmSync, unlinkSync, renameSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, unlinkSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readPidFile, isPidAlive, removePidFile } from "./pid-utils.js";
@@ -19,6 +19,7 @@ import { validateGlobalBudget } from "./daemon-registry.js";
 import { BUDGET_LOCK_DIR_NAME } from "./budget-lock.js";
 import { REFLECTION_LOCK_DIR_NAME } from "./reflection-lock.js";
 import { readAutoFixState } from "./auto-fix.js";
+import { ensureProjectType } from "./project-type.js";
 import { execFileSync } from "node:child_process";
 import type { GlobalBudget, OracleMetrics } from "./types.js";
 
@@ -82,6 +83,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   checks.push(checkOrphanedTodoState(options));
   checks.push(checkStaleBudgetLocks(options));
   checks.push(checkStaleAutoFixState(options));
+  checks.push(checkStaleProjectTypeCache(options));
 
   // Auth check: async, with timeout
   if (!options.skipAuth) {
@@ -1162,3 +1164,72 @@ function loadDaemonBudgetConfig(checkpointDir: string): { dailyCostLimitUsd: num
   return { dailyCostLimitUsd: null, maxJobsPerDay: null };
 }
 
+// ── Check 10: Stale Project Type Cache ──────────────────────────
+
+/** Maximum age for project type cache before warning (30 days in ms). */
+export const PROJECT_TYPE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function checkStaleProjectTypeCache(options: DoctorOptions): CheckResult {
+  const cacheFile = join(options.projectDir, ".garyclaw", "project-type.json");
+
+  if (!existsSync(cacheFile)) {
+    return {
+      name: "project-type-cache",
+      status: "PASS",
+      message: "No project type cache (will be created on next run)",
+      fixable: false,
+    };
+  }
+
+  let stat;
+  try {
+    stat = statSync(cacheFile);
+  } catch {
+    return {
+      name: "project-type-cache",
+      status: "PASS",
+      message: "Could not stat project type cache",
+      fixable: false,
+    };
+  }
+
+  const ageMs = Date.now() - stat.mtimeMs;
+  const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+
+  if (ageMs <= PROJECT_TYPE_MAX_AGE_MS) {
+    return {
+      name: "project-type-cache",
+      status: "PASS",
+      message: `Project type cache is ${ageDays} day(s) old`,
+      fixable: false,
+    };
+  }
+
+  // Stale cache — warn (fixable via --fix)
+  const details = [`Cache file is ${ageDays} days old (max: 30)`];
+
+  if (options.fix) {
+    try {
+      ensureProjectType(options.projectDir, true);
+      details.push("Fixed: re-detected project type");
+      return {
+        name: "project-type-cache",
+        status: "WARN",
+        message: `Project type cache was stale (${ageDays} days), re-detected`,
+        details,
+        fixable: true,
+        fixed: true,
+      };
+    } catch (err) {
+      details.push(`Fix failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  return {
+    name: "project-type-cache",
+    status: "WARN",
+    message: `Project type cache is stale (${ageDays} days old, max: 30)`,
+    details,
+    fixable: true,
+  };
+}

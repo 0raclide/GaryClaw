@@ -18,6 +18,8 @@ import {
   checkAuth,
   formatDoctorReport,
   worktreeHasUnmergedCommits,
+  checkStaleProjectTypeCache,
+  PROJECT_TYPE_MAX_AGE_MS,
   type DoctorOptions,
   type DoctorReport,
   type CheckResult,
@@ -700,11 +702,11 @@ describe("doctor", () => {
       mkdirSync(GARYCLAW_DIR, { recursive: true });
       const report = await runDoctor(defaultOptions());
 
-      // 8 checks (auth skipped)
-      expect(report.checks.length).toBe(8);
+      // 9 checks (auth skipped, project-type-cache added as check #10)
+      expect(report.checks.length).toBe(9);
       expect(report.timestamp).toBeTruthy();
       expect(report.durationMs).toBeGreaterThanOrEqual(0);
-      expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.info).toBe(8);
+      expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.info).toBe(9);
     });
 
     it("includes auth check when skipAuth is false", async () => {
@@ -795,6 +797,38 @@ describe("doctor", () => {
 
       const output = formatDoctorReport(report, false);
       expect(output).toContain("corrupt JSON");
+    });
+  });
+
+  describe("checkStaleProjectTypeCache", () => {
+    it("PASS when no cache file exists", () => {
+      mkdirSync(GARYCLAW_DIR, { recursive: true });
+      const result = checkStaleProjectTypeCache(defaultOptions());
+      expect(result.status).toBe("PASS");
+      expect(result.name).toBe("project-type-cache");
+    });
+
+    it("PASS when cache is fresh (< 30 days)", () => {
+      mkdirSync(GARYCLAW_DIR, { recursive: true });
+      const cachePath = join(GARYCLAW_DIR, "project-type.json");
+      writeFileSync(cachePath, JSON.stringify({ type: "cli", confidence: 0.9 }));
+      const result = checkStaleProjectTypeCache(defaultOptions());
+      expect(result.status).toBe("PASS");
+      expect(result.message).toContain("day");
+    });
+
+    it("WARN when cache is stale (> 30 days)", () => {
+      mkdirSync(GARYCLAW_DIR, { recursive: true });
+      const cachePath = join(GARYCLAW_DIR, "project-type.json");
+      writeFileSync(cachePath, JSON.stringify({ type: "cli", confidence: 0.9 }));
+      // Set mtime to 31 days ago
+      const staleTime = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+      const { utimesSync } = require("node:fs");
+      utimesSync(cachePath, staleTime, staleTime);
+      const result = checkStaleProjectTypeCache(defaultOptions());
+      expect(result.status).toBe("WARN");
+      expect(result.fixable).toBe(true);
+      expect(result.message).toContain("stale");
     });
   });
 });
