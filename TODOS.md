@@ -490,17 +490,32 @@ Completed (detected by artifact reconciliation, job job-1774882911918-a44eea).
 **Depends on:** Post-merge test verification (COMPLETE)
 **Added by:** /plan-eng-review recommendation, added by /qa on 2026-03-30
 
-## P2: Oracle-Driven Skill Selection + Deterministic Override Mode
+## P3: Add Exponential Decay to computeCategoryStats()
+
+**What:** Add exponential decay weighting to `computeCategoryStats()` in `pipeline-history.ts`, consistent with the existing `computeSkipRiskScores()` decay pattern in the same file.
+
+**Why:** Category stats treat a 6-month-old outcome the same as yesterday's. The existing skip-risk scoring already uses exponential decay (`DEFAULT_DECAY_HALF_LIFE`). As the daemon accumulates category history, stale patterns will persist and mislead the Oracle. Inconsistent treatment within the same file.
+
+**Implementation:**
+- Copy the timestamp parsing + weighting approach from `computeSkipRiskScores()` (~lines 150-200)
+- Apply decay to outcome counts in `computeCategoryStats()` so recent outcomes weigh more
+- ~30 lines of code + ~10 tests
+
+**Effort:** XS (human: ~2 hours / CC: ~15 min)
+**Depends on:** Nothing
+**Added by:** /plan-eng-review outside-voice finding #5, added by /qa on 2026-03-30
+
+## ~~P2: Oracle-Driven Skill Selection + Deterministic Override Mode~~ — COMPLETE (2026-03-30)
 
 **What:** Replace the static 5-skill lookup table in `pipeline-compose.ts` with two modes:
 
 **Mode 1 — Deterministic Override: COMPLETE (2026-03-30).** When the user specifies both a TODO item and a skill sequence via `daemon trigger --todo "Title" skill1 skill2 ...`, bypass composition entirely. No intersection, no stripping. The user owns the pipeline.
 
-**Mode 2 — Oracle Task Analysis (remaining work):** When no skills are specified (or the daemon auto-picks via prioritize/continuous), the Oracle reasons about what the task actually needs by:
-1. Reading the TODO description and classifying the task nature (visual/UX, architectural, bug fix, refactor, performance, infra)
-2. Consulting a **skill catalog** — a structured description of every available gstack skill (what it does, when it's useful, what it produces). ~~Built by scanning `.claude/skills/` directories or a static registry.~~ DONE: `src/skill-catalog.ts` static registry (10 skills, plan/exec modes).
-3. Selecting the optimal skill sequence based on task nature + skill capabilities + history
-4. Learning from outcomes: "last time we skipped design-review on a UI task, QA found 8 visual issues"
+**Mode 2 — Oracle Task Category Learning Loop: COMPLETE (2026-03-30).** When no skills are specified (or the daemon auto-picks via prioritize/continuous), the Oracle reasons about what the task actually needs by:
+1. ~~Reading the TODO description and classifying the task nature (visual/UX, architectural, bug fix, refactor, performance, infra)~~ DONE: `parseTaskCategory()` in job-runner.ts
+2. ~~Consulting a **skill catalog** — a structured description of every available gstack skill (what it does, when it's useful, what it produces).~~ DONE: `src/skill-catalog.ts` static registry (10 skills, plan/exec modes).
+3. ~~Selecting the optimal skill sequence based on task nature + skill capabilities + history~~ DONE: prioritize prompt outputs `### Recommended Pipeline` + `### Task Category`
+4. ~~Learning from outcomes: "last time we skipped design-review on a UI task, QA found 8 visual issues"~~ DONE: `computeCategoryStats()` in pipeline-history.ts, injected into prioritize prompt
 
 **Why:** The current static table only knows 5 skills (`prioritize, office-hours, implement, plan-eng-review, qa`). Any gstack skill (`plan-design-review`, `design-review`, `design-consultation`, `browse`, `qa-only`, etc.) gets silently killed by the intersection logic in `composePipeline()`. This caused a P0 mobile UI/UX task to have its design skills stripped and then get deprioritized because the pipeline couldn't do design work. The Oracle should understand that a visual UX task needs design skills, an architectural change needs eng review, and a simple bug fix just needs implement + qa.
 
@@ -513,10 +528,10 @@ Completed (detected by artifact reconciliation, job job-1774882911918-a44eea).
 - ~~`src/job-runner.ts`: When `skipComposition` is true, bypass `composePipeline()` entirely~~ DONE
 - ~~New: `src/skill-catalog.ts` — scan available skills, build structured descriptions~~ DONE (10 skills, 15 tests)
 - ~~`src/oracle.ts` or `src/prioritize.ts`: Oracle prompt for skill selection given task + catalog~~ DONE (injected into prioritize prompt)
-- `src/pipeline-history.ts`: Track per-skill outcomes by task category for learning (Mode 2)
+- ~~`src/pipeline-history.ts`: Track per-skill outcomes by task category for learning (Mode 2)~~ DONE: `computeCategoryStats()` + per-category stats in prioritize prompt
 
-**Effort:** M (human: ~1 week / CC: ~1 hour). Mode 1 complete, Mode 2 remaining effort ~S.
-**Depends on:** Nothing (immediate fix is XS, full Oracle mode is M)
+**Effort:** M (human: ~1 week / CC: ~1 hour). Both modes complete.
+**Depends on:** Nothing
 **Added by:** Human on 2026-03-30 (discovered when daemon stripped design skills from P0 mobile vault task)
 
 ## ~~P2: Auth Failure Runaway Loop — Continuous Mode Spins on $0 Jobs~~
