@@ -490,7 +490,10 @@ Completed (detected by artifact reconciliation, job job-1774882911918-a44eea).
 **Depends on:** Post-merge test verification (COMPLETE)
 **Added by:** /plan-eng-review recommendation, added by /qa on 2026-03-30
 
-## P3: Add Exponential Decay to computeCategoryStats()
+## ~~P3: Add Exponential Decay to computeCategoryStats()~~ — COMPLETE (2026-03-30)
+
+Completed (detected by artifact reconciliation, job job-1774886576583-c78bb2).
+
 
 **What:** Add exponential decay weighting to `computeCategoryStats()` in `pipeline-history.ts`, consistent with the existing `computeSkipRiskScores()` decay pattern in the same file.
 
