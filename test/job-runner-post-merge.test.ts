@@ -25,12 +25,19 @@ vi.mock("../src/worktree.js", async (importOriginal) => {
   };
 });
 
-// Mock child_process for the git rev-parse HEAD call
+// Mock child_process — only the execFileSync used for git rev-parse HEAD
 vi.mock("node:child_process", async (importOriginal) => {
   const orig = await importOriginal<typeof import("node:child_process")>();
   return {
     ...orig,
-    execFileSync: vi.fn().mockReturnValue("abc123def456\n"),
+    execFileSync: vi.fn((...args: unknown[]) => {
+      // Intercept git rev-parse HEAD calls (used to read merge SHA)
+      if (args[0] === "git" && Array.isArray(args[1]) && args[1].includes("rev-parse") && args[1].includes("HEAD")) {
+        return "abc123def456\n";
+      }
+      // Delegate everything else to the real implementation
+      return (orig.execFileSync as Function)(...args);
+    }),
   };
 });
 

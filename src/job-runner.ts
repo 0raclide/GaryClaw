@@ -6,6 +6,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFileSync, mkdirSync, existsSync, readdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { safeWriteJSON, safeReadJSON } from "./safe-json.js";
@@ -791,8 +792,7 @@ export function createJobRunner(
               if (shouldVerify) {
                 try {
                   // Read HEAD immediately after merge — this is the merge commit SHA
-                  const { execFileSync: efs } = await import("node:child_process");
-                  const mainHead = efs("git", ["rev-parse", "HEAD"], {
+                  const mainHead = execFileSync("git", ["rev-parse", "HEAD"], {
                     cwd: jobConfig.projectDir, stdio: "pipe", encoding: "utf-8",
                   }).trim();
 
