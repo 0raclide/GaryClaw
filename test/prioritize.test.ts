@@ -1519,3 +1519,101 @@ describe("truncateSection", () => {
     expect(result).toContain("[...truncated]");
   });
 });
+
+// ── prioritize_prompt_size event ────────────────────────────────
+
+describe("prioritize_prompt_size event", () => {
+  beforeEach(() => {
+    mkdirSync(TEST_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true });
+  });
+
+  it("emits prioritize_prompt_size event with token count and sections", async () => {
+    writeFileSync(join(TEST_DIR, "TODOS.md"), SAMPLE_TODOS, "utf-8");
+
+    const events: Array<{ type: string; tokens?: number; sections?: Record<string, number> }> = [];
+    const config = createMockConfig({
+      onEvent: (event) => events.push(event as any),
+    });
+    await buildPrioritizePrompt(config, [], TEST_DIR);
+
+    const sizeEvents = events.filter(e => e.type === "prioritize_prompt_size");
+    expect(sizeEvents).toHaveLength(1);
+    expect(sizeEvents[0].tokens).toBeGreaterThan(0);
+    expect(sizeEvents[0].sections).toBeDefined();
+    expect(typeof sizeEvents[0].sections!.todosContent).toBe("number");
+    expect(sizeEvents[0].sections!.todosContent).toBeGreaterThan(0);
+  });
+
+  it("does not emit event when onEvent is not provided", async () => {
+    writeFileSync(join(TEST_DIR, "TODOS.md"), SAMPLE_TODOS, "utf-8");
+    const config = createMockConfig(); // no onEvent
+    // Should not throw
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toBeTruthy();
+  });
+
+  it("sections record tracks rules and workedExample as fixed sections", async () => {
+    const events: Array<{ type: string; sections?: Record<string, number> }> = [];
+    const config = createMockConfig({
+      onEvent: (event) => events.push(event as any),
+    });
+    await buildPrioritizePrompt(config, [], TEST_DIR);
+
+    const sizeEvent = events.find(e => e.type === "prioritize_prompt_size");
+    expect(sizeEvent).toBeDefined();
+    expect(sizeEvent!.sections!.rules).toBeGreaterThan(0);
+    expect(sizeEvent!.sections!.workedExample).toBeGreaterThan(0);
+  });
+
+  it("sections record includes vision and capabilities when CLAUDE.md exists", async () => {
+    writeFileSync(join(TEST_DIR, "CLAUDE.md"),
+      "# Project\n\nVision text.\n---\n## Current Status\nStatus here.\n---\n",
+      "utf-8");
+
+    const events: Array<{ type: string; sections?: Record<string, number> }> = [];
+    const config = createMockConfig({
+      onEvent: (event) => events.push(event as any),
+    });
+    await buildPrioritizePrompt(config, [], TEST_DIR);
+
+    const sizeEvent = events.find(e => e.type === "prioritize_prompt_size");
+    expect(sizeEvent!.sections!.vision).toBeGreaterThan(0);
+    expect(sizeEvent!.sections!.capabilities).toBeGreaterThan(0);
+  });
+
+  it("total tokens in event reflects actual prompt size", async () => {
+    writeFileSync(join(TEST_DIR, "TODOS.md"), SAMPLE_TODOS, "utf-8");
+
+    const events: Array<{ type: string; tokens?: number }> = [];
+    const config = createMockConfig({
+      onEvent: (event) => events.push(event as any),
+    });
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+
+    const sizeEvent = events.find(e => e.type === "prioritize_prompt_size");
+    const actualTokens = estimateTokens(prompt);
+    expect(sizeEvent!.tokens).toBe(actualTokens);
+  });
+
+  it("empty sections are not included in sections record", async () => {
+    // No TODOS.md, no CLAUDE.md, noMemory — minimal sections
+    const events: Array<{ type: string; sections?: Record<string, number> }> = [];
+    const config = createMockConfig({
+      noMemory: true,
+      onEvent: (event) => events.push(event as any),
+    });
+    await buildPrioritizePrompt(config, [], TEST_DIR);
+
+    const sizeEvent = events.find(e => e.type === "prioritize_prompt_size");
+    // No TODOS.md → todosContent should not be in sections
+    expect(sizeEvent!.sections!.todosContent).toBeUndefined();
+    // No CLAUDE.md → vision should not be in sections
+    expect(sizeEvent!.sections!.vision).toBeUndefined();
+    // Oracle disabled → oracleContext should not be in sections
+    expect(sizeEvent!.sections!.oracleContext).toBeUndefined();
+  });
+});

@@ -29,22 +29,24 @@ import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, Decision, Daemo
  *  Section caps sum to ~31K + ~6K fixed sections = ~37K max. 40K provides headroom. */
 export const PRIORITIZE_PROMPT_BUDGET = 40_000;
 
-/** Per-section soft caps (tokens). Sections are assembled in priority order.
- *  If a section is smaller than its cap, unused budget flows to later sections. */
+/** Per-section token budgets for buildPrioritizePrompt().
+ *  Total: ~36,300 tokens max, leaving headroom for Phase 2-4 instructions + overhead. */
 export const PRIORITIZE_SECTION_BUDGETS = {
-  todosContent: 8_000,
-  vision: 1_500,
-  capabilities: 2_500,
-  oracleContext: 6_000,
-  failurePatterns: 2_000,
-  qualityTrends: 1_500,
-  impactMeasurement: 1_000,
-  skillCatalog: 2_000,
-  pipelineOutcomeStats: 2_000,
-  reviewFindings: 1_500,
-  pipelineContext: 1_500,
-  overnightGoal: 1_000,
-  projectType: 500,
+  todos:              12_000,
+  capabilities:       3_500,
+  vision:             1_500,
+  oracleContext:      4_000,
+  failurePatterns:    1_500,
+  qualityTrends:      1_000,
+  impactMeasurement:  800,
+  skillCatalog:       1_500,
+  pipelineStats:      1_500,
+  reviewFindings:     1_500,
+  pipelineContext:    1_000,
+  overnightGoal:      1_000,
+  projectType:        500,
+  claimedItems:       500,
+  preAssigned:        500,
 } as const;
 
 // ── TODOS filtering ──────────────────────────────────────────────
@@ -76,28 +78,28 @@ export function filterOpenTodos(content: string): string {
  * ~14% overrun. This local helper uses estimateTokens consistently.
  *
  * keepEnd=true: drop from beginning (keep newest, for historical data like outcomes)
- * keepEnd=false: drop from end (keep beginning, for TODOS.md P1/P2 items, capabilities)
+ * keepEnd=false (default): drop from end (keep beginning, for TODOS.md P1/P2 items, capabilities)
  */
-export function truncateSection(content: string, maxTokens: number, keepEnd = true): string {
+export function truncateSection(content: string, maxTokens: number, keepEnd = false): string {
   if (estimateTokens(content) <= maxTokens) return content;
   const maxChars = Math.floor(maxTokens * 3.5);
   if (keepEnd) {
     const sliced = content.slice(-maxChars);
     const nl = sliced.indexOf("\n");
     return nl >= 0 && nl < sliced.length - 1
-      ? "[...truncated oldest]\n" + sliced.slice(nl + 1)
-      : "[...truncated oldest]\n" + sliced;
+      ? "[...older entries truncated]\n" + sliced.slice(nl + 1)
+      : "[...older entries truncated]\n" + sliced;
   } else {
     const sliced = content.slice(0, maxChars);
     const nl = sliced.lastIndexOf("\n");
-    return nl > 0 ? sliced.slice(0, nl) + "\n[...truncated]" : sliced + "\n[...truncated]";
+    return nl > 0 ? sliced.slice(0, nl) + "\n[...truncated to fit token budget]" : sliced + "\n[...truncated to fit token budget]";
   }
 }
 
 /**
  * Add a section to the prompt lines if it fits within the remaining budget.
  * Returns tokens consumed. Truncates content if it exceeds sectionCap or remaining budget.
- * keepEnd: truncation direction (true=keep newest, false=keep beginning)
+ * keepEnd: truncation direction (true=keep newest, false=keep beginning, default=false)
  */
 export function addBudgetedSection(
   lines: string[],
@@ -105,7 +107,7 @@ export function addBudgetedSection(
   content: string,
   sectionCap: number,
   remainingBudget: number,
-  keepEnd = true,
+  keepEnd = false,
 ): number {
   if (!content || content.trim().length === 0) return 0;
 
@@ -807,6 +809,7 @@ export async function buildPrioritizePrompt(
   let tokensUsed = 0;
   const remaining = () => PRIORITIZE_PROMPT_BUDGET - tokensUsed;
   const SB = PRIORITIZE_SECTION_BUDGETS;
+  const sectionTokens: Record<string, number> = {};
 
   // Fixed: system instruction
   const sysInstruction =
@@ -827,8 +830,10 @@ export async function buildPrioritizePrompt(
   const todosContent = safeReadText(todosPath);
   const filteredTodos = todosContent ? filterOpenTodos(todosContent) : null;
   if (filteredTodos) {
-    tokensUsed += addBudgetedSection(lines, "### Backlog (TODOS.md)",
-      filteredTodos, SB.todosContent, remaining(), false);
+    const t = addBudgetedSection(lines, "### Backlog (TODOS.md)",
+      filteredTodos, SB.todos, remaining(), false);
+    tokensUsed += t;
+    sectionTokens.todos = t;
   } else {
     lines.push("### Backlog (TODOS.md)");
     lines.push("");
@@ -848,8 +853,10 @@ export async function buildPrioritizePrompt(
       "\n\nWhen the backlog is exhausted, use this vision to invent new features that move the product forward. Write invented items to TODOS.md before scoring them." +
       "\nIMPORTANT: Do NOT invent features that already exist. Check the Current Capabilities section below — these describe everything the system already does.";
 
-    tokensUsed += addBudgetedSection(lines, "### Product Vision (from CLAUDE.md)",
+    const tVision = addBudgetedSection(lines, "### Product Vision (from CLAUDE.md)",
       visionBlock, SB.vision, remaining(), false);
+    tokensUsed += tVision;
+    sectionTokens.vision = tVision;
 
     // Inject current capabilities from CLAUDE.md — the system's self-description.
     const statusMatch = claudeMdContent.match(/## Current Status\n([\s\S]*?)(?=\n---)/);
@@ -858,24 +865,31 @@ export async function buildPrioritizePrompt(
     const capabilities = [statusMatch?.[1], moduleMatch?.[1], decisionsMatch?.[1]].filter(Boolean).join("\n\n");
     if (capabilities) {
       const capBlock = "The system already has these features. Do NOT re-invent any of them:\n\n" + capabilities;
-      tokensUsed += addBudgetedSection(lines, "### Current Capabilities (from CLAUDE.md)",
+      const tCap = addBudgetedSection(lines, "### Current Capabilities (from CLAUDE.md)",
         capBlock, SB.capabilities, remaining(), false);
+      tokensUsed += tCap;
+      sectionTokens.capabilities = tCap;
     }
   }
 
   // Budgeted: Overnight goal
   const goal = loadOvernightGoal(projectDir);
   if (goal) {
-    tokensUsed += addBudgetedSection(lines, "### Overnight Goal",
+    const tGoal = addBudgetedSection(lines, "### Overnight Goal",
       goal, SB.overnightGoal, remaining(), false);
+    tokensUsed += tGoal;
+    sectionTokens.overnightGoal = tGoal;
   }
 
   // Budgeted: Oracle context (metrics + outcomes)
   if (!config.noMemory) {
     const oracleCtx = loadOracleContext(projectDir);
     if (oracleCtx) {
-      tokensUsed += addBudgetedSection(lines, "### Oracle Intelligence",
-        oracleCtx, SB.oracleContext, remaining());
+      // keepEnd=true: drop oldest decision outcomes, preserve recent ones
+      const tOracle = addBudgetedSection(lines, "### Oracle Intelligence",
+        oracleCtx, SB.oracleContext, remaining(), true);
+      tokensUsed += tOracle;
+      sectionTokens.oracleContext = tOracle;
     }
   }
 
@@ -884,27 +898,35 @@ export async function buildPrioritizePrompt(
 
   const failurePatterns = aggregateFailurePatterns(gcDir);
   if (failurePatterns) {
-    tokensUsed += addBudgetedSection(lines, "",
+    const tFail = addBudgetedSection(lines, "",
       failurePatterns, SB.failurePatterns, remaining());
+    tokensUsed += tFail;
+    sectionTokens.failurePatterns = tFail;
   }
 
   const qualityTrends = getDecisionQualityTrends(projectDir);
   if (qualityTrends) {
-    tokensUsed += addBudgetedSection(lines, "",
+    const tQual = addBudgetedSection(lines, "",
       qualityTrends, SB.qualityTrends, remaining());
+    tokensUsed += tQual;
+    sectionTokens.qualityTrends = tQual;
   }
 
   const impact = measureRecentImpact(gcDir);
   if (impact) {
-    tokensUsed += addBudgetedSection(lines, "",
+    const tImpact = addBudgetedSection(lines, "",
       impact, SB.impactMeasurement, remaining());
+    tokensUsed += tImpact;
+    sectionTokens.impactMeasurement = tImpact;
   }
 
   // Budgeted: Pipeline context (previous skill findings)
   const pipelineCtx = formatPipelineContext(previousSkills);
   if (pipelineCtx) {
-    tokensUsed += addBudgetedSection(lines, "### Previous Skill Findings",
+    const tPipe = addBudgetedSection(lines, "### Previous Skill Findings",
       pipelineCtx, SB.pipelineContext, remaining());
+    tokensUsed += tPipe;
+    sectionTokens.pipelineContext = tPipe;
   }
 
   // Budgeted: Unresolved review findings
@@ -919,8 +941,10 @@ export async function buildPrioritizePrompt(
       rfLines.push(`- **${f.accepted}** (confidence: ${f.confidence}/10, from ${f.jobId})`);
       rfLines.push(`  Context: ${f.question.slice(0, 200)}${f.question.length > 200 ? "..." : ""}`);
     }
-    tokensUsed += addBudgetedSection(lines, "### Unresolved Review Findings",
+    const tReview = addBudgetedSection(lines, "### Unresolved Review Findings",
       rfLines.join("\n"), SB.reviewFindings, remaining());
+    tokensUsed += tReview;
+    sectionTokens.reviewFindings = tReview;
   }
 
   // Fixed: Pre-assigned item (small, essential for correctness)
@@ -972,8 +996,10 @@ export async function buildPrioritizePrompt(
     "Consider: visual/UI tasks benefit from design-review. " +
     "Architectural changes need plan-eng-review. " +
     "Bug fixes and small refactors need only implement → qa.";
-  tokensUsed += addBudgetedSection(lines, "## Available Skills",
+  const tSkill = addBudgetedSection(lines, "## Available Skills",
     skillBlock, SB.skillCatalog, remaining(), false);
+  tokensUsed += tSkill;
+  sectionTokens.skillCatalog = tSkill;
 
   // Budgeted: Per-category pipeline outcome stats (only inject with 10+ outcomes)
   const outcomeHistoryPath = join(projectDir, ".garyclaw", "pipeline-outcomes.jsonl");
@@ -991,8 +1017,10 @@ export async function buildPrioritizePrompt(
       }
       statsLines.push("");
       statsLines.push("Use these patterns when recommending pipelines. High delta means the skill matters for that category.");
-      tokensUsed += addBudgetedSection(lines, "### Pipeline Outcome Patterns by Task Category",
+      const tStats = addBudgetedSection(lines, "### Pipeline Outcome Patterns by Task Category",
         statsLines.join("\n"), SB.pipelineOutcomeStats, remaining());
+      tokensUsed += tStats;
+      sectionTokens.pipelineOutcomeStats = tStats;
     }
   }
 
@@ -1005,17 +1033,35 @@ export async function buildPrioritizePrompt(
   // Budgeted: Project type awareness
   const ptSection = buildProjectTypeSection(projectDir);
   if (ptSection) {
-    tokensUsed += addBudgetedSection(lines, "",
+    const tPt = addBudgetedSection(lines, "",
       ptSection, SB.projectType, remaining(), false);
+    tokensUsed += tPt;
+    sectionTokens.projectType = tPt;
   }
 
   // Fixed: Rules + format + worked example (always included — essential, counted for budget accuracy)
   lines.push(PRIORITIZE_RULES);
   lines.push("");
-  tokensUsed += estimateTokens(PRIORITIZE_RULES);
+  const rulesTokens = estimateTokens(PRIORITIZE_RULES);
+  tokensUsed += rulesTokens;
+  sectionTokens.rules = rulesTokens;
   lines.push(WORKED_EXAMPLE);
   lines.push("");
-  tokensUsed += estimateTokens(WORKED_EXAMPLE);
+  const exampleTokens = estimateTokens(WORKED_EXAMPLE);
+  tokensUsed += exampleTokens;
+  sectionTokens.workedExample = exampleTokens;
 
-  return lines.join("\n");
+  const prompt = lines.join("\n");
+  const totalTokens = estimateTokens(prompt);
+
+  // Emit prompt size event for observability
+  if (config.onEvent) {
+    config.onEvent({
+      type: "prioritize_prompt_size",
+      tokens: totalTokens,
+      sections: sectionTokens,
+    });
+  }
+
+  return prompt;
 }

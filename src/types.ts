@@ -160,6 +160,8 @@ export interface GaryClawConfig {
   autoFixMergeSha?: string;
   /** Minimum identical answers before caching an Oracle decision (default: 5). Set to 0 to disable cache. */
   oracleCacheMinHits?: number;
+  /** Optional event callback for prompt-level observability (e.g., prioritize prompt size). */
+  onEvent?: (event: OrchestratorEvent) => void;
 }
 
 // ── Orchestrator events (discriminated union) ───────────────────
@@ -191,7 +193,8 @@ export type OrchestratorEvent =
   | { type: "segment_retry"; sessionIndex: number; segmentIndex: number; attempt: number; maxRetries: number; error: string; delayMs: number }
   | { type: "oracle_cache_hit"; question: string; chosen: string; hitCount: number }
   | { type: "oracle_cache_miss"; question: string }
-  | { type: "oracle_cache_invalidated"; question: string };
+  | { type: "oracle_cache_invalidated"; question: string }
+  | { type: "prioritize_prompt_size"; tokens: number; sections: Record<string, number> };
 
 export interface OrchestratorCallbacks {
   onEvent: (event: OrchestratorEvent) => void;

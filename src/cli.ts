@@ -386,6 +386,15 @@ export function formatEvent(event: OrchestratorEvent): string {
 
     case "oracle_cache_invalidated":
       return `${YELLOW}[Oracle Cache] Invalidated: "${event.question.slice(0, 50)}${event.question.length > 50 ? "..." : ""}"${RESET}`;
+
+    case "prioritize_prompt_size": {
+      const topSections = Object.entries(event.sections)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([k, v]) => `${k}:${v}`)
+        .join(", ");
+      return `${DIM}[Prioritize] Prompt size: ${(event.tokens / 1000).toFixed(1)}K tokens (${topSections})${RESET}`;
+    }
   }
 }
 
