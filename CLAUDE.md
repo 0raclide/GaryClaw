@@ -36,7 +36,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
 **GitHub PR Workflow: COMPLETE** (2026-03-30) — Optional `merge.strategy: "pr"` creates structured GitHub PRs instead of direct merge. PR body includes pipeline summary, oracle decisions, test results. Auto-merge via `gh pr merge --auto`. Fallback to direct merge when `gh` unavailable. New "pr-created" TODO state. Dashboard PR stats.
-- 40 source modules, 191 test files, 3055 tests
+- 40 source modules, 192 test files, 3058 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -293,6 +293,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/implement-loaddesigndoc.regression-1.test.ts` | 7 | loadDesignDoc regression: absolute/relative paths, missing files |
 | `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |
 | `test/daemon-ipc.test.ts` | 10 | Request/response over socket, malformed input, timeout |
+| `test/daemon-ipc.regression-1.test.ts` | 3 | IPC server connection safeguards: timeout constant, buffer cap constant, sane bounds |
 | `test/notifier.test.ts` | 28 | Notification formatting, summary generation, graceful failure, instance labels |
 | `test/job-runner.test.ts` | 48 | FIFO queue, dedup, budget, state persistence, job lifecycle, global budget, cross-instance dedup, adaptive_turns event collection |
 | `test/job-runner-extended.test.ts` | 17 | Extended job runner: budget edge cases, concurrent enqueue |
