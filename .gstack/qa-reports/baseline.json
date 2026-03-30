@@ -1,20 +1,22 @@
 {
   "date": "2026-03-30",
-  "url": "cli-test-suite",
+  "url": "cli-project",
   "healthScore": 100,
   "issues": [],
   "categoryScores": {
-    "testSuite": 100,
-    "typeSafety": 100,
-    "testCoverage": 100,
-    "dependencies": 100,
-    "codeHygiene": 100
+    "console": 100,
+    "links": 100,
+    "visual": 100,
+    "functional": 100,
+    "ux": 100,
+    "performance": 100,
+    "content": 100,
+    "accessibility": 100
   },
-  "testStats": {
-    "files": 188,
-    "total": 3039,
-    "passed": 3039,
-    "failed": 0,
-    "duration": "12.89s"
+  "testSuite": {
+    "files": 191,
+    "tests": 3055,
+    "passing": 3055,
+    "failing": 0
   }
 }
