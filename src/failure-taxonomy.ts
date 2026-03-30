@@ -5,7 +5,7 @@
  * first match wins. "unknown" is the conservative fallback.
  */
 
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { FailureCategory, FailureRecord } from "./types.js";
 
@@ -286,6 +286,51 @@ export function appendFailureRecord(
   } catch {
     // Best-effort — don't crash the job runner if JSONL write fails
   }
+}
+
+/**
+ * Read all FailureRecords from failures.jsonl in a checkpoint directory.
+ * Scans both the flat layout and per-instance layouts under daemons/.
+ * Returns parsed records sorted newest-first (by timestamp).
+ */
+export function readFailureRecords(checkpointDir: string): FailureRecord[] {
+  const records: FailureRecord[] = [];
+  const paths: string[] = [];
+
+  // Flat layout
+  const flatPath = join(checkpointDir, "failures.jsonl");
+  if (existsSync(flatPath)) paths.push(flatPath);
+
+  // Per-instance layout
+  const daemonsDir = join(checkpointDir, "daemons");
+  if (existsSync(daemonsDir)) {
+    try {
+      for (const inst of readdirSync(daemonsDir)) {
+        const instPath = join(daemonsDir, inst, "failures.jsonl");
+        if (existsSync(instPath)) paths.push(instPath);
+      }
+    } catch { /* ignore */ }
+  }
+
+  for (const filePath of paths) {
+    try {
+      const content = readFileSync(filePath, "utf-8");
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const record = JSON.parse(trimmed) as FailureRecord;
+          if (record.category && record.jobId) {
+            records.push(record);
+          }
+        } catch { /* skip malformed lines */ }
+      }
+    } catch { /* skip unreadable files */ }
+  }
+
+  // Sort newest first
+  records.sort((a, b) => (b.timestamp ?? "").localeCompare(a.timestamp ?? ""));
+  return records;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

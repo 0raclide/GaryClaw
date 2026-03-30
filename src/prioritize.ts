@@ -15,7 +15,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { safeReadText, safeReadJSON } from "./safe-json.js";
 import { readOracleMemory, readMetrics, defaultMemoryConfig } from "./oracle-memory.js";
 import { estimateTokens } from "./checkpoint.js";
-import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics } from "./types.js";
+import { readFailureRecords } from "./failure-taxonomy.js";
+import { groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-research.js";
+import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, FailureRecord, Decision, DaemonState } from "./types.js";
 
 // ── TodoItem parsing ─────────────────────────────────────────────
 
@@ -278,6 +280,193 @@ export function loadUnresolvedReviewFindings(checkpointDir: string): ReviewFindi
   return findings;
 }
 
+// ── Deep context builders ───────────────────────────────────────
+
+/**
+ * Aggregate failure patterns from failures.jsonl across all instances.
+ * Returns a markdown section summarizing top failure categories and affected skills.
+ */
+export function aggregateFailurePatterns(checkpointDir: string): string | null {
+  const records = readFailureRecords(checkpointDir);
+  if (records.length === 0) return null;
+
+  // Count by category
+  const byCategory = new Map<string, number>();
+  for (const r of records) {
+    byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + 1);
+  }
+
+  // Count by skill (first skill in each job's skill list)
+  const bySkill = new Map<string, number>();
+  for (const r of records) {
+    const skill = r.skills?.[0] ?? "unknown";
+    bySkill.set(skill, (bySkill.get(skill) ?? 0) + 1);
+  }
+
+  // Top 3 categories sorted by count
+  const topCategories = [...byCategory.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+
+  // Top 3 skills sorted by count
+  const topSkills = [...bySkill.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+
+  const lines: string[] = [
+    "### Failure Patterns",
+    "",
+    `${records.length} total failures recorded.`,
+    "",
+    "**By category:**",
+  ];
+  for (const [cat, count] of topCategories) {
+    lines.push(`- ${cat}: ${count} failure${count !== 1 ? "s" : ""}`);
+  }
+  lines.push("");
+  lines.push("**Most-affected skills:**");
+  for (const [skill, count] of topSkills) {
+    lines.push(`- ${skill}: ${count} failure${count !== 1 ? "s" : ""}`);
+  }
+  lines.push("");
+  lines.push("Items that fix recurring failure patterns deserve a +2 scoring bonus.");
+
+  return lines.join("\n");
+}
+
+/**
+ * Analyze decision quality trends from oracle metrics and low-confidence decision clusters.
+ * Returns a markdown section summarizing weak topic areas.
+ */
+export function getDecisionQualityTrends(projectDir: string): string | null {
+  const memConfig = defaultMemoryConfig(projectDir);
+  const metrics = readMetrics(memConfig);
+
+  // Read decisions.jsonl for low-confidence topic clustering
+  const decisionsPath = join(projectDir, ".garyclaw", "decisions.jsonl");
+  const decisions: Decision[] = [];
+  if (existsSync(decisionsPath)) {
+    try {
+      const content = readFileSync(decisionsPath, "utf-8");
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const d = JSON.parse(trimmed) as Decision;
+          if (d.question && typeof d.confidence === "number") {
+            decisions.push(d);
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Group low-confidence decisions by topic
+  const groups = groupDecisionsByTopic(decisions, {
+    ...DEFAULT_AUTO_RESEARCH_CONFIG,
+    lowConfidenceThreshold: 7, // slightly higher threshold for quality trends
+    minDecisionsToTrigger: 2,
+  });
+
+  const hasMetrics = metrics.totalDecisions > 0;
+  const hasGroups = groups.length > 0;
+  if (!hasMetrics && !hasGroups) return null;
+
+  const lines: string[] = ["### Decision Quality Trends", ""];
+
+  if (hasMetrics) {
+    lines.push(`Oracle accuracy: ${metrics.accuracyPercent.toFixed(0)}% across ${metrics.totalDecisions} decisions.`);
+    if (metrics.confidenceTrend.length > 0) {
+      const avg = metrics.confidenceTrend.reduce((s, v) => s + v, 0) / metrics.confidenceTrend.length;
+      lines.push(`Recent confidence trend: avg ${avg.toFixed(1)}/10 over last ${metrics.confidenceTrend.length} decisions.`);
+    }
+    lines.push("");
+  }
+
+  if (hasGroups) {
+    lines.push("**Topics with low confidence (areas where the Oracle struggles):**");
+    for (const g of groups.slice(0, 5)) {
+      lines.push(`- ${g.topic}: avg ${g.avgConfidence.toFixed(1)}/10, ${g.decisions.length} decisions`);
+    }
+    lines.push("");
+    lines.push("Items that build domain knowledge for weak topics deserve a +1 scoring bonus.");
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Measure recent impact by comparing average job cost of recent vs older jobs.
+ * Returns a markdown section with impact signals.
+ */
+export function measureRecentImpact(checkpointDir: string): string | null {
+  // Collect all jobs from daemon state files
+  const allJobs: { costUsd: number; completedAt: string; skills: string[] }[] = [];
+
+  const collectJobs = (statePath: string) => {
+    if (!existsSync(statePath)) return;
+    try {
+      const content = readFileSync(statePath, "utf-8");
+      const state = JSON.parse(content) as DaemonState;
+      for (const j of state.jobs ?? []) {
+        if (j.status === "complete" && j.completedAt && j.costUsd > 0) {
+          allJobs.push({ costUsd: j.costUsd, completedAt: j.completedAt, skills: j.skills });
+        }
+      }
+    } catch { /* ignore */ }
+  };
+
+  // Flat layout
+  collectJobs(join(checkpointDir, "daemon-state.json"));
+
+  // Per-instance layout
+  const daemonsDir = join(checkpointDir, "daemons");
+  if (existsSync(daemonsDir)) {
+    try {
+      for (const inst of readdirSync(daemonsDir)) {
+        collectJobs(join(daemonsDir, inst, "daemon-state.json"));
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (allJobs.length < 4) return null; // need at least 4 jobs for meaningful comparison
+
+  // Sort by completion time
+  allJobs.sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+
+  // Split into halves
+  const midpoint = Math.floor(allJobs.length / 2);
+  const olderJobs = allJobs.slice(0, midpoint);
+  const recentJobs = allJobs.slice(midpoint);
+
+  const olderAvgCost = olderJobs.reduce((s, j) => s + j.costUsd, 0) / olderJobs.length;
+  const recentAvgCost = recentJobs.reduce((s, j) => s + j.costUsd, 0) / recentJobs.length;
+
+  const costDelta = recentAvgCost - olderAvgCost;
+  const costDeltaPct = olderAvgCost > 0 ? (costDelta / olderAvgCost) * 100 : 0;
+
+  const lines: string[] = ["### Impact Measurement", ""];
+  lines.push(`Comparing ${recentJobs.length} recent jobs vs ${olderJobs.length} older jobs:`);
+  lines.push(`- Older avg cost: $${olderAvgCost.toFixed(2)}/job`);
+  lines.push(`- Recent avg cost: $${recentAvgCost.toFixed(2)}/job`);
+
+  if (costDelta < -0.01) {
+    lines.push(`- **Cost improved** by ${Math.abs(costDeltaPct).toFixed(0)}% ($${Math.abs(costDelta).toFixed(2)}/job savings)`);
+    lines.push("");
+    lines.push("Recent optimizations are working. Continue investing in new capabilities over optimization.");
+  } else if (costDelta > 0.01) {
+    lines.push(`- **Cost increased** by ${costDeltaPct.toFixed(0)}% ($${costDelta.toFixed(2)}/job increase)`);
+    lines.push("");
+    lines.push("Costs are trending up. Prioritize measurement, profiling, or optimization work over new features.");
+  } else {
+    lines.push("- Cost is **stable** (within $0.01/job).");
+    lines.push("");
+    lines.push("Costs are flat. New features or capability improvements are the best use of effort.");
+  }
+
+  return lines.join("\n");
+}
+
 // ── Prompt builder ──────────────────────────────────────────────
 
 const PRIORITIZE_RULES = `## Scoring Rubric
@@ -395,8 +584,39 @@ Recommended Pipeline:
 - Do NOT pick P4 items when P2/P3 items exist
 - Do NOT modify any source code — you are read-only except for .garyclaw/priority.md (and TODOS.md for splits)
 - When actionable items exist: Do NOT invent — only score what's in TODOS.md or Unresolved Review Findings
-- When ALL items score below 5.0 (backlog exhausted): You MUST invent 2-3 new P3 items guided by the Product Vision above. Write them to TODOS.md in standard format (## P{N}: Title + What/Why/Effort/Depends on), then score and pick the best one. The daemon's value comes from continuous self-improvement — an empty backlog is a signal to think bigger, not to stop.
-- DO give a +2 scoring bonus to unresolved review findings — they are pre-reviewed and pre-approved, zero design work needed`;
+- When ALL items score below 5.0 (backlog exhausted): Follow the Invention Protocol below.
+- DO give a +2 scoring bonus to unresolved review findings — they are pre-reviewed and pre-approved, zero design work needed
+- DO give a +2 scoring bonus to items that fix recurring failure patterns (see Failure Patterns section)
+- DO give a +1 scoring bonus to items that build domain knowledge for low-confidence Oracle topics (see Decision Quality Trends section)
+- If recent job costs are trending up (see Impact Measurement section), prefer optimization/measurement work over new features
+
+## Invention Protocol (when backlog exhausted)
+
+When ALL backlog items score below 5.0, follow this structured process:
+
+**Step 1 — RESEARCH:** Read the Current Capabilities section carefully.
+Identify gaps: what should a "learning development daemon that gets smarter
+every run" be able to do that it can't do today? Review the Failure Patterns
+and Decision Quality Trends for recurring pain points.
+
+**Step 2 — INVENT:** Write 3-5 candidate P3 items to TODOS.md.
+Each must have: title, What, Why, Effort, Depends on.
+
+**Step 3 — CRITIQUE:** For EACH candidate, answer:
+- Does this already exist? (check Current Capabilities — if yes, DISCARD immediately)
+- Does this address a known failure pattern? (check Failure Patterns section)
+- Would a user actually notice this improvement?
+- Is this incremental polish or a genuine new capability?
+- Score 1-10 on "would I be proud to show this to the project owner?"
+
+**Step 4 — PRUNE:** Remove candidates scoring below 7 on the pride test.
+If none remain, think bigger — you're being too incremental.
+
+**Step 5 — SCORE:** Score remaining candidates using the standard rubric above,
+then pick the highest-scoring one as your Top Pick.
+
+Write the full critique reasoning (Steps 3-4) into priority.md under a
+\`### Invention Critique\` section so the reasoning is auditable`;
 
 const WORKED_EXAMPLE = `## Worked Example
 
@@ -540,6 +760,26 @@ export async function buildPrioritizePrompt(
       lines.push(oracleCtx);
       lines.push("");
     }
+  }
+
+  // Deep context: failure patterns, decision quality trends, impact measurement
+  const gcDir = join(projectDir, ".garyclaw");
+  const failurePatterns = aggregateFailurePatterns(gcDir);
+  if (failurePatterns) {
+    lines.push(failurePatterns);
+    lines.push("");
+  }
+
+  const qualityTrends = getDecisionQualityTrends(projectDir);
+  if (qualityTrends) {
+    lines.push(qualityTrends);
+    lines.push("");
+  }
+
+  const impact = measureRecentImpact(gcDir);
+  if (impact) {
+    lines.push(impact);
+    lines.push("");
   }
 
   // Pipeline context (previous skill findings)
