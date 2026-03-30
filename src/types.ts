@@ -356,6 +356,15 @@ export interface IPCResponse {
   error?: string;
 }
 
+export interface PipelineProgress {
+  currentSkill: string;           // e.g. "implement"
+  skillIndex: number;             // 0-based
+  totalSkills: number;            // total in pipeline
+  claimedTodoTitle: string | null;  // from job.claimedTodoTitle
+  elapsedSeconds: number;         // since job started
+  commitCount: number;            // commits on worktree branch since creation
+}
+
 // ── Parallel daemon instances ────────────────────────────────────
 
 export interface GlobalBudget {
