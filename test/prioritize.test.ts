@@ -1253,7 +1253,7 @@ Open stuff.`;
     expect(result).not.toContain("Completed");
   });
 
-  it("handles all-struck-through input (returns preamble only)", () => {
+  it("handles all-struck-through input (returns empty for fallback path)", () => {
     const input = `# TODOS
 
 ## ~~P2: Done A~~
@@ -1265,9 +1265,9 @@ A stuff.
 B stuff.`;
 
     const result = filterOpenTodos(input);
-    expect(result).toContain("# TODOS");
-    expect(result).not.toContain("Done A");
-    expect(result).not.toContain("Done B");
+    // When all structured items are struck through, return empty so the caller
+    // falls through to the "No TODOS.md found" path instead of injecting just "# TODOS"
+    expect(result).toBe("");
   });
 
   it("handles empty input", () => {
