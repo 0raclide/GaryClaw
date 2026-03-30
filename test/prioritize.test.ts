@@ -17,6 +17,7 @@ import {
   measureRecentImpact,
   filterOpenTodos,
   addBudgetedSection,
+  truncateSection,
   PRIORITIZE_PROMPT_BUDGET,
   PRIORITIZE_SECTION_BUDGETS,
 } from "../src/prioritize.js";
@@ -1316,7 +1317,7 @@ describe("addBudgetedSection", () => {
     expect(lines.some(l => l.includes("Short content here."))).toBe(true);
   });
 
-  it("truncates content over section cap", () => {
+  it("truncates content over section cap (keepEnd=true default)", () => {
     const lines: string[] = [];
     // Create content that's ~2000 tokens (7000 chars)
     const content = "Line of text for testing.\n".repeat(280);
@@ -1325,6 +1326,19 @@ describe("addBudgetedSection", () => {
     // The full content would be ~2000 tokens, but cap is 500
     const joined = lines.join("\n");
     expect(joined.length).toBeLessThan(content.length);
+    // keepEnd=true (default): keeps newest, shows truncation marker
+    expect(joined).toContain("[...truncated oldest]");
+  });
+
+  it("truncates with keepEnd=false (keeps beginning)", () => {
+    const lines: string[] = [];
+    const content = Array.from({ length: 100 }, (_, i) => `Line ${i}: some content here`).join("\n");
+    const tokens = addBudgetedSection(lines, "### Head Section", content, 200, 10000, false);
+    expect(tokens).toBeGreaterThan(0);
+    const joined = lines.join("\n");
+    expect(joined).toContain("Line 0:");
+    expect(joined).toContain("[...truncated]");
+    expect(joined).not.toContain("Line 99:");
   });
 
   it("returns 0 for empty content", () => {
