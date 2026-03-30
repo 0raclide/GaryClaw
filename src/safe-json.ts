@@ -82,8 +82,16 @@ export function safeWriteJSON(
       // Re-create dir and retry once
       mkdirSync(dir, { recursive: true });
       writeFileSync(tmpPath, serialized, "utf-8");
-      renameSync(tmpPath, filePath);
+      try {
+        renameSync(tmpPath, filePath);
+      } catch (retryErr) {
+        // Clean up orphaned tmp file before propagating
+        try { unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
+        throw retryErr;
+      }
     } else {
+      // Clean up orphaned tmp file before propagating
+      try { unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
       throw err;
     }
   }
@@ -120,8 +128,14 @@ export function safeWriteText(filePath: string, content: string): void {
     if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
       mkdirSync(dir, { recursive: true });
       writeFileSync(tmpPath, content, "utf-8");
-      renameSync(tmpPath, filePath);
+      try {
+        renameSync(tmpPath, filePath);
+      } catch (retryErr) {
+        try { unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
+        throw retryErr;
+      }
     } else {
+      try { unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
       throw err;
     }
   }
