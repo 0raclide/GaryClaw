@@ -16,10 +16,23 @@ export type IPCHandler = (request: IPCRequest) => Promise<IPCResponse>;
  * Each connection expects one JSON request line and sends one JSON response line.
  * Processes as soon as the newline delimiter arrives (not on connection end).
  */
+/** Per-connection idle timeout (ms). Hung clients that connect but never send data get cleaned up. */
+export const IPC_CONNECTION_TIMEOUT_MS = 30_000;
+
+/** Maximum buffer size per connection (bytes). Prevents unbounded memory growth from misbehaving clients. */
+export const IPC_MAX_BUFFER_BYTES = 1_048_576; // 1 MiB
+
 export function createIPCServer(socketPath: string, handler: IPCHandler): Server {
   const server = createServer((conn) => {
     let data = "";
     let handled = false;
+
+    // Per-connection timeout: destroy hung connections that never send data
+    conn.setTimeout(IPC_CONNECTION_TIMEOUT_MS, () => {
+      if (!handled) {
+        conn.destroy();
+      }
+    });
 
     async function handleRequest(): Promise<void> {
       if (handled) return;
@@ -54,6 +67,16 @@ export function createIPCServer(socketPath: string, handler: IPCHandler): Server
 
     conn.on("data", (chunk) => {
       data += chunk.toString();
+      // Buffer size cap: prevent unbounded memory growth from misbehaving clients
+      if (data.length > IPC_MAX_BUFFER_BYTES) {
+        if (!handled) {
+          handled = true;
+          try {
+            conn.end(JSON.stringify({ ok: false, error: "Request too large" } satisfies IPCResponse) + "\n");
+          } catch { /* connection may have closed */ }
+        }
+        return;
+      }
       handleRequest().catch((err) => {
         // Prevent unhandled promise rejection from crashing the daemon
         // but log the error for debuggability
