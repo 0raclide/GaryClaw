@@ -18,6 +18,7 @@ import { readFailureRecords } from "./failure-taxonomy.js";
 import { groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-research.js";
 import { formatSkillCatalogForPrompt } from "./skill-catalog.js";
 import { readPipelineOutcomes, computeCategoryStats } from "./pipeline-history.js";
+import { VALID_TASK_CATEGORIES, TASK_CATEGORY_DESCRIPTIONS } from "./types.js";
 import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, Decision, DaemonState } from "./types.js";
 
 // ── TodoItem parsing ─────────────────────────────────────────────
@@ -523,7 +524,7 @@ Write \`.garyclaw/priority.md\` with this exact structure:
 - [Title]: [reason — unmet deps / too large / P4 while P2 exists]
 
 ### Task Category
-{one of: visual-ux, architectural, bug-fix, refactor, performance, infra, new-feature}
+{one of: ${VALID_TASK_CATEGORIES.filter(c => c !== "unknown").join(", ")}}
 
 ### Recommended Pipeline
 implement -> qa
@@ -560,13 +561,7 @@ Then STOP. Do not pick an item below the threshold.
 ## Task Category Guidelines
 
 Classify the task based on its primary nature. Always pick the best-fit category:
-- visual-ux: UI changes, design polish, responsive layouts, visual bugs
-- architectural: shared interfaces, cross-module changes, data flow redesign
-- bug-fix: fixing broken behavior, error handling, regression fixes
-- refactor: code cleanup, dedup, rename, restructure without behavior change
-- performance: speed, memory, bundle size, query optimization
-- infra: CI/CD, deployment, monitoring, tooling, developer experience
-- new-feature: entirely new capability not covered above
+${VALID_TASK_CATEGORIES.filter(c => c !== "unknown").map(c => `- ${c}: ${TASK_CATEGORY_DESCRIPTIONS[c]}`).join("\n")}
 
 ## Recommended Pipeline Guidelines
 

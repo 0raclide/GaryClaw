@@ -1,21 +1,10 @@
 {
   "date": "2026-03-30",
-  "project": "GaryClaw",
+  "target": "GaryClaw CLI",
   "healthScore": 100,
+  "testsPassed": 3058,
+  "testsFailed": 0,
   "testFiles": 192,
-  "tests": 3058,
-  "allPassing": true,
-  "typescriptClean": true,
-  "sourceModules": 40,
-  "docsAccurate": true,
-  "issues": [
-    {
-      "id": "ISSUE-001",
-      "title": "Stale test counts in CLAUDE.md (3 entries)",
-      "severity": "medium",
-      "category": "documentation",
-      "status": "verified",
-      "commit": "8cb60f7"
-    }
-  ]
+  "typescriptErrors": 0,
+  "issues": []
 }

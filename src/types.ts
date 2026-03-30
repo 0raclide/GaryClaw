@@ -650,8 +650,34 @@ export interface PipelineOutcomeRecord {
   //             "partial" if job completed but had non-critical issues,
   //             "success" if no failures and no reopens
   oracleAdjusted: boolean;    // true if Oracle restored any skills beyond static rules
-  taskCategory?: string;      // visual-ux | architectural | bug-fix | refactor | performance | infra | unknown (extension point — nothing populates or reads this yet)
+  taskCategory?: string;      // visual-ux | architectural | bug-fix | refactor | performance | infra | new-feature | unknown — populated by job-runner parseTaskCategory(), read by computeCategoryStats() + prioritize prompt
 }
+
+// ── Task Category constants (shared by job-runner + prioritize) ──
+
+/**
+ * Valid task categories for pipeline outcome tracking.
+ * "unknown" is a code-level fallback — not offered to the LLM.
+ */
+export const VALID_TASK_CATEGORIES = [
+  "visual-ux", "architectural", "bug-fix", "refactor",
+  "performance", "infra", "new-feature", "unknown",
+] as const;
+
+/**
+ * Human-readable descriptions for each task category.
+ * Used by prioritize prompt to generate Task Category Guidelines.
+ * "unknown" omitted — it's a code fallback, not offered to the LLM.
+ */
+export const TASK_CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  "visual-ux": "UI changes, design polish, responsive layouts, visual bugs",
+  "architectural": "shared interfaces, cross-module changes, data flow redesign",
+  "bug-fix": "fixing broken behavior, error handling, regression fixes",
+  "refactor": "code cleanup, dedup, rename, restructure without behavior change",
+  "performance": "speed, memory, bundle size, query optimization",
+  "infra": "CI/CD, deployment, monitoring, tooling, developer experience",
+  "new-feature": "entirely new capability not covered above",
+};
 
 // ── Evaluation (dogfood campaign evaluator) ──────────────────────
 

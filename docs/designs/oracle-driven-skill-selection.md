@@ -112,7 +112,9 @@ Approach B's per-category tracking is the right long-term direction, but prematu
 
 Approach C's auto-discovery is elegant but over-engineered for now. The skill set changes maybe once per week. A hand-maintained registry with 15 entries is 5 minutes to update.
 
-Ship A. Defer `taskCategory` entirely to Approach B. Add the optional field to `PipelineOutcomeRecord` as a type-level extension point (field exists in the interface, nothing populates or reads it). Zero implementation, zero tests. Revisit when there's enough data to matter.
+Ship A. Defer `taskCategory` entirely to Approach B. Add the optional field to `PipelineOutcomeRecord` as a type-level extension point.
+
+**UPDATE (2026-03-30):** `taskCategory` is now fully wired. `parseTaskCategory()` in job-runner.ts populates the field from priority.md. `computeCategoryStats()` in pipeline-history.ts reads it. Per-category outcome stats injected into prioritize prompt when 10+ outcomes exist.
 
 ## Design Decisions
 
@@ -144,7 +146,7 @@ None remaining. All design decisions resolved above.
 2. Prioritize skill output recommends `design-review → implement → qa` for a TODO with visual/UX keywords, when the skill catalog is present in its prompt.
 3. Static table still works as fallback when prioritize doesn't output a `### Recommended Pipeline` section.
 4. All existing tests pass. New tests cover: `--todo` flag parsing, `skipComposition` bypass, skill catalog structure, prioritize prompt with catalog injection.
-5. `taskCategory` field present on `PipelineOutcomeRecord` as optional type-level extension point (nothing populates or reads it).
+5. `taskCategory` field present on `PipelineOutcomeRecord` — now populated by `parseTaskCategory()` and consumed by `computeCategoryStats()` + prioritize prompt injection.
 
 ## Implementation Plan
 

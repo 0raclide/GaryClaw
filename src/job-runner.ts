@@ -45,6 +45,7 @@ import {
 } from "./pipeline-history.js";
 import {
   PerJobCostExceededError,
+  VALID_TASK_CATEGORIES,
 } from "./types.js";
 import type { WarnFn } from "./types.js";
 import {
@@ -1299,15 +1300,19 @@ export function createJobRunner(
           const taskCategory = outcomePriorityContent
             ? parseTaskCategory(outcomePriorityContent)
             : "unknown";
-          const effortMatch = outcomePriorityContent?.match(/Effort[\s:*]*\b(XS|S|M|L|XL)\b/i);
-          const priorityMatch = outcomePriorityContent?.match(/Priority[\s:*]*P(\d)/i);
+          const effort = outcomePriorityContent
+            ? parseEffort(outcomePriorityContent)
+            : null;
+          const priority = outcomePriorityContent
+            ? parsePriority(outcomePriorityContent)
+            : 3;
 
           appendPipelineOutcome(outcomeHistoryPath, {
             jobId: nextJob.id,
             timestamp: new Date().toISOString(),
             todoTitle: nextJob.claimedTodoTitle ?? "unknown",
-            effort: effortMatch?.[1]?.toUpperCase() ?? null,
-            priority: priorityMatch ? parseInt(priorityMatch[1], 10) : 3,
+            effort,
+            priority,
             skills: nextJob.skills,
             skippedSkills,
             composedFrom: nextJob.composedFrom,
@@ -1469,24 +1474,46 @@ export function parsePriorityPickTitle(content: string): string | null {
 /** Minimum pipeline outcome count before oracle recommendations override static table. */
 export const ORACLE_PIPELINE_THRESHOLD = 10;
 
-/**
- * Valid task categories for pipeline outcome tracking.
- * "unknown" is a code-level fallback — not offered to the LLM.
- */
-export const VALID_TASK_CATEGORIES = [
-  "visual-ux", "architectural", "bug-fix", "refactor",
-  "performance", "infra", "new-feature", "unknown",
-] as const;
+// Re-export for backward compat (tests import from here)
+export { VALID_TASK_CATEGORIES, TASK_CATEGORY_DESCRIPTIONS } from "./types.js";
 
 /**
  * Parse the "### Task Category" section from priority.md content.
  * Returns one of VALID_TASK_CATEGORIES, defaulting to "unknown" if missing or invalid.
  */
 export function parseTaskCategory(content: string): string {
-  const match = content.match(/^###\s*Task Category\s*\n+(\S+)/m);
+  // Match both "### Task Category\nvalue" and "### Task Category: value"
+  const match = content.match(/^###\s*Task Category[\s:]+(\S+)/m);
   if (!match) return "unknown";
   const raw = match[1].toLowerCase().trim();
   return (VALID_TASK_CATEGORIES as readonly string[]).includes(raw) ? raw : "unknown";
+}
+
+/** Valid effort sizes for pipeline outcome tracking. */
+export const VALID_EFFORTS = ["XS", "S", "M", "L", "XL"] as const;
+
+/**
+ * Parse the effort size from priority.md content.
+ * Looks for patterns like "Effort: S", "**Effort:** M", "Effort S".
+ * Returns uppercase effort string or null if missing/invalid.
+ */
+export function parseEffort(content: string): string | null {
+  const match = content.match(/Effort[\s:*]*\b(XS|S|M|L|XL)\b/i);
+  if (!match) return null;
+  const raw = match[1].toUpperCase();
+  return (VALID_EFFORTS as readonly string[]).includes(raw) ? raw : null;
+}
+
+/**
+ * Parse the priority level from priority.md content.
+ * Looks for patterns like "Priority: P2", "**Priority:** P1".
+ * Returns the numeric priority (1-5) or 3 as default.
+ */
+export function parsePriority(content: string): number {
+  const match = content.match(/Priority[\s:*]*P(\d)/i);
+  if (!match) return 3;
+  const n = parseInt(match[1], 10);
+  return n >= 1 && n <= 5 ? n : 3;
 }
 
 /**
