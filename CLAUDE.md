@@ -281,7 +281,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-failure.test.ts` | 9 | pipeline failure modes, skill crash handling |
 | `test/pipeline-compose.test.ts` | 59 | composePipeline: all effort/priority rules, intersection logic, edge cases, invariants, savings |
 | `test/pipeline-compose-oracle.test.ts` | 22 | parsePipelineRecommendation: arrow variants, missing/malformed, whitespace, embedding; oracle override logic: intersection, threshold, compositionMethod |
-| `test/pipeline-history.test.ts` | 52 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker, computeCategoryStats |
+| `test/pipeline-history.test.ts` | 51 | readPipelineOutcomes, appendPipelineOutcome, truncatePipelineOutcomes, MAX_PIPELINE_OUTCOMES cap, computeSkipRiskScores, shouldUseOracleComposition, computeFailureRates, decay weighting, circuit breaker, computeCategoryStats |
 | `test/pipeline-compose-oracle.regression-1.test.ts` | 4 | Oracle override same-length different-skills: set-membership check, identical no-op, length diff, empty |
 | `test/skill-catalog.test.ts` | 15 | SKILL_CATALOG: completeness, required fields, cost bounds, mode values, formatSkillCatalogForPrompt output |
 | `test/pipeline-implement.test.ts` | 4 | implement dispatch, buildImplementPrompt integration |
@@ -338,7 +338,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
 | `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
 | `test/doctor.test.ts` | 59 | 9 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state, stale budget locks, stale auto-fix state |
-| `test/failure-taxonomy.test.ts` | 79 | 10 failure categories, table-driven classification, failures.jsonl, notification integration, isTransientError |
+| `test/failure-taxonomy.test.ts` | 77 | 10 failure categories, table-driven classification, failures.jsonl, notification integration, isTransientError |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
 | `test/orchestrator.test.ts` | 47 | auth, success, maxTurns, errors, abort, relay, adaptive turns, heavy tool tracking, --no-adaptive config, codebase summary extraction |
 | `test/orchestrator-helpers.test.ts` | 38 | orchestrator helper functions, prompt building |
@@ -383,7 +383,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/cli.regression-2.test.ts` | 5 | CLI regression: formatEvent missing bootstrap_quality_check/recheck cases |
 | `test/cli.regression-3.test.ts` | 3 | CLI regression: formatEvent pipeline_oracle_adjustment kept_skipped variant |
 | `test/daemon-ipc-todo.test.ts` | 4 | buildIPCHandler todoTitle passthrough: skipComposition, claimedTodoTitle, designDoc combo, absent |
-| `test/daemon-merge-config.test.ts` | 31 | Daemon merge config validation |
+| `test/daemon-merge-config.test.ts` | 34 | Daemon merge config validation |
 | `test/daemon-registry-file-conflict.regression-1.test.ts` | 2 | Daemon registry regression: getClaimedFiles duplicate file entries per instance |
 | `test/daemon-registry.regression-1.test.ts` | 8 | Daemon registry regression: getClaimedTodoTitles cross-instance coordination |
 | `test/daemon-registry.regression-2.test.ts` | 7 | Daemon registry regression: getCompletedTodoTitles todo-state/ directory scan |
@@ -396,6 +396,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/dashboard-composition-intelligence.test.ts` | 9 | aggregateCompositionIntelligence: oracle active/tripped, skip-risk scores, failure rates, empty outcomes |
 | `test/dashboard-rate-limit.test.ts` | 5 | Dashboard rate limit display: rate_limited job aggregation, formatting |
 | `test/dashboard-post-merge.test.ts` | 11 | Dashboard post-merge: revert aggregation, health score reweighting with reverts, revert rate formatting |
+| `test/dashboard-auto-fix.test.ts` | 8 | Dashboard auto-fix stats: aggregation and formatting of auto-fix post-merge-revert job statistics |
 | `test/doctor.regression-1.test.ts` | 10 | Doctor regression: checkOrphanedTodoState coverage |
 | `test/doctor-injection.test.ts` | 11 | Doctor injection: hasInjectionPatterns via checkOracleMemory, all 8 patterns, false positives, corrupt metrics, circuit breaker, --fix |
 | `test/evaluate-claims.test.ts` | 26 | Claim verification: extractClaudeMdClaims, verifyClaudeMdClaims |
