@@ -36,7 +36,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Daemon Fleet Command: COMPLETE** (2026-03-30) — `daemon start --parallel N` launches 2-10 workers with budget pre-validation, staggered starts, auto-cleanup. IPC pipelineProgress enrichment. Fleet table display via `daemon status --all`.
 **Global Budget Locking: COMPLETE** (2026-03-30) — Budget lock prevents lost updates in parallel instances via mkdir-based advisory lock on global-budget.json writes. Doctor check #8 detects stale budget locks.
 **GitHub PR Workflow: COMPLETE** (2026-03-30) — Optional `merge.strategy: "pr"` creates structured GitHub PRs instead of direct merge. PR body includes pipeline summary, oracle decisions, test results. Auto-merge via `gh pr merge --auto`. Fallback to direct merge when `gh` unavailable. New "pr-created" TODO state. Dashboard PR stats.
-- 40 source modules, 193 test files, 3114 tests
+**Auto-Fix Loop After Revert: COMPLETE** (2026-03-30) — Post-merge revert triggers immediate `implement → qa` re-attempt. Retry cap (MAX_AUTO_FIX_RETRIES=2), budget cap (2x original job cost), enqueue-before-persist ordering, mkdir-based advisory lock, context file for implement skill discovery, doctor check #9 for stale auto-fix state, dashboard auto-fix stats.
+- 41 source modules, 199 test files, 3185 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -181,6 +182,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/codebase-summary.ts` | Codebase summary persistence: observation extraction, dedup, token budget, relay formatting |
 | `src/doctor.ts` | Self-diagnostic command: 8 subsystem checks, --fix/--json flags, stale PID detection, orphaned TODO state, stale budget locks |
 | `src/evaluate.ts` | Dogfood campaign evaluator: bootstrap quality, oracle performance, pipeline health, improvement extraction, post-evaluate deterministic analysis |
+| `src/auto-fix.ts` | Auto-fix coordinator: post-merge revert → immediate implement+qa re-attempt, retry cap, budget cap, advisory lock, context file writing, cost accumulation |
 | `src/failure-taxonomy.ts` | 10-category failure classification, failures.jsonl persistence, notification integration |
 | `src/pid-utils.ts` | PID liveness check, process-name verification, stale PID detection |
 | `src/file-conflict.ts` | File-level conflict prevention: predicted file extraction, dependency expansion, overlap detection for parallel instances |
@@ -291,6 +293,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/pipeline-evaluate-wiring.test.ts` | 18 | createTextAccumulatingCallbacks, runPostEvaluateAnalysis, default evaluation helpers, last-valid-match relay split |
 | `test/implement.test.ts` | 48 | findDesignDoc, loadDesignDoc, extractImplementationOrder, validateImplementationOrder, formatReviewContext, buildImplementPrompt |
 | `test/implement-loaddesigndoc.regression-1.test.ts` | 7 | loadDesignDoc regression: absolute/relative paths, missing files |
+| `test/implement-autofix-context.test.ts` | 6 | loadAutoFixContext: direct SHA lookup, fallback to newest, truncation, missing dir |
+| `test/implement-autofix-context.regression-1.test.ts` | 4 | loadAutoFixContext direct SHA lookup regression: parallel instance context file disambiguation |
 | `test/issue-extractor.test.ts` | 38 | commit parsing, IssueTracker, extractAllToolUse, severity inference |
 | `test/daemon-ipc.test.ts` | 10 | Request/response over socket, malformed input, timeout |
 | `test/daemon-ipc.regression-1.test.ts` | 3 | IPC server connection safeguards: timeout constant, buffer cap constant, sane bounds |
@@ -299,6 +303,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-extended.test.ts` | 17 | Extended job runner: budget edge cases, concurrent enqueue |
 | `test/job-runner.regression-2.test.ts` | 3 | Job runner regression: dedup with completed jobs |
 | `test/job-runner.regression-3.test.ts` | 3 | Job runner regression: "adaptive disabled" reason classification |
+| `test/job-runner-auto-fix.test.ts` | 12 | Auto-fix integration: post-merge revert enqueue wiring, autoFixMergeSha threading, skipComposition, cost accumulation, config gate |
 | `test/job-runner-resume.test.ts` | 27 | Crash recovery: re-queue on restart, retry limit, pipeline resume wiring, single-skill retry, priorSkillCostUsd, notification, failure taxonomy, dashboard stats |
 | `test/triggers.test.ts` | 66 | Git poll HEAD detection, debounce, interval, branch filtering, trigger patterns, log on null HEAD, self-commit filtering |
 | `test/daemon.test.ts` | 55 | Config validation, PID lifecycle, IPC handler, logger, config fallback, instances request, autoResearch validation, merge config |
@@ -319,12 +324,14 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/prioritize-review-findings.test.ts` | 11 | loadUnresolvedReviewFindings: flat/instance layouts, action keywords, skip filters, review skill gating, job dir limit, error handling |
 | `test/worktree.test.ts` | 28 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
 | `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
+| `test/auto-fix.test.ts` | 36 | Auto-fix coordinator: retry cap, budget cap, config gate, state persistence, prune, cost accumulation, enqueue-before-persist, context file, locking, direct SHA cost update |
+| `test/auto-fix.regression-1.test.ts` | 2 | updateAutoFixCost empty SHA guard: empty string no-op, valid SHA still works |
 | `test/auto-research.test.ts` | 33 | extractTopicKeywords, groupDecisionsByTopic, getResearchTopics, defaults |
 | `test/codebase-summary.test.ts` | 51 | extractObservations, extractFailedApproaches, deduplicateObservations, truncateToTokenBudget, buildCodebaseSummary, formatCodebaseSummaryForRelay |
 | `test/auto-research.regression-1.test.ts` | 19 | isTopicGroupFresh direct tests, seed-keyword clustering, 3-char acronym preservation |
 | `test/job-runner-auto-research.regression-1.test.ts` | 13 | collectAllDecisions, auto-research integration: enqueue, budget block, pipeline subdirs |
 | `test/orchestrator-research.regression-1.test.ts` | 8 | Research skill dispatch: events, errors, config passthrough, disambiguation |
-| `test/doctor.test.ts` | 59 | 8 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state, stale budget locks |
+| `test/doctor.test.ts` | 59 | 9 subsystem checks, --fix/--json flags, stale PID detection, lock recovery, orphaned TODO state, stale budget locks, stale auto-fix state |
 | `test/failure-taxonomy.test.ts` | 71 | 10 failure categories, table-driven classification, failures.jsonl, notification integration |
 | `test/pid-utils.test.ts` | 20 | PID liveness check, process-name verification, stale detection |
 | `test/orchestrator.test.ts` | 47 | auth, success, maxTurns, errors, abort, relay, adaptive turns, heavy tool tracking, --no-adaptive config, codebase summary extraction |
