@@ -645,7 +645,7 @@ export function createJobRunner(
           const reId2 = enqueue(nextJob.skills, "continuous", "all-skills-complete re-enqueue", nextJob.designDoc);
           if (reId2) d.log("info", `Continuous: re-enqueued as ${reId2} after all skills complete`);
           running = false;
-          processNext();
+          processNext().catch(err => d.log("error", `processNext after all-skills-complete failed: ${err instanceof Error ? err.message : String(err)}`));
           return;
         }
 
