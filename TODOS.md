@@ -502,21 +502,9 @@ Already implemented in commit b8c5ac8. Invented by prioritize without checking e
 **Depends on:** Nothing (immediate fix is XS, full Oracle mode is M)
 **Added by:** Human on 2026-03-30 (discovered when daemon stripped design skills from P0 mobile vault task)
 
-## P2: Auth Failure Runaway Loop — Continuous Mode Spins on $0 Jobs
+## ~~P2: Auth Failure Runaway Loop — Continuous Mode Spins on $0 Jobs~~
 
-**What:** When Claude auth expires mid-session, each skill fails instantly with $0 cost. Continuous mode sees the queue empty after each failed job and immediately re-enqueues another pipeline. This creates a tight loop: fail → complete ($0) → continuous re-enqueue → fail → repeat at ~2 jobs/second. The daemon burned through 50+ job IDs in seconds on NihontoWatch during an account switch.
-
-**Fix:** Auth failures should trigger a hold, not a retry. Specifically:
-1. Detect auth failures in job-runner (already classified as `auth-issue` by failure taxonomy)
-2. On auth failure: set `rateLimitResetAt` to now + 30 minutes (or parse reset time from error message like rate-limit handler does)
-3. Continuous mode's `shouldAutoEnqueue()` already checks `rateLimitResetAt` — this gates the loop automatically
-4. Also: $0 completed jobs should not count as "successful" for continuous re-enqueue — add a minimum cost threshold or check for auth-issue failure category
-
-**Why:** Discovered on 2026-03-30 when switching Claude accounts. NihontoWatch daemon spun through 50+ jobs in seconds, each auth-failing at $0. No money was lost but the job history was polluted and the P0 mobile vault pipeline was lost from the queue.
-
-**Effort:** XS (human: ~2 hours / CC: ~10 min)
-**Depends on:** Nothing
-**Added by:** Human on 2026-03-30 (discovered during NihontoWatch P0 mobile vault deployment)
+Fixed by /qa on main, 2026-03-30. Implemented in b3f44aa: auth failures trigger rate limit hold (30-min fallback), MIN_COST_FOR_REENQUEUE ($0.01) prevents $0 spin loops, cross-instance coordination via global budget. 10 tests in job-runner-auth-hold.test.ts.
 
 ## P4: Consolidate Lock Modules — Shared Advisory Lock Base
 
