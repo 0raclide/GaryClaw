@@ -46,6 +46,7 @@ export const PRIORITIZE_SECTION_BUDGETS = {
   overnightGoal:      1_000,
   projectType:        500,
   claimedItems:       500,
+  completedItems:     500,
   preAssigned:        500,
 } as const;
 
@@ -856,6 +857,19 @@ export async function buildPrioritizePrompt(
     lines.push("");
     lines.push("*No TODOS.md found. Read the project's TODOS.md, CLAUDE.md, and recent git log to understand the backlog.*");
     lines.push("");
+  }
+
+  // Budgeted: Completed items blocklist (prevents hallucinating completed work as open)
+  if (todosContent) {
+    const completedTitles = extractCompletedTitles(todosContent);
+    if (completedTitles.length > 0) {
+      const blocklist = completedTitles.map(t => `- ${t}`).join("\n");
+      const tCompleted = addBudgetedSection(lines, "### Already Complete (DO NOT SELECT)",
+        "These items are ALREADY COMPLETE. Do NOT select them, score them, or re-invent them:\n\n" + blocklist,
+        SB.completedItems, remaining(), false);
+      tokensUsed += tCompleted;
+      sectionTokens.completedItems = tCompleted;
+    }
   }
 
   // Budgeted: Product vision + capabilities from CLAUDE.md

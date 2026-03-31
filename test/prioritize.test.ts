@@ -1140,6 +1140,52 @@ describe("measureRecentImpact", () => {
   });
 });
 
+// ── buildPrioritizePrompt: completed items blocklist ────────────
+
+describe("buildPrioritizePrompt — completed items blocklist", () => {
+  it("injects blocklist when TODOS.md has struck-through items", async () => {
+    const todosWithCompleted = `# TODOS
+
+## P2: Open Item
+
+**What:** Still open.
+
+## ~~P3: Implement Skill Hardening~~ — COMPLETE (2026-03-27)
+
+**What:** Done stuff.
+
+## ~~P2: Daemon Resilience~~ — COMPLETE
+
+More done.`;
+    writeFileSync(join(TEST_DIR, "TODOS.md"), todosWithCompleted, "utf-8");
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("Already Complete (DO NOT SELECT)");
+    expect(prompt).toContain("P3: Implement Skill Hardening");
+    expect(prompt).toContain("P2: Daemon Resilience");
+  });
+
+  it("omits blocklist when no completed items exist", async () => {
+    writeFileSync(join(TEST_DIR, "TODOS.md"), SAMPLE_TODOS, "utf-8");
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).not.toContain("Already Complete (DO NOT SELECT)");
+  });
+
+  it("truncates blocklist under budget", async () => {
+    // Create a TODOS.md with many completed items to test budget enforcement
+    const manyCompleted = Array.from({ length: 100 }, (_, i) =>
+      `## ~~P3: Completed Item Number ${i} With A Longer Title For Token Testing~~\n\nDone.`
+    ).join("\n\n");
+    writeFileSync(join(TEST_DIR, "TODOS.md"), `# TODOS\n\n## P2: Open\n\nWork.\n\n${manyCompleted}`, "utf-8");
+    const config = createMockConfig();
+    const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
+    expect(prompt).toContain("Already Complete (DO NOT SELECT)");
+    // Should still fit within total budget
+    expect(estimateTokens(prompt)).toBeLessThanOrEqual(PRIORITIZE_PROMPT_BUDGET);
+  });
+});
+
 // ── buildPrioritizePrompt: category stats injection ─────────────
 
 describe("buildPrioritizePrompt — category stats", () => {
@@ -1498,7 +1544,17 @@ Completed item.
     const config = createMockConfig();
     const prompt = await buildPrioritizePrompt(config, [], TEST_DIR);
     expect(prompt).toContain("Open Item");
-    expect(prompt).not.toContain("Already Done");
+    // "Already Done" should NOT appear in the backlog section (filtered out)
+    // but SHOULD appear in the "Already Complete" blocklist section
+    expect(prompt).toContain("Already Complete (DO NOT SELECT)");
+    expect(prompt).toContain("P2: Already Done");
+    // Verify it's NOT in the backlog section (filterOpenTodos strips it)
+    const backlogIdx = prompt.indexOf("### Backlog (TODOS.md)");
+    const blocklistIdx = prompt.indexOf("### Already Complete (DO NOT SELECT)");
+    expect(backlogIdx).toBeGreaterThanOrEqual(0);
+    expect(blocklistIdx).toBeGreaterThan(backlogIdx);
+    const backlogSection = prompt.slice(backlogIdx, blocklistIdx);
+    expect(backlogSection).not.toContain("Already Done");
   });
 
   it("scoring rules and worked example always survive", async () => {
