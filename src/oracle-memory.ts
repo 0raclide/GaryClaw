@@ -22,6 +22,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { safeReadJSON, safeWriteJSON, safeReadText, safeWriteText } from "./safe-json.js";
 import { estimateTokens } from "./checkpoint.js";
+import { normalizeQuestion } from "./oracle-cache.js";
 import type {
   OracleMemoryConfig,
   OracleMemoryFiles,
@@ -342,6 +343,50 @@ export function isCircuitBreakerTripped(config: OracleMemoryConfig): boolean {
   return metrics.circuitBreakerTripped;
 }
 
+// ── Decision outcome compaction ──────────────────────────────────
+
+const COMPACT_MARKER = "[compact] ";
+const RECENT_KEEP_FULL = 10;
+const PATTERNS_BUDGET_TOKENS = 2_000;
+
+/**
+ * Strip the [compact] prefix from a question string if present.
+ * Used by warmFromOutcomes() to get a clean keyword bag for cache key computation.
+ */
+export function stripCompactMarker(question: string): string {
+  return question.startsWith(COMPACT_MARKER) ? question.slice(COMPACT_MARKER.length) : question;
+}
+
+/**
+ * Compact a decision outcome entry by normalizing its question text.
+ * Compacted entries are prefixed with "[compact] " for parseability.
+ *
+ * Idempotent: entries already prefixed with COMPACT_MARKER are returned unchanged.
+ */
+export function compactOutcomeEntry(outcome: DecisionOutcome): DecisionOutcome {
+  if (outcome.question.startsWith(COMPACT_MARKER)) return outcome;
+  return {
+    ...outcome,
+    question: COMPACT_MARKER + normalizeQuestion(outcome.question),
+  };
+}
+
+/**
+ * Compact older entries in a decision outcomes array.
+ * Last RECENT_KEEP_FULL entries keep full question text.
+ * Older entries get question normalized to keyword bag via normalizeQuestion().
+ */
+export function compactDecisionOutcomes(outcomes: DecisionOutcome[]): DecisionOutcome[] {
+  if (outcomes.length <= RECENT_KEEP_FULL) return outcomes;
+
+  const cutoff = outcomes.length - RECENT_KEEP_FULL;
+  const compacted = outcomes.slice(0, cutoff).map(compactOutcomeEntry);
+  const recent = outcomes.slice(cutoff);
+  return [...compacted, ...recent];
+}
+
+export { COMPACT_MARKER, RECENT_KEEP_FULL, PATTERNS_BUDGET_TOKENS };
+
 // ── Decision outcomes (rolling window) ──────────────────────────
 
 /**
@@ -365,18 +410,22 @@ export function writeDecisionOutcomesRolling(
   outcomes: DecisionOutcome[],
 ): void {
   const MAX_ENTRIES = 50;
+  const compacted = compactDecisionOutcomes(outcomes);
 
-  if (outcomes.length <= MAX_ENTRIES) {
-    writeDecisionOutcomes(config, formatDecisionOutcomes(outcomes));
+  if (compacted.length <= MAX_ENTRIES) {
+    writeDecisionOutcomes(config, formatDecisionOutcomes(compacted));
     return;
   }
 
   // Keep last 50, summarize older into patterns
-  const recent = outcomes.slice(-MAX_ENTRIES);
-  const older = outcomes.slice(0, -MAX_ENTRIES);
+  const recent = compacted.slice(-MAX_ENTRIES);
+  const older = compacted.slice(0, -MAX_ENTRIES);
   const patterns = summarizeOutcomePatterns(older);
 
-  const content = `# Decision Outcomes\n\n## Patterns (from ${older.length} older decisions)\n${patterns}\n\n## Recent Outcomes (${recent.length})\n${formatOutcomeEntries(recent)}`;
+  // Cap patterns section to budget
+  const cappedPatterns = truncateToTokenBudget(patterns, PATTERNS_BUDGET_TOKENS);
+
+  const content = `# Decision Outcomes\n\n## Patterns (from ${older.length} older decisions)\n${cappedPatterns}\n\n## Recent Outcomes (${recent.length})\n${formatOutcomeEntries(recent)}`;
   writeDecisionOutcomes(config, content);
 }
 

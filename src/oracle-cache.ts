@@ -145,8 +145,13 @@ export class OracleCache {
     // Group by normalized question → chosen → count
     const groups = new Map<string, Map<string, { count: number; principle: string }>>();
 
+    const COMPACT_PREFIX = "[compact] ";
     for (const outcome of outcomes) {
-      const normalizedQ = normalizeQuestion(outcome.question);
+      // Strip [compact] prefix before normalizing (compacted entries already have keyword bag)
+      const rawQ = outcome.question.startsWith(COMPACT_PREFIX)
+        ? outcome.question.slice(COMPACT_PREFIX.length)
+        : outcome.question;
+      const normalizedQ = normalizeQuestion(rawQ);
       // Warm start uses question-only key (no options in decision-outcomes.md)
       const key = computeCacheKey(normalizedQ, "");
 
