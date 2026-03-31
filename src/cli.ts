@@ -143,6 +143,9 @@ export function parseArgs(argv: string[]): {
   doctorFix: boolean;
   doctorJson: boolean;
   doctorSkipAuth: boolean;
+  serve: boolean;
+  servePort?: number;
+  openBrowser: boolean;
 } {
   const args = argv.slice(2);
   const command = args[0] ?? "help";
@@ -169,6 +172,9 @@ export function parseArgs(argv: string[]): {
   let doctorFix = false;
   let doctorJson = false;
   let doctorSkipAuth = false;
+  let serve = false;
+  let servePort: number | undefined;
+  let openBrowser = false;
 
   let noAdaptive = false;
 
@@ -276,6 +282,30 @@ export function parseArgs(argv: string[]): {
         }
       }
     }
+  } else if (command === "dashboard") {
+    // dashboard [--serve] [--port N] [--open] [--project-dir <dir>]
+    for (let i = 1; i < args.length; i++) {
+      if (args[i].startsWith("--")) {
+        const { consumed, updated } = parseSharedFlag(args[i], args[i + 1], shared);
+        if (consumed > 0) {
+          shared = updated;
+          if (consumed === 2) i++;
+        } else if (args[i] === "--serve") {
+          serve = true;
+        } else if (args[i] === "--port" && args[i + 1]) {
+          const parsed = parseInt(args[++i], 10);
+          if (Number.isNaN(parsed) || parsed < 1 || parsed > 65535) {
+            console.error(`Invalid --port value: ${args[i]}. Must be between 1 and 65535.`);
+            process.exit(1);
+          }
+          servePort = parsed;
+          serve = true; // --port implies --serve
+        } else if (args[i] === "--open") {
+          openBrowser = true;
+          serve = true; // --open implies --serve
+        }
+      }
+    }
   } else {
     // Non-run commands: parse shared flags only
     for (let i = 1; i < args.length; i++) {
@@ -292,7 +322,7 @@ export function parseArgs(argv: string[]): {
   // Merge shared flags back into return value
   ({ projectDir, maxTurns, threshold, checkpointDir, maxSessions, autonomous, noMemory, noAdaptive, designDoc } = shared);
 
-  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, noAdaptive, tailLines, designDoc, force, researchTopic, name, all, cleanup, parallel, todoTitle, doctorFix, doctorJson, doctorSkipAuth };
+  return { command, subcommand, skills, projectDir, maxTurns, threshold, checkpointDir, configPath, maxSessions, autonomous, noMemory, noAdaptive, tailLines, designDoc, force, researchTopic, name, all, cleanup, parallel, todoTitle, doctorFix, doctorJson, doctorSkipAuth, serve, servePort, openBrowser };
 }
 
 // ── Event formatting ────────────────────────────────────────────
@@ -1016,6 +1046,40 @@ async function main(): Promise<void> {
   }
 
   if (parsed.command === "dashboard") {
+    if (parsed.serve) {
+      const { startDashboardServer } = await import("./dashboard-server.js");
+      const checkpointDir = parsed.checkpointDir ?? join(parsed.projectDir, ".garyclaw");
+      try {
+        const handle = await startDashboardServer({
+          projectDir: parsed.projectDir,
+          port: parsed.servePort,
+          checkpointDir,
+        });
+        console.log(`${GREEN}${BOLD}GaryClaw Evolution Dashboard${RESET}`);
+        console.log(`${DIM}Server running at${RESET} ${CYAN}http://127.0.0.1:${handle.port}${RESET}`);
+        console.log(`${DIM}Press Ctrl+C to stop${RESET}`);
+
+        if (parsed.openBrowser) {
+          const { exec } = await import("node:child_process");
+          exec(`open http://127.0.0.1:${handle.port}`);
+        }
+
+        // Keep process alive until SIGINT/SIGTERM
+        const shutdown = () => {
+          console.log(`\n${DIM}Shutting down dashboard server...${RESET}`);
+          handle.close();
+          process.exit(0);
+        };
+        process.on("SIGINT", shutdown);
+        process.on("SIGTERM", shutdown);
+      } catch (err) {
+        console.error(`${RED}Failed to start dashboard server:${RESET} ${(err as Error).message}`);
+        process.exit(1);
+      }
+      return;
+    }
+
+    // Existing markdown dashboard output
     const checkpointDir = parsed.checkpointDir ?? join(parsed.projectDir, ".garyclaw");
     const reportPath = join(checkpointDir, "dogfood-report.md");
     if (existsSync(reportPath)) {
