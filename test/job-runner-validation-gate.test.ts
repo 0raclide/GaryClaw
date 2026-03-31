@@ -172,10 +172,10 @@ Also completed.
     const exhausted = events.find(e => e.type === "priority_pick_exhausted");
     expect(exhausted).toBeDefined();
 
-    // Job should be marked complete (not failed) — exhaustion is graceful
+    // Job should be marked idle (not failed or complete) — exhaustion is graceful, but did no work
     const state = runner.getState();
     const job = state.jobs[0];
-    expect(job.status).toBe("complete");
+    expect(job.status).toBe("idle");
     expect(job.error).toContain("All priority picks rejected");
   });
 

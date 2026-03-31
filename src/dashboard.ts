@@ -44,8 +44,11 @@ export function aggregateJobStats(jobs: Job[], todayStr?: string): DashboardData
   const queued = todayJobs.filter((j) => j.status === "queued").length;
   const running = todayJobs.filter((j) => j.status === "running").length;
   const rateLimited = todayJobs.filter((j) => j.status === "rate_limited").length;
+  const idle = todayJobs.filter((j) => j.status === "idle").length;
 
-  const successRate = total > 0 ? (complete / total) * 100 : 100;
+  // Exclude idle jobs from success rate — they did no useful work
+  const activeTotal = total - idle;
+  const successRate = activeTotal > 0 ? (complete / activeTotal) * 100 : 100;
   const totalCostUsd = todayJobs.reduce((sum, j) => sum + j.costUsd, 0);
   const avgCostPerJob = total > 0 ? totalCostUsd / total : 0;
 
@@ -80,6 +83,7 @@ export function aggregateJobStats(jobs: Job[], todayStr?: string): DashboardData
     failed,
     queued,
     running,
+    idle,
     rateLimited,
     successRate,
     totalCostUsd,
@@ -591,6 +595,8 @@ export function computeHealthScore(
     topConcern = `GaryClaw bug detected in ${n} job(s) — check logs`;
   } else if (data.compositionIntelligence?.circuitBreaker === "tripped") {
     topConcern = "Composition circuit breaker tripped — Oracle adjustments disabled";
+  } else if (data.jobs.idle > 0 && data.jobs.total > 0 && data.jobs.idle / data.jobs.total > 0.5) {
+    topConcern = `${data.jobs.idle}/${data.jobs.total} jobs idle — backlog may be exhausted`;
   } else if (data.jobs.successRate < 80) {
     const n = data.jobs.failed;
     topConcern = `${n} job(s) failed today — review failure categories`;
@@ -630,6 +636,11 @@ export function formatDashboard(data: DashboardData): string {
     `| Avg Cost/Job | $${data.jobs.avgCostPerJob.toFixed(2)} |`,
     `| Avg Duration | ${formatDuration(data.jobs.avgDurationSec)} |`,
   ];
+
+  // Idle (only if backlog was exhausted)
+  if (data.jobs.idle > 0) {
+    lines.push(`| Idle | ${data.jobs.idle} (backlog exhausted) |`);
+  }
 
   // Rate limited (only if there are held jobs)
   if (data.jobs.rateLimited > 0) {

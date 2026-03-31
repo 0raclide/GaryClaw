@@ -1272,10 +1272,10 @@ export function createJobRunner(
     } catch (err) {
       // Priority pick exhaustion is not a failure — the daemon should idle gracefully
       if (err instanceof PriorityPickExhaustedError) {
-        nextJob.status = "complete";
+        nextJob.status = "idle";
         nextJob.completedAt = new Date().toISOString();
         nextJob.error = err.message;
-        d.log("info", "Job completed early — all priority picks exhausted (not a failure)");
+        d.log("info", "Job idle — all priority picks exhausted (backlog empty)");
         persistState(state, checkpointDir);
         return;
       }
@@ -1344,7 +1344,7 @@ export function createJobRunner(
       }
 
       // Record pipeline outcome for Oracle-driven composition learning
-      if (nextJob.status === "complete" || nextJob.status === "failed") {
+      if (nextJob.status === "complete" || nextJob.status === "failed" || nextJob.status === "idle") {
         try {
           const outcomeHistoryPath = join(parentCheckpointDir ?? checkpointDir, "pipeline-outcomes.jsonl");
           const allSkills = nextJob.composedFrom ?? nextJob.skills;
@@ -1761,7 +1761,7 @@ const MAX_COMPLETED_JOBS = 100;
  * Keeps the most recent MAX_COMPLETED_JOBS finished jobs; queued/running are never pruned.
  */
 function pruneOldJobs(state: DaemonState): void {
-  const finished = state.jobs.filter((j) => j.status === "complete" || j.status === "failed");
+  const finished = state.jobs.filter((j) => j.status === "complete" || j.status === "failed" || j.status === "idle");
   if (finished.length <= MAX_COMPLETED_JOBS) return;
 
   // Keep only the most recent MAX_COMPLETED_JOBS finished jobs

@@ -142,6 +142,35 @@ describe("aggregateJobStats", () => {
     expect(stats.successRate).toBe(25); // 1/4
   });
 
+  it("excludes idle jobs from success rate denominator", () => {
+    const jobs = [
+      makeJob({ id: "j1", status: "complete" }),
+      makeJob({ id: "j2", status: "complete" }),
+      makeJob({ id: "j3", status: "failed", failureCategory: "auth-issue" }),
+      makeJob({ id: "j4", status: "idle" as any }),
+      makeJob({ id: "j5", status: "idle" as any }),
+    ];
+    const stats = aggregateJobStats(jobs, TODAY);
+    expect(stats.total).toBe(5);
+    expect(stats.complete).toBe(2);
+    expect(stats.failed).toBe(1);
+    expect(stats.idle).toBe(2);
+    // Success rate: 2 complete / 3 active (5 total - 2 idle) = 66.7%
+    expect(stats.successRate).toBeCloseTo(66.67, 1);
+  });
+
+  it("returns 100% success rate when all jobs are idle", () => {
+    const jobs = [
+      makeJob({ id: "j1", status: "idle" as any }),
+      makeJob({ id: "j2", status: "idle" as any }),
+    ];
+    const stats = aggregateJobStats(jobs, TODAY);
+    expect(stats.total).toBe(2);
+    expect(stats.idle).toBe(2);
+    // No active jobs = 100% (healthy default)
+    expect(stats.successRate).toBe(100);
+  });
+
   it("builds failure breakdown by category", () => {
     const jobs = [
       makeJob({ id: "j1", status: "failed", failureCategory: "auth-issue" }),
@@ -408,7 +437,7 @@ describe("formatDashboard", () => {
       generatedAt: "2026-03-27T11:00:00Z",
       healthScore: 92,
       topConcern: null,
-      jobs: { total: 7, complete: 6, failed: 1, queued: 0, running: 0, successRate: 85.7, totalCostUsd: 16.53, avgCostPerJob: 2.36, avgDurationSec: 512, failureBreakdown: { "auth-issue": 1 } },
+      jobs: { total: 7, complete: 6, failed: 1, queued: 0, running: 0, idle: 0, successRate: 85.7, totalCostUsd: 16.53, avgCostPerJob: 2.36, avgDurationSec: 512, failureBreakdown: { "auth-issue": 1 } },
       oracle: { totalDecisions: 122, accuracyPercent: 100, confidenceAvg: 9.0, circuitBreakerTripped: false },
       budget: { dailyLimitUsd: 25, dailySpentUsd: 16.53, dailyRemaining: 8.47, jobCount: 7, maxJobsPerDay: 20, byInstance: { default: { totalUsd: 13.0, jobCount: 6 }, reviewer: { totalUsd: 3.53, jobCount: 1 } } },
       adaptiveTurns: { totalSegments: 0, adaptiveSegments: 0, fallbackSegments: 0, clampedSegments: 0, heavyToolActivations: 0, avgTurns: 0, minTurns: 0, maxTurns: 0, adaptiveRate: 0 },

@@ -46,7 +46,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Decision Cache: COMPLETE** (2026-03-30) — Sticky answers for repeated Oracle questions. Keyword bag normalization strips variable tokens (paths, numbers, timestamps, quoted strings), sorted dedup keyword set as cache key. 5-hit promotion threshold, warm start from decision-outcomes.md, reflection-based invalidation on failure outcomes. Partial-batch: cached questions resolved at zero cost, uncached sent to Oracle. Per-skill scope. `onCacheEvent` emits hit/miss/invalidated events. Daemon config validation for `oracleCache.enabled` + `oracleCache.minHits`.
 **Per-Skill Cost Attribution: COMPLETE** (2026-03-31) — Per-skill cost aggregation, trend detection (>15% flagging), dashboard formatting, health score integration
 **Oracle Memory Compaction: COMPLETE** (2026-03-31) — Age-gated question compaction via normalizeQuestion(), [compact] prefix, RECENT_KEEP_FULL=10, PATTERNS_BUDGET_TOKENS=2K cap, warmFromOutcomes prefix stripping, 36% size reduction bounded at 7.4K tokens
-- 43 source modules, 214 test files, 3438 tests
+- 43 source modules, 216 test files, 3501 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---

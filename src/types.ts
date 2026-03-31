@@ -338,7 +338,7 @@ export interface BudgetConfig {
   maxJobsPerDay: number;
 }
 
-export type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelled" | "rate_limited";
+export type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelled" | "rate_limited" | "idle";
 
 export interface Job {
   id: string;
@@ -557,6 +557,7 @@ export interface DashboardData {
     avgCostPerJob: number;
     avgDurationSec: number;
     failureBreakdown: Record<string, number>;  // FailureCategory → count
+    idle: number;                    // Jobs that found no work (backlog exhausted, all picks rejected)
     rateLimited: number;            // Jobs currently in rate_limited hold
     crashRecoveries: number;       // Jobs that completed after crash retry
     crashRecoverySavedUsd: number; // Cost of prior skills not re-run ($saved)
