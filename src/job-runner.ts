@@ -46,6 +46,7 @@ import {
 } from "./pipeline-history.js";
 import {
   PerJobCostExceededError,
+  PriorityPickExhaustedError,
   VALID_TASK_CATEGORIES,
 } from "./types.js";
 import type { WarnFn } from "./types.js";
@@ -80,7 +81,7 @@ import type {
 } from "./types.js";
 
 // Re-export for backwards compatibility
-export { PerJobCostExceededError };
+export { PerJobCostExceededError, PriorityPickExhaustedError };
 
 const STATE_FILE = "daemon-state.json";
 
@@ -1269,6 +1270,16 @@ export function createJobRunner(
         }
       }
     } catch (err) {
+      // Priority pick exhaustion is not a failure — the daemon should idle gracefully
+      if (err instanceof PriorityPickExhaustedError) {
+        nextJob.status = "complete";
+        nextJob.completedAt = new Date().toISOString();
+        nextJob.error = err.message;
+        d.log("info", "Job completed early — all priority picks exhausted (not a failure)");
+        persistState(state, checkpointDir);
+        return;
+      }
+
       nextJob.status = "failed";
       nextJob.completedAt = new Date().toISOString();
       nextJob.error = err instanceof Error ? err.message : String(err ?? "");
@@ -1668,7 +1679,7 @@ function buildCallbacks(
                   if (config.onEvent) {
                     config.onEvent({ type: "priority_pick_exhausted" });
                   }
-                  title = null;
+                  throw new PriorityPickExhaustedError();
                 }
               }
               if (title) {
@@ -1679,6 +1690,7 @@ function buildCallbacks(
             }
           }
         } catch (err) {
+          if (err instanceof PriorityPickExhaustedError) throw err;
           deps.log("warn", `Early priority claim failed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }

@@ -22,6 +22,13 @@ export class PerJobCostExceededError extends Error {
   }
 }
 
+export class PriorityPickExhaustedError extends Error {
+  constructor() {
+    super("All priority picks rejected — no valid alternative found");
+    this.name = "PriorityPickExhaustedError";
+  }
+}
+
 // ── Issue tracking ──────────────────────────────────────────────
 
 export type IssueSeverity = "critical" | "high" | "medium" | "low" | "cosmetic";

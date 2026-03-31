@@ -113,8 +113,10 @@ export function isPickValid(pickTitle: string, completedTitles: string[]): boole
     const normalizedCompleted = normalizeTitle(completed);
     if (!normalizedCompleted) continue;
 
-    // Substring match (either direction)
-    if (normalizedPick.includes(normalizedCompleted) || normalizedCompleted.includes(normalizedPick)) {
+    // Substring match (either direction, only when completed title is 20+ chars to avoid
+    // false positives from short titles like "P3: QA" matching "P3: QA Enhancements")
+    if (normalizedCompleted.length >= 20 &&
+        (normalizedPick.includes(normalizedCompleted) || normalizedCompleted.includes(normalizedPick))) {
       return false;
     }
 

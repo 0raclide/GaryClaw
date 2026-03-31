@@ -52,6 +52,31 @@ describe("isPickValid", () => {
   it("returns true for genuinely different title", () => {
     expect(isPickValid("P1: WebSocket Reconnection Logic", completedTitles)).toBe(true);
   });
+
+  it("does not false-positive on short completed titles (20-char guard)", () => {
+    // "P3: QA" normalizes to "p3 qa" (5 chars < 20), should NOT substring-match
+    const shortCompleted = ["P3: QA"];
+    expect(isPickValid("P3: QA Enhancements", shortCompleted)).toBe(true);
+  });
+
+  it("still catches short titles via Levenshtein when very similar", () => {
+    // "P3: QA" vs "P3: QA" — exact match has Levenshtein 0.0 (< 0.3 threshold)
+    const shortCompleted = ["P3: QA"];
+    expect(isPickValid("P3: QA", shortCompleted)).toBe(false);
+  });
+
+  it("substring match works when completed title is 20+ chars", () => {
+    // "p3 implement skill hardening" is 28 chars, substring match applies
+    expect(isPickValid("Implement Skill Hardening", completedTitles)).toBe(false);
+  });
+
+  it("Levenshtein boundary: distance exactly 0.3 passes (not < 0.3)", () => {
+    // We need two strings where normalizedLevenshtein returns exactly 0.3
+    // Short enough that substring won't trigger (< 20 chars completed)
+    // "abcdefghij" (10 chars), edit 3 chars → distance = 3/10 = 0.3 (NOT < 0.3, should pass)
+    const completed = ["abcdefghij"];
+    expect(isPickValid("abcXYZghij", completed)).toBe(true);
+  });
 });
 
 // ── parseAlternativeTitles ──────────────────────────────────────
