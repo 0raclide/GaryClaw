@@ -10,8 +10,8 @@
  * a single Oracle API call via askOracleBatch() instead of N serial calls.
  */
 
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { appendFileSync, mkdirSync, existsSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { resolveWarnFn } from "./types.js";
 import type { Decision, CanUseToolResult, OracleMemoryFiles, WarnFn } from "./types.js";
 import type { OracleOutput, OracleConfig, OracleInput, OracleBatchInput, OracleBatchQuestion } from "./oracle.js";
@@ -46,6 +46,9 @@ export interface AskHandlerConfig {
 
   // Optional warning callback (routes warnings to event system in daemon mode)
   onWarn?: (msg: string) => void;
+
+  // Project directory for TODOS.md write protection (bootstrap cold-start check)
+  projectDir?: string;
 }
 
 export interface AskHandler {
@@ -56,6 +59,49 @@ export interface AskHandler {
   getDecisions: () => Decision[];
 }
 
+// ── TODOS.md write protection ─────────────────────────────────
+
+const TODOS_REDIRECT_MSG =
+  "TODOS.md is protected. Write to .garyclaw/invented-items.md instead. " +
+  "A post-skill hook will safely append your items to TODOS.md.";
+
+/**
+ * Detect Write, Edit, or Bash commands that target TODOS.md.
+ * Returns a deny result if blocked, or null if allowed.
+ *
+ * Bootstrap cold-start exception: when TODOS.md doesn't exist yet on disk,
+ * Write is allowed (the file needs to be created for the first time).
+ */
+export function isTodosMdWrite(
+  toolName: string,
+  input: Record<string, unknown>,
+  projectDir?: string,
+): CanUseToolResult | null {
+  if (toolName === "Write" || toolName === "Edit") {
+    const filePath = String(input.file_path ?? "");
+    if (basename(filePath) === "TODOS.md") {
+      // Bootstrap cold-start: allow creating TODOS.md for the first time
+      if (toolName === "Write" && projectDir) {
+        const todosOnDisk = existsSync(join(projectDir, "TODOS.md"));
+        if (!todosOnDisk) return null; // allow creation
+      }
+      return { behavior: "deny", message: TODOS_REDIRECT_MSG };
+    }
+    return null;
+  }
+
+  if (toolName === "Bash") {
+    const cmd = String(input.command ?? "");
+    // Match destructive writes: >, >>, tee, cp, mv, sed -i targeting TODOS.md
+    // Exclude read-only commands (cat, grep, head, tail, less, wc)
+    if (/TODOS\.md/.test(cmd) && /(?:>\s*|>>|tee\s|cp\s|mv\s|sed\s+-i)/.test(cmd)) {
+      return { behavior: "deny", message: TODOS_REDIRECT_MSG };
+    }
+  }
+
+  return null;
+}
+
 export function createAskHandler(config: AskHandlerConfig): AskHandler {
   const decisions: Decision[] = [];
   const warn = resolveWarnFn(config.onWarn);
@@ -64,6 +110,10 @@ export function createAskHandler(config: AskHandlerConfig): AskHandler {
     toolName: string,
     input: Record<string, unknown>,
   ): Promise<CanUseToolResult> {
+    // TODOS.md write protection — checked before AskUserQuestion handling
+    const todosBlock = isTodosMdWrite(toolName, input, config.projectDir);
+    if (todosBlock) return todosBlock;
+
     if (toolName !== "AskUserQuestion") {
       return { behavior: "allow" };
     }

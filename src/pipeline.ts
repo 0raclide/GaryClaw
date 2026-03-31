@@ -375,6 +375,18 @@ async function executePipelineFrom(
               };
               await runSkillWithPrompt(rebootstrapConfig, callbacks, enrichedPrompt);
 
+              // Post-enriched-bootstrap: merge any QA-derived items into TODOS.md
+              try {
+                const { mergeInventedItems } = await import("./prioritize.js");
+                const merged = mergeInventedItems(config.projectDir);
+                if (merged > 0) {
+                  callbacks.onEvent({
+                    type: "assistant_text",
+                    text: `\n[Post-Bootstrap] Merged ${merged} QA-derived item(s) into TODOS.md.\n`,
+                  });
+                }
+              } catch { /* fail-open */ }
+
               // Re-check quality (informational only, fail-open regardless)
               const enrichedEval = analyzeBootstrapQuality(config.projectDir);
               callbacks.onEvent({
@@ -392,10 +404,25 @@ async function executePipelineFrom(
           }
         }
       } else if (skillName === "prioritize") {
-        const { buildPrioritizePrompt } = await import("./prioritize.js");
+        const { buildPrioritizePrompt, mergeInventedItems } = await import("./prioritize.js");
         const prevSkills = state.skills.slice(0, i);
         const priorityPrompt = await buildPrioritizePrompt(config, prevSkills, config.projectDir);
         await runSkillWithPrompt(skillConfig, callbacks, priorityPrompt);
+        // Post-prioritize: merge any invented items into TODOS.md safely
+        try {
+          const merged = mergeInventedItems(config.projectDir);
+          if (merged > 0) {
+            callbacks.onEvent({
+              type: "assistant_text",
+              text: `\n[Post-Prioritize] Merged ${merged} invented item(s) into TODOS.md.\n`,
+            });
+          }
+        } catch (mergeErr) {
+          callbacks.onEvent({
+            type: "assistant_text",
+            text: `\n[Warning] Failed to merge invented items: ${mergeErr instanceof Error ? mergeErr.message : String(mergeErr)}\n`,
+          });
+        }
       } else if (skillName === "office-hours") {
         // office-hours runs as a gstack skill (SKILL.md loaded by SDK).
         // We prime it with context from priority.md so it designs the right thing.

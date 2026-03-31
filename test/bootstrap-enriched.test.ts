@@ -160,7 +160,7 @@ describe("buildEnrichedBootstrapPrompt", () => {
 
     expect(prompt).toContain("Architecture, Tech Stack, Test Strategy, Usage");
     expect(prompt).toContain("Rewrite CLAUDE.md");
-    expect(prompt).toContain("update TODOS.md");
+    expect(prompt).toContain("invented-items.md");
     expect(prompt).toContain("Write the updated files now.");
   });
 

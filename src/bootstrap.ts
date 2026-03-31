@@ -860,7 +860,7 @@ Rewrite CLAUDE.md to address the quality gaps. Include:
 - Specific file paths and module descriptions
 - Any issues found by the QA pre-scan${failedClaimsSection ? "\n- Correct all factual errors listed above" : ""}
 
-Also update TODOS.md to include QA findings as backlog items with proper P1-P4 priorities.
+Also write QA findings to .garyclaw/invented-items.md as backlog items with proper P1-P4 priorities.
 
 Write the updated files now.`;
 }

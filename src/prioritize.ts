@@ -10,9 +10,9 @@
  */
 
 import { join } from "node:path";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 
-import { safeReadText } from "./safe-json.js";
+import { safeReadText, safeWriteText } from "./safe-json.js";
 import { readOracleMemory, readMetrics, defaultMemoryConfig } from "./oracle-memory.js";
 import { estimateTokens } from "./checkpoint.js";
 import { readFailureRecords } from "./failure-taxonomy.js";
@@ -763,9 +763,10 @@ Recommended Pipeline:
 
 - Do NOT pick items with unmet dependencies
 - Do NOT pick items that require external services not available
-- Do NOT pick items larger than M effort (suggest splitting in priority.md, write the split to TODOS.md)
+- Do NOT pick items larger than M effort (suggest splitting in priority.md, write the split to .garyclaw/invented-items.md)
 - Do NOT pick P4 items when P2/P3 items exist
-- Do NOT modify any source code — you are read-only except for .garyclaw/priority.md (and TODOS.md for splits)
+- Do NOT modify any source code — you are read-only except for .garyclaw/priority.md and .garyclaw/invented-items.md
+- NEVER write to TODOS.md directly — a post-skill hook safely merges invented items
 - When actionable items exist: Do NOT invent — only score what's in TODOS.md or Unresolved Review Findings
 - When ALL items score below 5.0 (backlog exhausted): Follow the Invention Protocol below.
 - DO give a +2 scoring bonus to unresolved review findings — they are pre-reviewed and pre-approved, zero design work needed
@@ -782,7 +783,7 @@ Identify gaps: what should a "learning development daemon that gets smarter
 every run" be able to do that it can't do today? Review the Failure Patterns
 and Decision Quality Trends for recurring pain points.
 
-**Step 2 — INVENT:** Write 3-5 candidate P3 items to TODOS.md.
+**Step 2 — INVENT:** Write 3-5 candidate P3 items to .garyclaw/invented-items.md.
 Each must have: title, What, Why, Effort, Depends on.
 
 **Step 3 — CRITIQUE:** For EACH candidate, answer:
@@ -925,7 +926,7 @@ export async function buildPrioritizePrompt(
     const vision = descriptionEnd > 0 ? claudeMdContent.slice(0, descriptionEnd).trim() : claudeMdContent.slice(0, 2000);
 
     const visionBlock = vision +
-      "\n\nWhen the backlog is exhausted, use this vision to invent new features that move the product forward. Write invented items to TODOS.md before scoring them." +
+      "\n\nWhen the backlog is exhausted, use this vision to invent new features that move the product forward. Write invented items to .garyclaw/invented-items.md before scoring them." +
       "\nIMPORTANT: Do NOT invent features that already exist. Check the Current Capabilities section below — these describe everything the system already does.";
 
     const tVision = addBudgetedSection(lines, "### Product Vision (from CLAUDE.md)",
@@ -1143,4 +1144,42 @@ export async function buildPrioritizePrompt(
   }
 
   return prompt;
+}
+
+// ── Post-skill invented items merge ──────────────────────────────
+
+const INVENTED_ITEMS_FILE = ".garyclaw/invented-items.md";
+
+/**
+ * Merge invented items from the staging file into TODOS.md.
+ * Safe read-modify-write: reads both files, appends invented content,
+ * writes back, then deletes the staging file.
+ *
+ * Returns the number of `## P\d` headings merged, or 0 if nothing to merge.
+ */
+export function mergeInventedItems(projectDir: string): number {
+  const stagingPath = join(projectDir, INVENTED_ITEMS_FILE);
+  if (!existsSync(stagingPath)) return 0;
+
+  const invented = safeReadText(stagingPath);
+  if (!invented || !invented.trim()) {
+    // Empty staging file — clean up
+    try { unlinkSync(stagingPath); } catch { /* ignore */ }
+    return 0;
+  }
+
+  const todosPath = join(projectDir, "TODOS.md");
+  const existing = safeReadText(todosPath) ?? "";
+
+  // Count P\d headings being merged
+  const itemCount = (invented.match(/^## P\d/gm) || []).length;
+
+  // Append with separator
+  const separator = existing.endsWith("\n") ? "\n" : "\n\n";
+  safeWriteText(todosPath, existing + separator + invented.trim() + "\n");
+
+  // Clean up staging file
+  try { unlinkSync(stagingPath); } catch { /* ignore */ }
+
+  return itemCount;
 }

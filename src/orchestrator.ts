@@ -321,6 +321,7 @@ async function runSkillInternal(
       sessionIndex,
       decisionLogPath,
       autonomous: config.autonomous,
+      projectDir: config.projectDir,
       onWarn: (msg: string) => callbacks.onEvent({ type: "assistant_text", text: msg }),
       onCacheEvent: (event) => callbacks.onEvent(event),
       ...(config.autonomous
