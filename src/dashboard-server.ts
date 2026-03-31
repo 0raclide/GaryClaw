@@ -14,12 +14,14 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { join, extname, resolve, dirname } from "node:path";
 import { existsSync, readFileSync, readdirSync, watch, type FSWatcher } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { safeReadJSON, safeReadText } from "./safe-json.js";
+import { execFileSync } from "node:child_process";
+import { safeReadJSON, safeReadText, safeWriteJSON } from "./safe-json.js";
 import { buildDashboard, readAllMergeAuditEntries } from "./dashboard.js";
 import { readMetrics, defaultMemoryConfig, parseDecisionOutcomes } from "./oracle-memory.js";
 import { readPipelineOutcomes } from "./pipeline-history.js";
 import { readMergeReverts } from "./worktree.js";
 import { slugify, readTodoState } from "./todo-state.js";
+import { GARYCLAW_DAEMON_EMAIL } from "./sdk-wrapper.js";
 import type {
   DashboardData,
   DaemonState,
@@ -773,6 +775,209 @@ export function createFileWatcher(
   };
 }
 
+// ── Growth Data Extraction ────────────────────────────────────────
+
+export interface GrowthCache {
+  headSha: string;
+  builtAt: string;
+  snapshots: GrowthSnapshot[];
+  moduleAttribution: Record<string, string>;
+}
+
+/** Max commits to process when building growth cache from scratch. */
+export const MAX_GROWTH_COMMITS = 200;
+
+/** Timeout per git command in milliseconds. */
+export const GIT_COMMAND_TIMEOUT_MS = 5000;
+
+/**
+ * Run a git command and return stdout. Returns null on error or timeout.
+ */
+export function gitExec(args: string[], cwd: string): string | null {
+  try {
+    return execFileSync("git", args, {
+      cwd,
+      encoding: "utf-8",
+      timeout: GIT_COMMAND_TIMEOUT_MS,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract module count and test count from CLAUDE.md content.
+ * Returns null if neither can be parsed.
+ */
+export function extractCounts(content: string): { modules: number; tests: number } | null {
+  // Primary: "43 source modules, 216 test files, 3501 tests"
+  const combined = content.match(/(\d+)\s+source\s+modules.*?(\d+)\s+tests/s);
+  if (combined) {
+    return { modules: parseInt(combined[1], 10), tests: parseInt(combined[2], 10) };
+  }
+
+  // Fallback: separate patterns
+  const modMatch = content.match(/(\d+)\s+source\s+modules/);
+  const testMatch = content.match(/(\d+)\s+tests/);
+  if (modMatch || testMatch) {
+    return {
+      modules: modMatch ? parseInt(modMatch[1], 10) : 0,
+      tests: testMatch ? parseInt(testMatch[1], 10) : 0,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Get the current HEAD SHA.
+ */
+export function getHeadSha(projectDir: string): string | null {
+  return gitExec(["rev-parse", "HEAD"], projectDir);
+}
+
+/**
+ * Build growth snapshots from git history of CLAUDE.md.
+ * Returns per-commit snapshots with module/test counts and commit authorship.
+ */
+export function buildGrowthSnapshots(projectDir: string): GrowthSnapshot[] {
+  // Get commits that touched CLAUDE.md, capped at MAX_GROWTH_COMMITS
+  const logOutput = gitExec(
+    ["log", `--max-count=${MAX_GROWTH_COMMITS}`, "--format=%H %aI %ae", "--", "CLAUDE.md"],
+    projectDir,
+  );
+  if (!logOutput) return [];
+
+  const lines = logOutput.split("\n").filter(Boolean);
+  const snapshots: GrowthSnapshot[] = [];
+
+  // Track cumulative commit counts
+  const commitCountOutput = gitExec(
+    ["log", "--format=%aI %ae", "--reverse"],
+    projectDir,
+  );
+  const commitsByDate = new Map<string, { total: number; human: number; daemon: number }>();
+  if (commitCountOutput) {
+    let total = 0;
+    let human = 0;
+    let daemon = 0;
+    for (const line of commitCountOutput.split("\n").filter(Boolean)) {
+      const parts = line.split(" ");
+      const date = parts[0]?.slice(0, 10) ?? "";
+      const email = parts[1] ?? "";
+      total++;
+      if (email === GARYCLAW_DAEMON_EMAIL) daemon++;
+      else human++;
+      if (date) {
+        commitsByDate.set(date, { total, human, daemon });
+      }
+    }
+  }
+
+  for (const line of lines) {
+    const parts = line.split(" ");
+    const sha = parts[0];
+    const dateStr = parts[1]?.slice(0, 10) ?? "";
+    if (!sha || !dateStr) continue;
+
+    // Get CLAUDE.md content at this commit
+    const content = gitExec(["show", `${sha}:CLAUDE.md`], projectDir);
+    if (!content) continue;
+
+    const counts = extractCounts(content);
+    if (!counts) continue;
+
+    const commitInfo = commitsByDate.get(dateStr) ?? { total: 0, human: 0, daemon: 0 };
+
+    snapshots.push({
+      date: dateStr,
+      modules: counts.modules,
+      tests: counts.tests,
+      commits: commitInfo.total,
+      humanCommits: commitInfo.human,
+      daemonCommits: commitInfo.daemon,
+    });
+  }
+
+  // Reverse to chronological order (git log gives newest first)
+  snapshots.reverse();
+
+  // Deduplicate by date (keep last entry per date — most recent CLAUDE.md update)
+  const byDate = new Map<string, GrowthSnapshot>();
+  for (const s of snapshots) {
+    byDate.set(s.date, s);
+  }
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Build module attribution: for each source module, who created it (human or daemon).
+ */
+export function buildModuleAttribution(projectDir: string): Record<string, string> {
+  const attribution: Record<string, string> = {};
+
+  // Get list of current source modules
+  const lsOutput = gitExec(["ls-files", "src/*.ts"], projectDir);
+  if (!lsOutput) return attribution;
+
+  const modules = lsOutput.split("\n").filter(f => f.endsWith(".ts") && !f.includes("/spikes/"));
+
+  for (const mod of modules) {
+    // Find the creating commit's author email
+    const email = gitExec(
+      ["log", "--format=%ae", "--diff-filter=A", "--", mod],
+      projectDir,
+    );
+    if (!email) continue;
+    // Take the last line (oldest commit = the one that added the file)
+    const lines = email.split("\n").filter(Boolean);
+    const creatorEmail = lines[lines.length - 1];
+    attribution[mod.replace(/^src\//, "").replace(/\.ts$/, "")] =
+      creatorEmail === GARYCLAW_DAEMON_EMAIL ? "daemon" : "human";
+  }
+
+  return attribution;
+}
+
+/**
+ * Load or build growth cache. Incremental update if HEAD has moved.
+ */
+export function loadOrBuildGrowthCache(
+  projectDir: string,
+  checkpointDir: string,
+): { snapshots: GrowthSnapshot[]; moduleAttribution: Record<string, string> } {
+  const cachePath = join(checkpointDir, "growth-cache.json");
+  const currentHead = getHeadSha(projectDir);
+
+  // Try to load existing cache
+  const cached = safeReadJSON<GrowthCache>(cachePath);
+  if (cached && cached.headSha === currentHead && cached.snapshots?.length > 0) {
+    return { snapshots: cached.snapshots, moduleAttribution: cached.moduleAttribution ?? {} };
+  }
+
+  // Build fresh or incremental
+  const snapshots = buildGrowthSnapshots(projectDir);
+  const moduleAttribution = buildModuleAttribution(projectDir);
+
+  // Save cache
+  if (currentHead) {
+    const cache: GrowthCache = {
+      headSha: currentHead,
+      builtAt: new Date().toISOString(),
+      snapshots,
+      moduleAttribution,
+    };
+    try {
+      safeWriteJSON(cachePath, cache);
+    } catch {
+      // Best-effort caching
+    }
+  }
+
+  return { snapshots, moduleAttribution };
+}
+
 // ── Server Startup ───────────────────────────────────────────────
 
 /**
@@ -798,6 +1003,7 @@ export function startDashboardServer(
     checkpointDir,
     webAssetsDir,
     sseClients,
+    loadGrowthDataFn: () => loadOrBuildGrowthCache(projectDir, checkpointDir),
   });
 
   const server = createServer(handler);
