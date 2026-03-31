@@ -47,7 +47,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Per-Skill Cost Attribution: COMPLETE** (2026-03-31) — Per-skill cost aggregation, trend detection (>15% flagging), dashboard formatting, health score integration
 **Oracle Memory Compaction: COMPLETE** (2026-03-31) — Age-gated question compaction via normalizeQuestion(), [compact] prefix, RECENT_KEEP_FULL=10, PATTERNS_BUDGET_TOKENS=2K cap, warmFromOutcomes prefix stripping, 36% size reduction bounded at 7.4K tokens
 **Live Evolution Dashboard: COMPLETE** (2026-03-31) — HTTP server with SSE for real-time dashboard. Growth pipeline with daemon vs human attribution (committer email), git ls-tree fallback for module counts, versioned growth cache. Module attribution, mutation timeline, activity feed, taste/expertise rendering. CLI `dashboard --serve --port --open`.
-- 44 source modules, 220 test files, 3588 tests
+- 44 source modules, 237 test files, 3621 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -342,6 +342,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/prioritize.test.ts` | 122 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact, per-category stats injection, Wow factor weights, filterOpenTodos, budget constants, addBudgetedSection, budget enforcement, truncateSection, prioritize_prompt_size event, extractCompletedTitles |
 | `test/prioritize-review-findings.test.ts` | 11 | loadUnresolvedReviewFindings: flat/instance layouts, action keywords, skip filters, review skill gating, job dir limit, error handling |
 | `test/prioritize-validation-gate.test.ts` | 18 | isPickValid: exact/fuzzy/substring match, case insensitivity, short-title 20-char guard, Levenshtein boundary at 0.3, parseAlternativeTitles, integration with extractCompletedTitles |
+| `test/prioritize-invented-items.test.ts` | 9 | mergeInventedItems: append without clobbering, empty/whitespace staging, multi-item count, cleanup, missing TODOS.md creation |
 | `test/prioritize.regression-1.test.ts` | 8 | Budget keys vision/capabilities split, truncateSection marker for no-newline content, filterOpenTodos all-struck-through fallback |
 | `test/worktree.test.ts` | 28 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
 | `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
@@ -405,6 +406,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/cli.regression-5.test.ts` | 2 | CLI regression: formatEvent priority_pick_rejected/exhausted cases |
 | `test/oracle-cache.test.ts` | 41 | normalizeQuestion, normalizeOptions, computeCacheKey, OracleCache: record, lookup, minHits threshold, warmFromOutcomes, invalidation, stats |
 | `test/ask-handler-cache.test.ts` | 9 | Cache integration: cache hit skips Oracle, cache miss falls through, partial-batch, events, backward compat, human mode unaffected |
+| `test/ask-handler-todos-guard.test.ts` | 24 | isTodosMdWrite: Write/Edit/Bash block patterns, bootstrap cold-start bypass, read-only Bash allowed, canUseTool integration |
 | `test/daemon-ipc-todo.test.ts` | 4 | buildIPCHandler todoTitle passthrough: skipComposition, claimedTodoTitle, designDoc combo, absent |
 | `test/daemon-merge-config.test.ts` | 34 | Daemon merge config validation |
 | `test/daemon-registry-file-conflict.regression-1.test.ts` | 2 | Daemon registry regression: getClaimedFiles duplicate file entries per instance |
