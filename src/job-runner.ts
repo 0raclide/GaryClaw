@@ -1653,6 +1653,7 @@ function buildCallbacks(
               const completedTitles = todosContent ? extractCompletedTitles(todosContent) : [];
               if (!isPickValid(title, completedTitles)) {
                 deps.log("warn", `Priority pick rejected (completed): "${title}"`);
+                job.priorityPickRejected = true;
                 if (config.onEvent) {
                   config.onEvent({ type: "priority_pick_rejected", title, reason: "completed" });
                 }

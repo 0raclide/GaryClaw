@@ -359,6 +359,7 @@ export interface Job {
   skipComposition?: boolean;  // true = bypass composePipeline() entirely (deterministic --todo override)
   autoFixMergeSha?: string;   // Original merge SHA that was reverted, used for cost accumulation in auto-fix jobs
   skillCosts?: Record<string, number>;  // skill name → cost USD (populated after pipeline completion)
+  priorityPickRejected?: boolean;  // true if validation gate rejected the initial priority pick (completed item)
 }
 
 export interface DaemonState {
@@ -551,6 +552,7 @@ export interface DashboardData {
     rateLimited: number;            // Jobs currently in rate_limited hold
     crashRecoveries: number;       // Jobs that completed after crash retry
     crashRecoverySavedUsd: number; // Cost of prior skills not re-run ($saved)
+    priorityPickRejections: number;  // Jobs where validation gate rejected a completed-item pick
   };
   oracle: {
     totalDecisions: number;

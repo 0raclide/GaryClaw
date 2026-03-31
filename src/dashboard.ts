@@ -71,6 +71,9 @@ export function aggregateJobStats(jobs: Job[], todayStr?: string): DashboardData
   const crashRecoveries = recoveredJobs.length;
   const crashRecoverySavedUsd = recoveredJobs.reduce((sum, j) => sum + (j.priorSkillCostUsd ?? 0), 0);
 
+  // Priority pick validation gate stats
+  const priorityPickRejections = todayJobs.filter(j => j.priorityPickRejected === true).length;
+
   return {
     total,
     complete,
@@ -85,6 +88,7 @@ export function aggregateJobStats(jobs: Job[], todayStr?: string): DashboardData
     failureBreakdown,
     crashRecoveries,
     crashRecoverySavedUsd,
+    priorityPickRejections,
   };
 }
 
@@ -635,6 +639,11 @@ export function formatDashboard(data: DashboardData): string {
   // Crash recovery stats (only if there are recoveries)
   if (data.jobs.crashRecoveries > 0) {
     lines.push(`| Crash Recoveries | ${data.jobs.crashRecoveries} ($${data.jobs.crashRecoverySavedUsd.toFixed(2)} saved) |`);
+  }
+
+  // Priority pick rejections (only if validation gate fired)
+  if (data.jobs.priorityPickRejections > 0) {
+    lines.push(`| Pick Rejections | ${data.jobs.priorityPickRejections} (completed-item gate) |`);
   }
 
   // Failure breakdown (only if there are failures)
