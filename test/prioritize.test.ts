@@ -16,6 +16,7 @@ import {
   getDecisionQualityTrends,
   measureRecentImpact,
   filterOpenTodos,
+  extractCompletedTitles,
   addBudgetedSection,
   truncateSection,
   PRIORITIZE_PROMPT_BUDGET,
@@ -1278,6 +1279,72 @@ B stuff.`;
     const input = "# TODOS\n\nJust some text.";
     const result = filterOpenTodos(input);
     expect(result).toBe("# TODOS\n\nJust some text.");
+  });
+});
+
+// ── extractCompletedTitles ───────────────────────────────────────
+
+describe("extractCompletedTitles", () => {
+  it("extracts titles from struck-through headings", () => {
+    const input = `# TODOS
+
+## ~~P3: Implement Skill Hardening~~ — COMPLETE (2026-03-27)
+
+**What:** Done stuff.
+
+## P2: Open Item
+
+**What:** Still open.
+
+## ~~P2: Daemon Resilience~~ — COMPLETE
+
+More done.`;
+
+    const result = extractCompletedTitles(input);
+    expect(result).toEqual(["P3: Implement Skill Hardening", "P2: Daemon Resilience"]);
+  });
+
+  it("handles mixed open and complete items", () => {
+    const input = `# TODOS
+
+## P1: Urgent Fix
+
+Needs work.
+
+## ~~P3: Old Feature~~
+
+Done.
+
+## P2: Another Task
+
+Open.`;
+
+    const result = extractCompletedTitles(input);
+    expect(result).toEqual(["P3: Old Feature"]);
+  });
+
+  it("returns empty array when no completions exist", () => {
+    const input = `# TODOS
+
+## P2: Open Item
+
+**What:** Work to do.
+
+## P3: Another Open
+
+**What:** More work.`;
+
+    const result = extractCompletedTitles(input);
+    expect(result).toEqual([]);
+  });
+
+  it("extracts headings without — COMPLETE suffix", () => {
+    const input = `## ~~P4: Removed Feature~~
+
+No longer needed.`;
+
+    const result = extractCompletedTitles(input);
+    expect(result).toEqual(["P4: Removed Feature"]);
   });
 });
 

@@ -67,6 +67,23 @@ export function filterOpenTodos(content: string): string {
   return result;
 }
 
+/**
+ * Extract titles of completed (struck-through) items from TODOS.md content.
+ * Matches `## ~~{title}~~` headings (with optional status suffix like `— COMPLETE`).
+ * Returns just the title portion (without `## ~~` prefix, `~~` suffix, or status).
+ */
+export function extractCompletedTitles(content: string): string[] {
+  const titles: string[] = [];
+  const blocks = content.split(/^(?=## )/m);
+  for (const block of blocks) {
+    const match = block.match(/^## ~~(.+?)~~(?:\s*—\s*.+)?$/m);
+    if (match) {
+      titles.push(match[1].trim());
+    }
+  }
+  return titles;
+}
+
 // ── Budget helpers ───────────────────────────────────────────────
 
 /**
