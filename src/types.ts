@@ -194,6 +194,8 @@ export type OrchestratorEvent =
   | { type: "oracle_cache_hit"; question: string; chosen: string; hitCount: number }
   | { type: "oracle_cache_miss"; question: string }
   | { type: "oracle_cache_invalidated"; question: string }
+  | { type: "priority_pick_rejected"; title: string; reason: string }
+  | { type: "priority_pick_exhausted" }
   | { type: "prioritize_prompt_size"; tokens: number; sections: Record<string, number> };
 
 export interface OrchestratorCallbacks {

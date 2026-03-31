@@ -20,6 +20,7 @@ import { groupDecisionsByTopic, DEFAULT_AUTO_RESEARCH_CONFIG } from "./auto-rese
 import { formatSkillCatalogForPrompt } from "./skill-catalog.js";
 import { readPipelineOutcomes, computeCategoryStats } from "./pipeline-history.js";
 import { buildProjectTypeSection } from "./project-type.js";
+import { normalizedLevenshtein } from "./reflection.js";
 import { VALID_TASK_CATEGORIES, TASK_CATEGORY_DESCRIPTIONS } from "./types.js";
 import type { GaryClawConfig, PipelineSkillEntry, OracleMetrics, Decision, DaemonState } from "./types.js";
 
@@ -83,6 +84,47 @@ export function extractCompletedTitles(content: string): string[] {
     }
   }
   return titles;
+}
+
+// ── Validation gate ─────────────────────────────────────────────
+
+/**
+ * Normalize a title for fuzzy comparison: lowercase, strip punctuation.
+ */
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Check whether a priority pick is valid (not a completed item).
+ * Returns true if the pick is acceptable, false if it should be rejected.
+ *
+ * Rejection triggers:
+ * - Substring match (normalized pick is contained in a normalized completed title, or vice versa)
+ * - Normalized Levenshtein distance < 0.3 (70%+ similar)
+ */
+export function isPickValid(pickTitle: string, completedTitles: string[]): boolean {
+  if (completedTitles.length === 0) return true;
+
+  const normalizedPick = normalizeTitle(pickTitle);
+  if (!normalizedPick) return true;
+
+  for (const completed of completedTitles) {
+    const normalizedCompleted = normalizeTitle(completed);
+    if (!normalizedCompleted) continue;
+
+    // Substring match (either direction)
+    if (normalizedPick.includes(normalizedCompleted) || normalizedCompleted.includes(normalizedPick)) {
+      return false;
+    }
+
+    // Fuzzy match via Levenshtein
+    if (normalizedLevenshtein(normalizedPick, normalizedCompleted) < 0.3) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 // ── Budget helpers ───────────────────────────────────────────────

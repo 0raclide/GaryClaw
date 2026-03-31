@@ -36,7 +36,7 @@ import { maybeEnqueueAutoFix, updateAutoFixCost } from "./auto-fix.js";
 import { mergeWorktreeBranch, resolveBaseBranch, verifyPostMerge, appendMergeRevert, branchName, createPullRequest, buildPrBody, appendMergeAudit } from "./worktree.js";
 import type { MergeResult, PostMergeVerifyResult, PullRequestResult } from "./worktree.js";
 import { safeReadText } from "./safe-json.js";
-import { parseTodoItems } from "./prioritize.js";
+import { parseTodoItems, extractCompletedTitles, isPickValid } from "./prioritize.js";
 import { composePipeline } from "./pipeline-compose.js";
 import {
   readPipelineOutcomes,
@@ -1537,6 +1537,21 @@ export function parsePriorityPickTitle(content: string): string | null {
   return match ? match[1].trim() : null;
 }
 
+/**
+ * Parse alternative pick titles from the "## Alternatives" section.
+ * Matches `### 2nd:`, `### 3rd:`, etc. headings.
+ */
+export function parseAlternativeTitles(content: string): string[] {
+  const titles: string[] = [];
+  const pattern = /^### \d+(?:st|nd|rd|th):\s*(.+?)(?:\s*—\s*.+)?$/gm;
+  let match;
+  while ((match = pattern.exec(content)) !== null) {
+    const title = match[1].trim();
+    if (title) titles.push(title);
+  }
+  return titles;
+}
+
 /** Minimum pipeline outcome count before oracle recommendations override static table. */
 export const ORACLE_PIPELINE_THRESHOLD = 10;
 
@@ -1630,11 +1645,36 @@ function buildCallbacks(
           const priorityPath = join(priorityDir, ".garyclaw", "priority.md");
           const priorityContent = safeReadText(priorityPath);
           if (priorityContent) {
-            const title = parsePriorityPickTitle(priorityContent);
+            let title = parsePriorityPickTitle(priorityContent);
             if (title && title !== "Backlog Exhausted") {
-              job.claimedTodoTitle = title;
-              persistState(claimContext.state, claimContext.checkpointDir);
-              deps.log("info", `Priority claimed (early): "${title}"`);
+              // Validation gate: reject picks that match completed items
+              const todosPath = join(priorityDir, "TODOS.md");
+              const todosContent = safeReadText(todosPath);
+              const completedTitles = todosContent ? extractCompletedTitles(todosContent) : [];
+              if (!isPickValid(title, completedTitles)) {
+                deps.log("warn", `Priority pick rejected (completed): "${title}"`);
+                if (config.onEvent) {
+                  config.onEvent({ type: "priority_pick_rejected", title, reason: "completed" });
+                }
+                // Fall through to alternatives
+                const alternatives = parseAlternativeTitles(priorityContent);
+                const validAlt = alternatives.find(alt => isPickValid(alt, completedTitles));
+                if (validAlt) {
+                  title = validAlt;
+                  deps.log("info", `Fell through to alternative: "${title}"`);
+                } else {
+                  deps.log("warn", "All priority picks rejected — no valid alternative");
+                  if (config.onEvent) {
+                    config.onEvent({ type: "priority_pick_exhausted" });
+                  }
+                  title = null;
+                }
+              }
+              if (title) {
+                job.claimedTodoTitle = title;
+                persistState(claimContext.state, claimContext.checkpointDir);
+                deps.log("info", `Priority claimed (early): "${title}"`);
+              }
             }
           }
         } catch (err) {
