@@ -590,6 +590,8 @@ export function computeHealthScore(
   } else if (data.jobs.successRate < 80) {
     const n = data.jobs.failed;
     topConcern = `${n} job(s) failed today — review failure categories`;
+  } else if (concerns.length > 0) {
+    topConcern = concerns[0];
   }
 
   return { score, topConcern };
@@ -805,7 +807,7 @@ export function formatDashboard(data: DashboardData): string {
       );
       for (const t of flaggedTrends) {
         lines.push(
-          `| ${t.skillName} | $${t.recentAvgCostUsd.toFixed(2)} | $${t.previousAvgCostUsd.toFixed(2)} | +${t.changePercent.toFixed(1)}% | ${t.recentRunCount}/${t.previousRunCount} |`,
+          `| ${t.skillName} | $${t.recentAvgCostUsd.toFixed(2)} | $${t.previousAvgCostUsd.toFixed(2)} | ${t.changePercent >= 0 ? "+" : ""}${t.changePercent.toFixed(1)}% | ${t.recentRunCount}/${t.previousRunCount} |`,
         );
       }
     }
