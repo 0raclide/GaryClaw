@@ -24,8 +24,10 @@ import {
   buildGrowthSnapshots,
   buildModuleAttribution,
   loadOrBuildGrowthCache,
+  countModulesAtCommit,
   MAX_GROWTH_COMMITS,
   GIT_COMMAND_TIMEOUT_MS,
+  GROWTH_CACHE_VERSION,
   type GrowthSnapshot,
   type GrowthCache,
 } from "../src/dashboard-server.js";
@@ -156,10 +158,10 @@ describe("buildGrowthSnapshots", () => {
     let callIndex = 0;
     mockExecFileSync.mockImplementation((cmd: any, args: any) => {
       const argStr = (args as string[]).join(" ");
-      if (argStr.includes("--format=%H %aI %ae") && argStr.includes("CLAUDE.md")) {
+      if (argStr.includes("--format=%H %aI %ce") && argStr.includes("CLAUDE.md")) {
         return "sha1 2026-03-25T10:00:00Z user@example.com\nsha2 2026-03-26T10:00:00Z daemon@local\n";
       }
-      if (argStr.includes("--format=%aI %ae") && argStr.includes("--reverse")) {
+      if (argStr.includes("--format=%aI %ce") && argStr.includes("--reverse")) {
         return "2026-03-25T10:00:00Z user@example.com\n2026-03-26T10:00:00Z garyclaw-daemon@local\n";
       }
       if (argStr.includes("sha1:CLAUDE.md")) {
@@ -184,17 +186,51 @@ describe("buildGrowthSnapshots", () => {
     expect(buildGrowthSnapshots("/tmp")).toEqual([]);
   });
 
-  it("skips commits where CLAUDE.md content is unparseable", () => {
+  it("falls back to ls-tree when CLAUDE.md content is unparseable", () => {
     mockExecFileSync.mockImplementation((cmd: any, args: any) => {
       const argStr = (args as string[]).join(" ");
-      if (argStr.includes("--format=%H %aI %ae") && argStr.includes("CLAUDE.md")) {
+      if (argStr.includes("--format=%H %aI %ce") && argStr.includes("CLAUDE.md")) {
         return "sha1 2026-03-25T10:00:00Z user@example.com\nsha2 2026-03-26T10:00:00Z user@example.com\n";
       }
-      if (argStr.includes("--format=%aI %ae")) {
+      if (argStr.includes("--format=%aI %ce")) {
         return "2026-03-25T10:00:00Z user@example.com\n";
       }
       if (argStr.includes("sha1:CLAUDE.md")) {
         return "# README\nNo module counts here.\n";
+      }
+      if (argStr.includes("ls-tree") && argStr.includes("sha1")) {
+        return "src/cli.ts\nsrc/oracle.ts\nsrc/relay.ts\n";
+      }
+      if (argStr.includes("sha2:CLAUDE.md")) {
+        return "- 10 source modules, 50 test files, 300 tests\n";
+      }
+      return "";
+    });
+
+    const snapshots = buildGrowthSnapshots("/tmp/project");
+    expect(snapshots).toHaveLength(2);
+    // sha1 used ls-tree fallback: 3 modules
+    expect(snapshots[0].modules).toBe(3);
+    expect(snapshots[0].tests).toBe(0);
+    // sha2 used extractCounts
+    expect(snapshots[1].modules).toBe(10);
+    expect(snapshots[1].tests).toBe(300);
+  });
+
+  it("skips snapshot when both extractCounts and ls-tree fail", () => {
+    mockExecFileSync.mockImplementation((cmd: any, args: any) => {
+      const argStr = (args as string[]).join(" ");
+      if (argStr.includes("--format=%H %aI %ce") && argStr.includes("CLAUDE.md")) {
+        return "sha1 2026-03-25T10:00:00Z user@example.com\nsha2 2026-03-26T10:00:00Z user@example.com\n";
+      }
+      if (argStr.includes("--format=%aI %ce")) {
+        return "2026-03-25T10:00:00Z user@example.com\n";
+      }
+      if (argStr.includes("sha1:CLAUDE.md")) {
+        return "# README\nNo module counts here.\n";
+      }
+      if (argStr.includes("ls-tree") && argStr.includes("sha1")) {
+        throw new Error("ls-tree failed");
       }
       if (argStr.includes("sha2:CLAUDE.md")) {
         return "- 10 source modules, 50 test files, 300 tests\n";
@@ -210,11 +246,11 @@ describe("buildGrowthSnapshots", () => {
   it("deduplicates by date (keeps last per date)", () => {
     mockExecFileSync.mockImplementation((cmd: any, args: any) => {
       const argStr = (args as string[]).join(" ");
-      if (argStr.includes("--format=%H %aI %ae") && argStr.includes("CLAUDE.md")) {
+      if (argStr.includes("--format=%H %aI %ce") && argStr.includes("CLAUDE.md")) {
         // Two commits on the same date
         return "sha1 2026-03-25T10:00:00Z u@x.com\nsha2 2026-03-25T14:00:00Z u@x.com\n";
       }
-      if (argStr.includes("--format=%aI %ae")) {
+      if (argStr.includes("--format=%aI %ce")) {
         return "2026-03-25T10:00:00Z u@x.com\n2026-03-25T14:00:00Z u@x.com\n";
       }
       if (argStr.includes("sha1:CLAUDE.md")) {
@@ -304,10 +340,11 @@ describe("loadOrBuildGrowthCache", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("returns cached data when HEAD matches", () => {
+  it("returns cached data when HEAD matches and version is current", () => {
     const cache: GrowthCache = {
       headSha: "abc123",
       builtAt: "2026-03-30T10:00:00Z",
+      cacheVersion: GROWTH_CACHE_VERSION,
       snapshots: [{ date: "2026-03-25", modules: 8, tests: 200, commits: 10, humanCommits: 5, daemonCommits: 5 }],
       moduleAttribution: { dashboard: "human" },
     };
@@ -320,6 +357,50 @@ describe("loadOrBuildGrowthCache", () => {
     expect(result.snapshots).toHaveLength(1);
     expect(result.snapshots[0].modules).toBe(8);
     expect(result.moduleAttribution.dashboard).toBe("human");
+  });
+
+  it("rebuilds when cache version is old", () => {
+    const cache: GrowthCache = {
+      headSha: "abc123",
+      builtAt: "2026-03-30T10:00:00Z",
+      cacheVersion: 1,
+      snapshots: [{ date: "2026-03-25", modules: 8, tests: 200, commits: 10, humanCommits: 5, daemonCommits: 5 }],
+      moduleAttribution: { dashboard: "human" },
+    };
+    writeFileSync(join(dir, "growth-cache.json"), JSON.stringify(cache));
+
+    mockExecFileSync.mockImplementation((cmd: any, args: any) => {
+      const argStr = (args as string[]).join(" ");
+      if (argStr.includes("rev-parse")) return "abc123\n";
+      if (argStr.includes("ls-files")) return "";
+      return "";
+    });
+
+    const result = loadOrBuildGrowthCache("/tmp/project", dir);
+    // Rebuilt (empty because mocked git returns nothing useful)
+    expect(result.snapshots).toEqual([]);
+  });
+
+  it("rebuilds when cache has no version field (v1 cache)", () => {
+    const cache = {
+      headSha: "abc123",
+      builtAt: "2026-03-30T10:00:00Z",
+      // No cacheVersion field — old format
+      snapshots: [{ date: "2026-03-25", modules: 8, tests: 200, commits: 10, humanCommits: 5, daemonCommits: 5 }],
+      moduleAttribution: { dashboard: "human" },
+    };
+    writeFileSync(join(dir, "growth-cache.json"), JSON.stringify(cache));
+
+    mockExecFileSync.mockImplementation((cmd: any, args: any) => {
+      const argStr = (args as string[]).join(" ");
+      if (argStr.includes("rev-parse")) return "abc123\n";
+      if (argStr.includes("ls-files")) return "";
+      return "";
+    });
+
+    const result = loadOrBuildGrowthCache("/tmp/project", dir);
+    // Old cache without version is rebuilt
+    expect(result.snapshots).toEqual([]);
   });
 
   it("rebuilds when HEAD has changed", () => {
@@ -360,10 +441,11 @@ describe("loadOrBuildGrowthCache", () => {
     expect(existsSync(join(dir, "growth-cache.json"))).toBe(true);
   });
 
-  it("handles missing moduleAttribution in old cache format", () => {
+  it("handles missing moduleAttribution in cache with current version", () => {
     const cache = {
       headSha: "abc123",
       builtAt: "2026-03-30T10:00:00Z",
+      cacheVersion: GROWTH_CACHE_VERSION,
       snapshots: [{ date: "2026-03-25", modules: 8, tests: 200, commits: 10, humanCommits: 5, daemonCommits: 5 }],
       // No moduleAttribution field
     };
@@ -372,6 +454,94 @@ describe("loadOrBuildGrowthCache", () => {
 
     const result = loadOrBuildGrowthCache("/tmp/project", dir);
     expect(result.moduleAttribution).toEqual({});
+  });
+});
+
+// ── countModulesAtCommit ─────────────────────────────────────────
+
+describe("countModulesAtCommit", () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+  });
+
+  it("counts .ts files in src/ excluding spikes", () => {
+    mockExecFileSync.mockReturnValue("cli.ts\noracle.ts\nrelay.ts\nspikes/test.ts\n" as any);
+    const count = countModulesAtCommit("sha1", "/tmp/project");
+    expect(count).toBe(3);
+  });
+
+  it("returns 0 for empty src/", () => {
+    mockExecFileSync.mockReturnValue("" as any);
+    expect(countModulesAtCommit("sha1", "/tmp/project")).toBe(0);
+  });
+
+  it("returns null when git ls-tree fails", () => {
+    mockExecFileSync.mockImplementation(() => { throw new Error("bad SHA"); });
+    expect(countModulesAtCommit("bad-sha", "/tmp/project")).toBeNull();
+  });
+
+  it("filters non-.ts files", () => {
+    mockExecFileSync.mockReturnValue("cli.ts\nREADME.md\noracle.ts\n" as any);
+    expect(countModulesAtCommit("sha1", "/tmp/project")).toBe(2);
+  });
+});
+
+// ── ls-tree cache ────────────────────────────────────────────────
+
+describe("buildGrowthSnapshots ls-tree cache", () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+  });
+
+  it("populates ls-tree cache and reuses it", () => {
+    const lsTreeCache = new Map<string, number>();
+
+    mockExecFileSync.mockImplementation((cmd: any, args: any) => {
+      const argStr = (args as string[]).join(" ");
+      if (argStr.includes("--format=%H %aI %ce") && argStr.includes("CLAUDE.md")) {
+        return "sha1 2026-03-25T10:00:00Z user@example.com\n";
+      }
+      if (argStr.includes("--format=%aI %ce")) {
+        return "2026-03-25T10:00:00Z user@example.com\n";
+      }
+      if (argStr.includes("sha1:CLAUDE.md")) {
+        return "# No counts\n";
+      }
+      if (argStr.includes("ls-tree")) {
+        return "cli.ts\noracle.ts\n";
+      }
+      return "";
+    });
+
+    buildGrowthSnapshots("/tmp/project", lsTreeCache);
+    expect(lsTreeCache.get("sha1")).toBe(2);
+  });
+
+  it("uses cached ls-tree result without re-running git", () => {
+    const lsTreeCache = new Map<string, number>([["sha1", 5]]);
+    let lsTreeCalled = false;
+
+    mockExecFileSync.mockImplementation((cmd: any, args: any) => {
+      const argStr = (args as string[]).join(" ");
+      if (argStr.includes("--format=%H %aI %ce") && argStr.includes("CLAUDE.md")) {
+        return "sha1 2026-03-25T10:00:00Z user@example.com\n";
+      }
+      if (argStr.includes("--format=%aI %ce")) {
+        return "2026-03-25T10:00:00Z user@example.com\n";
+      }
+      if (argStr.includes("sha1:CLAUDE.md")) {
+        return "# No counts\n";
+      }
+      if (argStr.includes("ls-tree")) {
+        lsTreeCalled = true;
+        return "";
+      }
+      return "";
+    });
+
+    const snapshots = buildGrowthSnapshots("/tmp/project", lsTreeCache);
+    expect(lsTreeCalled).toBe(false);
+    expect(snapshots[0].modules).toBe(5);
   });
 });
 
@@ -384,5 +554,9 @@ describe("growth constants", () => {
 
   it("GIT_COMMAND_TIMEOUT_MS is 5000", () => {
     expect(GIT_COMMAND_TIMEOUT_MS).toBe(5000);
+  });
+
+  it("GROWTH_CACHE_VERSION is 2", () => {
+    expect(GROWTH_CACHE_VERSION).toBe(2);
   });
 });

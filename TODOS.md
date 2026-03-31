@@ -743,3 +743,18 @@ Completed (detected by artifact reconciliation, job job-1774882223603-160fda).
 **Effort:** S (human: ~3 days / CC: ~20 min)
 **Depends on:** Nothing
 **Added by:** Prioritize on 2026-03-30 (re-added — previous entry incorrectly auto-marked complete)
+
+## P3: Dashboard Client-Side Test Infrastructure — Extract Pure Functions for Vitest
+
+**What:** Extract `renderSimpleMarkdown()` and `renderDomainExpertise()` from `src/dashboard-web/assets/app.js` into a shared JS module that can be imported by both the browser IIFE and vitest. Add unit tests for markdown rendering, YAML frontmatter parsing, freshness badge age calculation, and edge cases (NaN dates, malformed frontmatter, empty input).
+
+**Why:** app.js is now ~740 lines with real logic (regex-based markdown transforms, per-topic YAML frontmatter extraction, date-based freshness calculation). These are pure functions with zero DOM dependencies but no test coverage. The NaN date edge case in `renderDomainExpertise` (invalid `lastResearched` → falls through to "stale" badge) was caught in eng review but has no automated test to prevent regression.
+
+**Implementation:**
+- Create `src/dashboard-web/assets/render-helpers.js` with ESM exports for `renderSimpleMarkdown`, `renderDomainExpertise`, and a browser-compatible `escapeHtml`
+- Import in app.js IIFE (or inline via build-time concatenation to avoid module system changes)
+- Add `test/dashboard-render-helpers.test.ts` with ~15 tests: frontmatter stripping, heading transforms, bold/bullets, `<ul>` wrapping, per-topic YAML parsing, freshness buckets (< 14d, 14-30d, > 30d), NaN date, empty input, null input
+
+**Effort:** XS (human: ~2 hours / CC: ~15 min)
+**Depends on:** Nothing
+**Added by:** /plan-eng-review on 2026-03-31

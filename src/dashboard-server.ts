@@ -824,9 +824,13 @@ export function createFileWatcher(
 
 // ── Growth Data Extraction ────────────────────────────────────────
 
+/** Current cache version — bump when data shape changes to force rebuild. */
+export const GROWTH_CACHE_VERSION = 2;
+
 export interface GrowthCache {
   headSha: string;
   builtAt: string;
+  cacheVersion?: number;
   snapshots: GrowthSnapshot[];
   moduleAttribution: Record<string, string>;
 }
@@ -885,13 +889,30 @@ export function getHeadSha(projectDir: string): string | null {
 }
 
 /**
+ * Count source modules at a given commit via git ls-tree.
+ * Returns the number of *.ts files in src/ (excluding spikes/).
+ */
+export function countModulesAtCommit(sha: string, projectDir: string): number | null {
+  const output = gitExec(["ls-tree", "--name-only", sha, "src/"], projectDir);
+  if (output === null) return null;
+  const files = output.split("\n").filter(
+    f => f.endsWith(".ts") && !f.includes("spikes/"),
+  );
+  return files.length;
+}
+
+/**
  * Build growth snapshots from git history of CLAUDE.md.
  * Returns per-commit snapshots with module/test counts and commit authorship.
+ * Uses git ls-tree fallback for module counts when CLAUDE.md doesn't contain them.
  */
-export function buildGrowthSnapshots(projectDir: string): GrowthSnapshot[] {
+export function buildGrowthSnapshots(
+  projectDir: string,
+  lsTreeCache?: Map<string, number>,
+): GrowthSnapshot[] {
   // Get commits that touched CLAUDE.md, capped at MAX_GROWTH_COMMITS
   const logOutput = gitExec(
-    ["log", `--max-count=${MAX_GROWTH_COMMITS}`, "--format=%H %aI %ae", "--", "CLAUDE.md"],
+    ["log", `--max-count=${MAX_GROWTH_COMMITS}`, "--format=%H %aI %ce", "--", "CLAUDE.md"],
     projectDir,
   );
   if (!logOutput) return [];
@@ -901,7 +922,7 @@ export function buildGrowthSnapshots(projectDir: string): GrowthSnapshot[] {
 
   // Track cumulative commit counts
   const commitCountOutput = gitExec(
-    ["log", "--format=%aI %ae", "--reverse"],
+    ["log", "--format=%aI %ce", "--reverse"],
     projectDir,
   );
   const commitsByDate = new Map<string, { total: number; human: number; daemon: number }>();
@@ -933,14 +954,32 @@ export function buildGrowthSnapshots(projectDir: string): GrowthSnapshot[] {
     if (!content) continue;
 
     const counts = extractCounts(content);
-    if (!counts) continue;
+
+    // Fallback: use git ls-tree to count src/*.ts files when extractCounts returns null
+    let modules = counts?.modules ?? 0;
+    const tests = counts?.tests ?? 0;
+    if (!counts) {
+      // Check ls-tree cache first, then run git ls-tree
+      if (lsTreeCache?.has(sha)) {
+        modules = lsTreeCache.get(sha)!;
+      } else {
+        const lsCount = countModulesAtCommit(sha, projectDir);
+        if (lsCount !== null) {
+          modules = lsCount;
+          lsTreeCache?.set(sha, lsCount);
+        } else {
+          // Both extractCounts and ls-tree failed — skip this snapshot
+          continue;
+        }
+      }
+    }
 
     const commitInfo = commitsByDate.get(dateStr) ?? { total: 0, human: 0, daemon: 0 };
 
     snapshots.push({
       date: dateStr,
-      modules: counts.modules,
-      tests: counts.tests,
+      modules,
+      tests,
       commits: commitInfo.total,
       humanCommits: commitInfo.human,
       daemonCommits: commitInfo.daemon,
@@ -973,7 +1012,7 @@ export function buildModuleAttribution(projectDir: string): Record<string, strin
   for (const mod of modules) {
     // Find the creating commit's author email
     const email = gitExec(
-      ["log", "--format=%ae", "--diff-filter=A", "--", mod],
+      ["log", "--format=%ce", "--diff-filter=A", "--", mod],
       projectDir,
     );
     if (!email) continue;
@@ -997,21 +1036,28 @@ export function loadOrBuildGrowthCache(
   const cachePath = join(checkpointDir, "growth-cache.json");
   const currentHead = getHeadSha(projectDir);
 
-  // Try to load existing cache
+  // Try to load existing cache — invalidate if version mismatch
   const cached = safeReadJSON<GrowthCache>(cachePath);
-  if (cached && cached.headSha === currentHead && cached.snapshots?.length > 0) {
+  if (
+    cached &&
+    cached.headSha === currentHead &&
+    cached.snapshots?.length > 0 &&
+    (cached.cacheVersion ?? 0) >= GROWTH_CACHE_VERSION
+  ) {
     return { snapshots: cached.snapshots, moduleAttribution: cached.moduleAttribution ?? {} };
   }
 
-  // Build fresh or incremental
-  const snapshots = buildGrowthSnapshots(projectDir);
+  // Build fresh — ls-tree cache is persisted to avoid re-computing on subsequent builds
+  const lsTreeCache = new Map<string, number>();
+  const snapshots = buildGrowthSnapshots(projectDir, lsTreeCache);
   const moduleAttribution = buildModuleAttribution(projectDir);
 
-  // Save cache
+  // Save cache (includes ls-tree results via snapshot module counts)
   if (currentHead) {
     const cache: GrowthCache = {
       headSha: currentHead,
       builtAt: new Date().toISOString(),
+      cacheVersion: GROWTH_CACHE_VERSION,
       snapshots,
       moduleAttribution,
     };
