@@ -1344,7 +1344,7 @@ export function createJobRunner(
       }
 
       // Record pipeline outcome for Oracle-driven composition learning
-      if (nextJob.status === "complete" || nextJob.status === "failed" || nextJob.status === "idle") {
+      if (nextJob.status === "complete" || nextJob.status === "failed") {
         try {
           const outcomeHistoryPath = join(parentCheckpointDir ?? checkpointDir, "pipeline-outcomes.jsonl");
           const allSkills = nextJob.composedFrom ?? nextJob.skills;
