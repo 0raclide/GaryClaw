@@ -46,7 +46,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Oracle Decision Cache: COMPLETE** (2026-03-30) — Sticky answers for repeated Oracle questions. Keyword bag normalization strips variable tokens (paths, numbers, timestamps, quoted strings), sorted dedup keyword set as cache key. 5-hit promotion threshold, warm start from decision-outcomes.md, reflection-based invalidation on failure outcomes. Partial-batch: cached questions resolved at zero cost, uncached sent to Oracle. Per-skill scope. `onCacheEvent` emits hit/miss/invalidated events. Daemon config validation for `oracleCache.enabled` + `oracleCache.minHits`.
 **Per-Skill Cost Attribution: COMPLETE** (2026-03-31) — Per-skill cost aggregation, trend detection (>15% flagging), dashboard formatting, health score integration
 **Oracle Memory Compaction: COMPLETE** (2026-03-31) — Age-gated question compaction via normalizeQuestion(), [compact] prefix, RECENT_KEEP_FULL=10, PATTERNS_BUDGET_TOKENS=2K cap, warmFromOutcomes prefix stripping, 36% size reduction bounded at 7.4K tokens
-- 43 source modules, 216 test files, 3501 tests
+**Live Evolution Dashboard: COMPLETE** (2026-03-31) — HTTP server with SSE for real-time dashboard. Growth pipeline with daemon vs human attribution (committer email), git ls-tree fallback for module counts, versioned growth cache. Module attribution, mutation timeline, activity feed, taste/expertise rendering. CLI `dashboard --serve --port --open`.
+- 44 source modules, 220 test files, 3588 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -187,6 +188,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/prioritize.ts` | Prioritize skill: TODOS.md parsing, overnight goal, oracle context, scoring prompt |
 | `src/worktree.ts` | Git worktree isolation: create, remove, merge, list worktrees for parallel instances, PR creation via gh CLI |
 | `src/dashboard.ts` | Dogfood dashboard: job/oracle/budget aggregation, health score, markdown formatting, `aggregateSkillCostStats`, `SkillCostStats`, `computeSkillCostTrends`, `SkillCostTrend`, `TREND_THRESHOLD_PERCENT`, `TREND_WINDOW_SIZE` |
+| `src/dashboard-server.ts` | Live evolution dashboard HTTP server: SSE streaming, growth pipeline with committer-email daemon attribution, `countModulesAtCommit` ls-tree fallback, versioned `GrowthCache`, module attribution, mutation timeline, activity feed, taste/expertise rendering, file watcher |
 | `src/auto-research.ts` | Auto-research trigger: keyword extraction, topic grouping, freshness-aware enqueue |
 | `src/codebase-summary.ts` | Codebase summary persistence: observation extraction, dedup, token budget, relay formatting |
 | `src/doctor.ts` | Self-diagnostic command: 10 subsystem checks, --fix/--json flags, stale PID detection, orphaned TODO state, stale budget locks, stale auto-fix state, stale project type cache |
