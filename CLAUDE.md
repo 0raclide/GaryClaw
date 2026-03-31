@@ -44,7 +44,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **SDK Failure Segment Retry: COMPLETE** (2026-03-30) — Transient error recovery in orchestrator segment loop. `isTransientError()` reuses `classifyError()` for sdk-bug + infra-issue categories. MAX_SEGMENT_RETRIES=1, 30s abort-aware delay, segment_retry event, preserves all accumulated state (monitor, issue tracker, checkpoints). PerJobCostExceededError excluded from retry.
 **Project Type Awareness: COMPLETE** (2026-03-30) — Deterministic project classification (CLAUDE.md > package.json > file patterns), cached in `.garyclaw/project-type.json`. Injected into Oracle projectContext + skill prompts. Doctor check #10 for stale cache. Bootstrap saves on detection.
 **Oracle Decision Cache: COMPLETE** (2026-03-30) — Sticky answers for repeated Oracle questions. Keyword bag normalization strips variable tokens (paths, numbers, timestamps, quoted strings), sorted dedup keyword set as cache key. 5-hit promotion threshold, warm start from decision-outcomes.md, reflection-based invalidation on failure outcomes. Partial-batch: cached questions resolved at zero cost, uncached sent to Oracle. Per-skill scope. `onCacheEvent` emits hit/miss/invalidated events. Daemon config validation for `oracleCache.enabled` + `oracleCache.minHits`.
-- 43 source modules, 207 test files, 3355 tests
+**Per-Skill Cost Attribution: COMPLETE** (2026-03-31) — Per-skill cost aggregation, trend detection (>15% flagging), dashboard formatting, health score integration
+- 43 source modules, 208 test files, 3377 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -184,7 +185,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/implement.ts` | Implement skill: design doc discovery, review context, prompt builder |
 | `src/prioritize.ts` | Prioritize skill: TODOS.md parsing, overnight goal, oracle context, scoring prompt |
 | `src/worktree.ts` | Git worktree isolation: create, remove, merge, list worktrees for parallel instances, PR creation via gh CLI |
-| `src/dashboard.ts` | Dogfood dashboard: job/oracle/budget aggregation, health score, markdown formatting |
+| `src/dashboard.ts` | Dogfood dashboard: job/oracle/budget aggregation, health score, markdown formatting, `aggregateSkillCostStats`, `SkillCostStats`, `computeSkillCostTrends`, `SkillCostTrend`, `TREND_THRESHOLD_PERCENT`, `TREND_WINDOW_SIZE` |
 | `src/auto-research.ts` | Auto-research trigger: keyword extraction, topic grouping, freshness-aware enqueue |
 | `src/codebase-summary.ts` | Codebase summary persistence: observation extraction, dedup, token budget, relay formatting |
 | `src/doctor.ts` | Self-diagnostic command: 10 subsystem checks, --fix/--json flags, stale PID detection, orphaned TODO state, stale budget locks, stale auto-fix state, stale project type cache |
@@ -413,6 +414,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/dashboard-rate-limit.test.ts` | 5 | Dashboard rate limit display: rate_limited job aggregation, formatting |
 | `test/dashboard-post-merge.test.ts` | 11 | Dashboard post-merge: revert aggregation, health score reweighting with reverts, revert rate formatting |
 | `test/dashboard-auto-fix.test.ts` | 8 | Dashboard auto-fix stats: aggregation and formatting of auto-fix post-merge-revert job statistics |
+| `test/dashboard-skill-costs.test.ts` | 22 | aggregateSkillCostStats: empty, filtering, aggregation, sorting, min/max; computeSkillCostTrends: windows, flagging, thresholds, edge cases; formatting, trends, health score, wiring |
 | `test/doctor.regression-1.test.ts` | 10 | Doctor regression: checkOrphanedTodoState coverage |
 | `test/doctor-injection.test.ts` | 11 | Doctor injection: hasInjectionPatterns via checkOracleMemory, all 8 patterns, false positives, corrupt metrics, circuit breaker, --fix |
 | `test/evaluate-claims.test.ts` | 26 | Claim verification: extractClaudeMdClaims, verifyClaudeMdClaims |
@@ -472,6 +474,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/todo-state-pr.test.ts` | 4 | TODO state pr-created lifecycle: position between qa-complete and merged, getStartSkill skip |
 | `test/worktree-pr.test.ts` | 26 | createPullRequest via mocked gh, buildPrBody formatting, truncation, isGhAvailable, malformed URL guard, edge cases |
 | `test/dashboard-pr-stats.test.ts` | 7 | Dashboard PR stats: aggregation and formatting of PR-created merge audit entries |
+| `test/dashboard-skill-costs.test.ts` | 22 | aggregateSkillCostStats: empty, filtering, aggregation, sorting, min/max; computeSkillCostTrends: windows, flagging, thresholds, edge cases; formatting, trends, health score, wiring |
 
 ---
 

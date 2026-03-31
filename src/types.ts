@@ -356,6 +356,7 @@ export interface Job {
   compositionMethod?: "static" | "oracle";  // How pipeline was composed: static table or oracle recommendation
   skipComposition?: boolean;  // true = bypass composePipeline() entirely (deterministic --todo override)
   autoFixMergeSha?: string;   // Original merge SHA that was reverted, used for cost accumulation in auto-fix jobs
+  skillCosts?: Record<string, number>;  // skill name → cost USD (populated after pipeline completion)
 }
 
 export interface DaemonState {
@@ -607,6 +608,25 @@ export interface DashboardData {
     staticFailureRate: number;        // Failure rate for static-only jobs (0-100)
     skipRiskScores: Record<string, number>;  // skill name -> skip risk score (0-1)
     circuitBreaker: "ok" | "tripped";
+  };
+  skillCosts: {
+    skills: Array<{
+      skillName: string;
+      totalCostUsd: number;
+      runCount: number;
+      avgCostUsd: number;
+      minCostUsd: number;
+      maxCostUsd: number;
+    }>;
+    trends: Array<{
+      skillName: string;
+      recentAvgCostUsd: number;
+      previousAvgCostUsd: number;
+      changePercent: number;
+      flagged: boolean;
+      recentRunCount: number;
+      previousRunCount: number;
+    }>;
   };
   instances: string[];           // Active instance names
 }

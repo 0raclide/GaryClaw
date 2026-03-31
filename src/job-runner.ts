@@ -1677,6 +1677,13 @@ function buildCallbacks(
           stats.heavyToolActivations++;
         }
       }
+      // Collect per-skill costs from pipeline_skill_complete events (zero I/O)
+      if (event.type === "pipeline_skill_complete") {
+        if (!job.skillCosts) {
+          job.skillCosts = {};
+        }
+        job.skillCosts[event.skillName] = event.costUsd;
+      }
       // Log key events
       if (event.type === "error") {
         deps.log("error", `[${job.id}] ${event.message}`);

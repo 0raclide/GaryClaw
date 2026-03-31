@@ -89,6 +89,149 @@ export function aggregateJobStats(jobs: Job[], todayStr?: string): DashboardData
 }
 
 /**
+ * Per-skill cost attribution — aggregated from Job.skillCosts populated by pipeline_skill_complete events.
+ */
+export interface SkillCostStats {
+  skillName: string;
+  totalCostUsd: number;
+  runCount: number;
+  avgCostUsd: number;
+  minCostUsd: number;
+  maxCostUsd: number;
+}
+
+export function aggregateSkillCostStats(
+  jobs: Job[],
+  todayStr?: string,
+): SkillCostStats[] {
+  const today = todayStr ?? new Date().toISOString().slice(0, 10);
+  const todayJobs = jobs.filter(
+    (j) => j.enqueuedAt.startsWith(today) && j.status === "complete" && j.skillCosts,
+  );
+
+  const bySkill = new Map<string, number[]>();
+  for (const job of todayJobs) {
+    for (const [skill, cost] of Object.entries(job.skillCosts!)) {
+      const existing = bySkill.get(skill) ?? [];
+      existing.push(cost);
+      bySkill.set(skill, existing);
+    }
+  }
+
+  return Array.from(bySkill.entries())
+    .map(([skillName, costs]) => ({
+      skillName,
+      totalCostUsd: costs.reduce((s, c) => s + c, 0),
+      runCount: costs.length,
+      avgCostUsd: costs.reduce((s, c) => s + c, 0) / costs.length,
+      minCostUsd: Math.min(...costs),
+      maxCostUsd: Math.max(...costs),
+    }))
+    .sort((a, b) => b.totalCostUsd - a.totalCostUsd);
+}
+
+// ── Per-skill cost trend detection ──────────────────────────────
+
+export interface SkillCostTrend {
+  skillName: string;
+  recentAvgCostUsd: number;
+  previousAvgCostUsd: number;
+  changePercent: number;
+  flagged: boolean;
+  recentRunCount: number;
+  previousRunCount: number;
+}
+
+export const TREND_THRESHOLD_PERCENT = 15;
+export const TREND_WINDOW_SIZE = 10;
+
+/**
+ * Aggregate per-skill avg cost for a set of jobs.
+ * Returns Map<skillName, { avg, count }>.
+ */
+function aggregateWindow(
+  jobs: Job[],
+): Map<string, { avg: number; count: number }> {
+  const bySkill = new Map<string, number[]>();
+  for (const job of jobs) {
+    if (!job.skillCosts) continue;
+    for (const [skill, cost] of Object.entries(job.skillCosts)) {
+      const existing = bySkill.get(skill) ?? [];
+      existing.push(cost);
+      bySkill.set(skill, existing);
+    }
+  }
+  const result = new Map<string, { avg: number; count: number }>();
+  for (const [skill, costs] of bySkill) {
+    result.set(skill, {
+      avg: costs.reduce((s, c) => s + c, 0) / costs.length,
+      count: costs.length,
+    });
+  }
+  return result;
+}
+
+/**
+ * Compute per-skill cost trends comparing recent vs previous job windows.
+ * All-time (not filtered to today). Returns trends sorted by changePercent desc.
+ */
+export function computeSkillCostTrends(jobs: Job[]): SkillCostTrend[] {
+  // Filter to complete jobs with skillCosts
+  const eligible = jobs.filter(
+    (j) => j.status === "complete" && j.skillCosts,
+  );
+
+  // Sort by completedAt descending, fallback to enqueuedAt
+  eligible.sort((a, b) => {
+    const aTime = a.completedAt ?? a.enqueuedAt;
+    const bTime = b.completedAt ?? b.enqueuedAt;
+    return bTime.localeCompare(aTime);
+  });
+
+  const recent = eligible.slice(0, TREND_WINDOW_SIZE);
+  const previous = eligible.slice(TREND_WINDOW_SIZE, TREND_WINDOW_SIZE * 2);
+
+  // Need at least 1 job in previous window for comparison
+  if (previous.length === 0) return [];
+
+  const recentAgg = aggregateWindow(recent);
+  const previousAgg = aggregateWindow(previous);
+
+  const trends: SkillCostTrend[] = [];
+  for (const [skill, recentData] of recentAgg) {
+    const prevData = previousAgg.get(skill);
+    if (!prevData) continue; // skill only in recent window — skip
+
+    // Division by zero guard
+    if (prevData.avg === 0) {
+      trends.push({
+        skillName: skill,
+        recentAvgCostUsd: recentData.avg,
+        previousAvgCostUsd: 0,
+        changePercent: 0,
+        flagged: false,
+        recentRunCount: recentData.count,
+        previousRunCount: prevData.count,
+      });
+      continue;
+    }
+
+    const changePercent = ((recentData.avg - prevData.avg) / prevData.avg) * 100;
+    trends.push({
+      skillName: skill,
+      recentAvgCostUsd: recentData.avg,
+      previousAvgCostUsd: prevData.avg,
+      changePercent,
+      flagged: changePercent > TREND_THRESHOLD_PERCENT,
+      recentRunCount: recentData.count,
+      previousRunCount: prevData.count,
+    });
+  }
+
+  return trends.sort((a, b) => b.changePercent - a.changePercent);
+}
+
+/**
  * Aggregate oracle statistics from metrics.
  */
 export function aggregateOracleStats(metrics: OracleMetrics): DashboardData["oracle"] {
@@ -406,13 +549,22 @@ export function computeHealthScore(
     ? 100
     : mh.successRate;
 
-  const score = Math.round(
+  let score = Math.round(
     jobScore * 0.35 +
     oracleScore * 0.20 +
     budgetHeadroom * 0.20 +
     circuitBreakerScore * 0.10 +
     mergeScore * 0.15,
   );
+
+  // Severe cost trend concern: skills with >30% cost increase
+  const concerns: string[] = [];
+  const flaggedCount = data.skillCosts?.trends?.filter(t => t.changePercent > 30).length ?? 0;
+  if (flaggedCount > 0) {
+    concerns.push(`${flaggedCount} skill(s) with >30% cost increase`);
+    score -= flaggedCount * 2;
+    score = Math.max(0, score);
+  }
 
   // Top concern selection (first matching rule wins)
   let topConcern: string | null = null;
@@ -626,6 +778,39 @@ export function formatDashboard(data: DashboardData): string {
     );
   }
 
+  // Skill Cost Breakdown (only when at least one job has skillCosts)
+  if (data.skillCosts && data.skillCosts.skills.length > 0) {
+    lines.push(
+      "",
+      "## Skill Cost Breakdown (today)",
+      "",
+      "| Skill | Runs | Avg Cost | Min | Max | Total |",
+      "|-------|------|----------|-----|-----|-------|",
+    );
+    for (const s of data.skillCosts.skills) {
+      lines.push(
+        `| ${s.skillName} | ${s.runCount} | $${s.avgCostUsd.toFixed(2)} | $${s.minCostUsd.toFixed(2)} | $${s.maxCostUsd.toFixed(2)} | $${s.totalCostUsd.toFixed(2)} |`,
+      );
+    }
+
+    // Cost Trends sub-section (only when flagged trends exist)
+    const flaggedTrends = data.skillCosts.trends?.filter(t => t.flagged) ?? [];
+    if (flaggedTrends.length > 0) {
+      lines.push(
+        "",
+        "### Cost Trends (flagged >15% increase)",
+        "",
+        "| Skill | Recent Avg | Previous Avg | Change | Runs (R/P) |",
+        "|-------|-----------|-------------|--------|------------|",
+      );
+      for (const t of flaggedTrends) {
+        lines.push(
+          `| ${t.skillName} | $${t.recentAvgCostUsd.toFixed(2)} | $${t.previousAvgCostUsd.toFixed(2)} | +${t.changePercent.toFixed(1)}% | ${t.recentRunCount}/${t.previousRunCount} |`,
+        );
+      }
+    }
+  }
+
   // Budget section
   const remainingPct =
     data.budget.dailyLimitUsd > 0
@@ -695,7 +880,12 @@ export function buildDashboard(
   // Pipeline composition intelligence from outcome history
   const compositionIntelligence = aggregateCompositionIntelligence(pipelineOutcomes ?? []);
 
-  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, mergeHealth, composition, compositionIntelligence, instances });
+  // Per-skill cost attribution
+  const skillCostsList = aggregateSkillCostStats(state.jobs, todayStr);
+  const skillCostTrends = computeSkillCostTrends(state.jobs);
+  const skillCosts = { skills: skillCostsList, trends: skillCostTrends };
+
+  const { score, topConcern } = computeHealthScore({ jobs, oracle, budget, adaptiveTurns, bootstrapEnrichment, mergeHealth, composition, compositionIntelligence, skillCosts, instances });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -709,6 +899,7 @@ export function buildDashboard(
     mergeHealth,
     composition,
     compositionIntelligence,
+    skillCosts,
     instances,
   };
 }
