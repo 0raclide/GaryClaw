@@ -393,6 +393,35 @@ export function loadDashboardData(projectDir: string, checkpointDir: string): Da
   return buildDashboard(state, metrics, globalBudget, config, undefined, mergeAuditEntries, pipelineOutcomes, mergeRevertEntries);
 }
 
+/** Max characters for taste/expertise content in API response. */
+export const ORACLE_MIND_CONTENT_CAP = 10_000;
+
+/**
+ * Load taste profile and domain expertise content for the Mind tab.
+ * Taste: prefer global (user-wide style) over project-specific.
+ * Expertise: prefer project (domain-specific) over global.
+ * Fail-open: missing files return empty strings.
+ */
+export function loadOracleMindContent(projectDir: string): { tasteProfile: string; domainExpertise: string } {
+  const memConfig = defaultMemoryConfig(projectDir);
+
+  // Taste: prefer global (user-wide preferences) over project-specific
+  const tasteProfile = (
+    safeReadText(join(memConfig.globalDir, "taste.md"))
+    ?? safeReadText(join(memConfig.projectDir, "taste.md"))
+    ?? ""
+  ).slice(0, ORACLE_MIND_CONTENT_CAP);
+
+  // Expertise: prefer project (domain knowledge specific to this codebase) over global
+  const domainExpertise = (
+    safeReadText(join(memConfig.projectDir, "domain-expertise.md"))
+    ?? safeReadText(join(memConfig.globalDir, "domain-expertise.md"))
+    ?? ""
+  ).slice(0, ORACLE_MIND_CONTENT_CAP);
+
+  return { tasteProfile, domainExpertise };
+}
+
 /**
  * Load paginated oracle decisions from decision-outcomes.md.
  */
@@ -599,8 +628,9 @@ export function createRequestHandler(deps: RequestHandlerDeps) {
     if (pathname === "/api/state") {
       try {
         const data = loadDashboardDataFn(projectDir, checkpointDir);
+        const mindContent = loadOracleMindContent(projectDir);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(data));
+        res.end(JSON.stringify({ ...data, ...mindContent }));
       } catch (err) {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Failed to load dashboard data" }));

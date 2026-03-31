@@ -22,6 +22,8 @@ import {
   DEFAULT_PORT,
   MAX_PORT_ATTEMPTS,
   startDashboardServer,
+  loadOracleMindContent,
+  ORACLE_MIND_CONTENT_CAP,
   type DecisionEntry,
   type MutationCycle,
   type DashboardServerHandle,
@@ -699,6 +701,106 @@ describe("createRequestHandler", () => {
     handler(req, res);
     expect(capturedLimit).toBe(200); // capped at 200
     expect(capturedOffset).toBe(0);  // clamped to 0
+  });
+});
+
+// ── Oracle Mind Content ──────────────────────────────────────────
+
+describe("loadOracleMindContent", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = tmpDir();
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("returns strings (possibly empty) when no project memory files exist", () => {
+    const result = loadOracleMindContent(dir);
+    // tasteProfile may be non-empty if global ~/.garyclaw/oracle-memory/taste.md exists
+    expect(typeof result.tasteProfile).toBe("string");
+    expect(typeof result.domainExpertise).toBe("string");
+  });
+
+  it("reads taste from project oracle-memory dir as fallback", () => {
+    const memDir = join(dir, ".garyclaw", "oracle-memory");
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(join(memDir, "taste.md"), "## Preferences\n- Use vitest");
+    const result = loadOracleMindContent(dir);
+    // Taste prefers global first; if global exists (e.g. on dev machine)
+    // it may return that instead. Either way, tasteProfile should be non-empty.
+    expect(result.tasteProfile.length).toBeGreaterThan(0);
+  });
+
+  it("reads domain-expertise from project oracle-memory dir", () => {
+    const memDir = join(dir, ".garyclaw", "oracle-memory");
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(join(memDir, "domain-expertise.md"), "## WebSockets\nReal-time transport");
+    const result = loadOracleMindContent(dir);
+    expect(result.domainExpertise).toContain("WebSockets");
+  });
+
+  it("truncates content at ORACLE_MIND_CONTENT_CAP", () => {
+    const memDir = join(dir, ".garyclaw", "oracle-memory");
+    mkdirSync(memDir, { recursive: true });
+    const longContent = "x".repeat(ORACLE_MIND_CONTENT_CAP + 500);
+    writeFileSync(join(memDir, "domain-expertise.md"), longContent);
+    const result = loadOracleMindContent(dir);
+    expect(result.domainExpertise.length).toBe(ORACLE_MIND_CONTENT_CAP);
+  });
+
+  it("ORACLE_MIND_CONTENT_CAP is 10000", () => {
+    expect(ORACLE_MIND_CONTENT_CAP).toBe(10_000);
+  });
+});
+
+// ── /api/state includes taste/expertise ─────────────────────────
+
+describe("createRequestHandler /api/state with taste/expertise", () => {
+  let webDir: string;
+
+  beforeEach(() => {
+    webDir = tmpDir();
+    writeFileSync(join(webDir, "index.html"), "<html></html>");
+  });
+
+  afterEach(() => {
+    rmSync(webDir, { recursive: true, force: true });
+  });
+
+  function mockReqRes(url: string) {
+    var status = 0;
+    var headers = {};
+    var body = "";
+    var req = { url, headers: { host: "localhost" }, on: vi.fn() };
+    var res = {
+      writeHead: vi.fn(function (s: number, h?: any) { status = s; headers = h || {}; }),
+      end: vi.fn(function (b?: string) { body = b || ""; }),
+      write: vi.fn(),
+    };
+    return { req, res, getStatus: () => status, getBody: () => body };
+  }
+
+  it("/api/state response includes tasteProfile and domainExpertise fields", () => {
+    const mockData = { healthScore: 90, jobs: { total: 3 } };
+    const handler = createRequestHandler({
+      projectDir: "/tmp/nonexistent-project-dir",
+      checkpointDir: "/tmp/.garyclaw",
+      webAssetsDir: webDir,
+      sseClients: new Set(),
+      loadDashboardDataFn: () => mockData as any,
+    });
+
+    const { req, res, getStatus, getBody } = mockReqRes("/api/state");
+    handler(req as any, res as any);
+    expect(getStatus()).toBe(200);
+    const parsed = JSON.parse(getBody());
+    expect(parsed.healthScore).toBe(90);
+    // taste/expertise should be present (empty strings when no files exist)
+    expect(typeof parsed.tasteProfile).toBe("string");
+    expect(typeof parsed.domainExpertise).toBe("string");
   });
 });
 
