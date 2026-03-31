@@ -703,22 +703,20 @@
       } catch (e) { /* ignore */ }
     });
 
-    source.addEventListener("taste_update", function () {
-      addActivityEntry("\u2728", "Taste profile updated", "taste_update");
-      // Re-fetch /api/state to get fresh taste content
+    function handleOracleFileUpdate(icon, text, eventType) {
+      addActivityEntry(icon, text, eventType);
       fetch("/api/state").then(function (r) { return r.json(); }).then(function (data) {
         state.dashboardData = data;
         if (state.activeTab === "mind") renderOracleMind();
       }).catch(function () { /* best-effort */ });
+    }
+
+    source.addEventListener("taste_update", function () {
+      handleOracleFileUpdate("\u2728", "Taste profile updated", "taste_update");
     });
 
     source.addEventListener("expertise_update", function () {
-      addActivityEntry("\uD83D\uDCDA", "Domain expertise updated", "expertise_update");
-      // Re-fetch /api/state to get fresh expertise content
-      fetch("/api/state").then(function (r) { return r.json(); }).then(function (data) {
-        state.dashboardData = data;
-        if (state.activeTab === "mind") renderOracleMind();
-      }).catch(function () { /* best-effort */ });
+      handleOracleFileUpdate("\uD83D\uDCDA", "Domain expertise updated", "expertise_update");
     });
   }
 
