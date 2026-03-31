@@ -8,7 +8,7 @@ Push code. Go to sleep. GaryClaw runs QA, remembers what failed last Tuesday, ap
 
 GaryClaw wraps Claude Code in an external harness that monitors context usage, checkpoints state, and automatically relays work across fresh sessions — making skills effectively context-infinite. On top of that foundation, it adds autonomous decision-making (Oracle with 7 principles + memory), a persistent background daemon with parallel instances, and a self-improvement loop that prioritizes its own backlog, designs solutions, implements them, reviews the implementation, and fixes bugs — all without human intervention.
 
-**The meta-story:** 770 commits. 43 source modules. The daemon built 22 of them itself — it designed its own oracle, built its own skill selection, QA'd its own code, and invented new features when the backlog ran dry. 96% of commits are daemon-generated. This isn't a tool that runs tasks — it's a system that evolves.
+**The meta-story:** 782 commits. 43 source modules. The daemon built 22 of them itself — it designed its own oracle, built its own skill selection, QA'd its own code, and invented new features when the backlog ran dry. 96% of commits are daemon-generated. This isn't a tool that runs tasks — it's a system that evolves.
 
 ---
 
@@ -45,7 +45,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Project Type Awareness: COMPLETE** (2026-03-30) — Deterministic project classification (CLAUDE.md > package.json > file patterns), cached in `.garyclaw/project-type.json`. Injected into Oracle projectContext + skill prompts. Doctor check #10 for stale cache. Bootstrap saves on detection.
 **Oracle Decision Cache: COMPLETE** (2026-03-30) — Sticky answers for repeated Oracle questions. Keyword bag normalization strips variable tokens (paths, numbers, timestamps, quoted strings), sorted dedup keyword set as cache key. 5-hit promotion threshold, warm start from decision-outcomes.md, reflection-based invalidation on failure outcomes. Partial-batch: cached questions resolved at zero cost, uncached sent to Oracle. Per-skill scope. `onCacheEvent` emits hit/miss/invalidated events. Daemon config validation for `oracleCache.enabled` + `oracleCache.minHits`.
 **Per-Skill Cost Attribution: COMPLETE** (2026-03-31) — Per-skill cost aggregation, trend detection (>15% flagging), dashboard formatting, health score integration
-- 43 source modules, 209 test files, 3384 tests
+- 43 source modules, 213 test files, 3420 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -336,8 +336,9 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/reflection-pipeline-outcome.test.ts` | 19 | buildPipelineOutcome: success/acceptable/failure, skipped skills, compositionMethod; countPipelineOutcomes: null/empty/positive/mixed |
 | `test/reflection.regression-1.test.ts` | 4 | Reflection regression: edge cases in outcome mapping |
 | `test/researcher.test.ts` | 35 | isTopicStale, parseDomainSections, mergeDomainSections, buildResearchPrompt, canUseTool, runResearch |
-| `test/prioritize.test.ts` | 115 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact, per-category stats injection, Wow factor weights, filterOpenTodos, budget constants, addBudgetedSection, budget enforcement, truncateSection, prioritize_prompt_size event |
+| `test/prioritize.test.ts` | 122 | parseTodoItems, loadOvernightGoal, loadOracleContext, formatPipelineContext, buildPrioritizePrompt, aggregateFailurePatterns, getDecisionQualityTrends, measureRecentImpact, per-category stats injection, Wow factor weights, filterOpenTodos, budget constants, addBudgetedSection, budget enforcement, truncateSection, prioritize_prompt_size event, extractCompletedTitles |
 | `test/prioritize-review-findings.test.ts` | 11 | loadUnresolvedReviewFindings: flat/instance layouts, action keywords, skip filters, review skill gating, job dir limit, error handling |
+| `test/prioritize-validation-gate.test.ts` | 18 | isPickValid: exact/fuzzy/substring match, case insensitivity, short-title 20-char guard, Levenshtein boundary at 0.3, parseAlternativeTitles, integration with extractCompletedTitles |
 | `test/prioritize.regression-1.test.ts` | 8 | Budget keys vision/capabilities split, truncateSection marker for no-newline content, filterOpenTodos all-struck-through fallback |
 | `test/worktree.test.ts` | 28 | createWorktree, removeWorktree, mergeWorktreeBranch, listWorktrees, getWorktreePath, resolveBaseBranch, stash/pop, rebase merge |
 | `test/dashboard.test.ts` | 54 | aggregateJobStats, aggregateOracleStats, aggregateBudgetStats, aggregateAdaptiveTurnsStats, computeHealthScore, formatDashboard, buildDashboard, formatDuration |
@@ -397,6 +398,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/cli.regression-2.test.ts` | 5 | CLI regression: formatEvent missing bootstrap_quality_check/recheck cases |
 | `test/cli.regression-3.test.ts` | 3 | CLI regression: formatEvent pipeline_oracle_adjustment kept_skipped variant |
 | `test/cli.regression-4.test.ts` | 5 | CLI regression: formatEvent oracle_cache_hit/miss/invalidated cases, question truncation |
+| `test/cli.regression-5.test.ts` | 2 | CLI regression: formatEvent priority_pick_rejected/exhausted cases |
 | `test/oracle-cache.test.ts` | 41 | normalizeQuestion, normalizeOptions, computeCacheKey, OracleCache: record, lookup, minHits threshold, warmFromOutcomes, invalidation, stats |
 | `test/ask-handler-cache.test.ts` | 9 | Cache integration: cache hit skips Oracle, cache miss falls through, partial-batch, events, backward compat, human mode unaffected |
 | `test/daemon-ipc-todo.test.ts` | 4 | buildIPCHandler todoTitle passthrough: skipComposition, claimedTodoTitle, designDoc combo, absent |
@@ -415,7 +417,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/dashboard-post-merge.test.ts` | 11 | Dashboard post-merge: revert aggregation, health score reweighting with reverts, revert rate formatting |
 | `test/dashboard-auto-fix.test.ts` | 8 | Dashboard auto-fix stats: aggregation and formatting of auto-fix post-merge-revert job statistics |
 | `test/dashboard-skill-costs.test.ts` | 25 | aggregateSkillCostStats: empty, filtering, aggregation, sorting, min/max; computeSkillCostTrends: windows, flagging, thresholds, negative changePercent, edge cases; formatting, trends, health score, wiring, topConcern |
-| `test/job-runner-skill-costs.test.ts` | 5 | Job runner skill cost collection: pipeline_skill_complete event wiring, skillCosts initialization, overwrite on duplicate, no events → undefined |
+| `test/dashboard-priority-rejections.test.ts` | 6 | Dashboard priority rejection stats: aggregation and formatting of validation gate rejection events |
+| `test/job-runner-skill-costs.test.ts` | 4 | Job runner skill cost collection: pipeline_skill_complete event wiring, skillCosts initialization, overwrite on duplicate, no events → undefined |
 | `test/doctor.regression-1.test.ts` | 10 | Doctor regression: checkOrphanedTodoState coverage |
 | `test/doctor-injection.test.ts` | 11 | Doctor injection: hasInjectionPatterns via checkOracleMemory, all 8 patterns, false positives, corrupt metrics, circuit breaker, --fix |
 | `test/evaluate-claims.test.ts` | 26 | Claim verification: extractClaudeMdClaims, verifyClaudeMdClaims |
@@ -434,8 +437,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-auth-hold.test.ts` | 10 | Auth failure hold: rate_limited on auth error, 30-min fallback, global budget propagation, MIN_COST_FOR_REENQUEUE spin loop prevention |
 | `test/job-runner.regression-4.test.ts` | 7 | Job runner regression: parsePriorityPickTitle edge cases |
 | `test/job-runner.regression-5.test.ts` | 4 | Job runner regression: backward compat missing config.merge |
-| `test/job-runner-skill-costs.test.ts` | 5 | Job runner skill cost collection: pipeline_skill_complete event populates Job.skillCosts |
 | `test/job-runner-skip-composition.test.ts` | 3 | skipComposition bypass: flag preservation, original skills retention, composedFrom not set |
+| `test/job-runner-validation-gate.test.ts` | 3 | Validation gate wiring: rejected pick falls through to alternative, all picks exhausted aborts pipeline gracefully, PriorityPickExhaustedError export |
 | `test/job-runner.regression-6.test.ts` | 2 | Job runner regression: 'continuous' trigger source validity on Job.triggeredBy |
 | `test/job-runner.regression-7.test.ts` | 2 | Job runner regression: 'daemon-crash' must be valid FailureCategory |
 | `test/job-runner.regression-8.test.ts` | 2 | Job runner regression: readTodoState import resolves and round-trips state |
