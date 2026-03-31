@@ -311,6 +311,7 @@ export interface DaemonConfig {
   };
   autoResearch?: AutoResearchConfig;
   oracleCache?: OracleCacheConfig;
+  onEvent?: (event: OrchestratorEvent) => void;  // Optional external event listener (e.g., CLI display)
 }
 
 export type TriggerConfig = GitPollTrigger | CronTrigger;
