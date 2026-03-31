@@ -323,7 +323,7 @@ function defaultDaemonConfig(projectDir: string): DaemonConfig {
     projectDir,
     skills: ["prioritize", "implement", "qa"],
     budget: {
-      dailyLimitUsd: 1000,
+      dailyCostLimitUsd: 1000,
       perJobCostLimitUsd: 10,
       maxJobsPerDay: 100,
     },
