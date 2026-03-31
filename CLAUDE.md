@@ -45,7 +45,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Project Type Awareness: COMPLETE** (2026-03-30) — Deterministic project classification (CLAUDE.md > package.json > file patterns), cached in `.garyclaw/project-type.json`. Injected into Oracle projectContext + skill prompts. Doctor check #10 for stale cache. Bootstrap saves on detection.
 **Oracle Decision Cache: COMPLETE** (2026-03-30) — Sticky answers for repeated Oracle questions. Keyword bag normalization strips variable tokens (paths, numbers, timestamps, quoted strings), sorted dedup keyword set as cache key. 5-hit promotion threshold, warm start from decision-outcomes.md, reflection-based invalidation on failure outcomes. Partial-batch: cached questions resolved at zero cost, uncached sent to Oracle. Per-skill scope. `onCacheEvent` emits hit/miss/invalidated events. Daemon config validation for `oracleCache.enabled` + `oracleCache.minHits`.
 **Per-Skill Cost Attribution: COMPLETE** (2026-03-31) — Per-skill cost aggregation, trend detection (>15% flagging), dashboard formatting, health score integration
-- 43 source modules, 208 test files, 3377 tests
+- 43 source modules, 209 test files, 3382 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -414,7 +414,8 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/dashboard-rate-limit.test.ts` | 5 | Dashboard rate limit display: rate_limited job aggregation, formatting |
 | `test/dashboard-post-merge.test.ts` | 11 | Dashboard post-merge: revert aggregation, health score reweighting with reverts, revert rate formatting |
 | `test/dashboard-auto-fix.test.ts` | 8 | Dashboard auto-fix stats: aggregation and formatting of auto-fix post-merge-revert job statistics |
-| `test/dashboard-skill-costs.test.ts` | 22 | aggregateSkillCostStats: empty, filtering, aggregation, sorting, min/max; computeSkillCostTrends: windows, flagging, thresholds, edge cases; formatting, trends, health score, wiring |
+| `test/dashboard-skill-costs.test.ts` | 25 | aggregateSkillCostStats: empty, filtering, aggregation, sorting, min/max; computeSkillCostTrends: windows, flagging, thresholds, negative changePercent, edge cases; formatting, trends, health score, wiring, topConcern |
+| `test/job-runner-skill-costs.test.ts` | 5 | Job runner skill cost collection: pipeline_skill_complete event wiring, skillCosts initialization, overwrite on duplicate, no events → undefined |
 | `test/doctor.regression-1.test.ts` | 10 | Doctor regression: checkOrphanedTodoState coverage |
 | `test/doctor-injection.test.ts` | 11 | Doctor injection: hasInjectionPatterns via checkOracleMemory, all 8 patterns, false positives, corrupt metrics, circuit breaker, --fix |
 | `test/evaluate-claims.test.ts` | 26 | Claim verification: extractClaudeMdClaims, verifyClaudeMdClaims |
@@ -433,6 +434,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/job-runner-auth-hold.test.ts` | 10 | Auth failure hold: rate_limited on auth error, 30-min fallback, global budget propagation, MIN_COST_FOR_REENQUEUE spin loop prevention |
 | `test/job-runner.regression-4.test.ts` | 7 | Job runner regression: parsePriorityPickTitle edge cases |
 | `test/job-runner.regression-5.test.ts` | 4 | Job runner regression: backward compat missing config.merge |
+| `test/job-runner-skill-costs.test.ts` | 5 | Job runner skill cost collection: pipeline_skill_complete event populates Job.skillCosts |
 | `test/job-runner-skip-composition.test.ts` | 3 | skipComposition bypass: flag preservation, original skills retention, composedFrom not set |
 | `test/job-runner.regression-6.test.ts` | 2 | Job runner regression: 'continuous' trigger source validity on Job.triggeredBy |
 | `test/job-runner.regression-7.test.ts` | 2 | Job runner regression: 'daemon-crash' must be valid FailureCategory |
@@ -474,7 +476,6 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/todo-state-pr.test.ts` | 4 | TODO state pr-created lifecycle: position between qa-complete and merged, getStartSkill skip |
 | `test/worktree-pr.test.ts` | 26 | createPullRequest via mocked gh, buildPrBody formatting, truncation, isGhAvailable, malformed URL guard, edge cases |
 | `test/dashboard-pr-stats.test.ts` | 7 | Dashboard PR stats: aggregation and formatting of PR-created merge audit entries |
-| `test/dashboard-skill-costs.test.ts` | 22 | aggregateSkillCostStats: empty, filtering, aggregation, sorting, min/max; computeSkillCostTrends: windows, flagging, thresholds, edge cases; formatting, trends, health score, wiring |
 
 ---
 

@@ -316,6 +316,39 @@ describe("computeSkillCostTrends", () => {
     expect(Number.isFinite(trends[0].changePercent)).toBe(true);
   });
 
+  it("handles negative changePercent (cost decrease) without flagging", () => {
+    const jobs: Job[] = [];
+    // Recent 10: implement costs $1.00 each (decreased)
+    for (let i = 0; i < TREND_WINDOW_SIZE; i++) {
+      jobs.push(makeJob({
+        id: `recent-${i}`,
+        completedAt: `2026-03-31T${String(10 + i).padStart(2, "0")}:00:00Z`,
+        skillCosts: { implement: 1.0, qa: 3.0 },
+      }));
+    }
+    // Previous 10: implement costs $2.00 each
+    for (let i = 0; i < TREND_WINDOW_SIZE; i++) {
+      jobs.push(makeJob({
+        id: `prev-${i}`,
+        completedAt: `2026-03-20T${String(10 + i).padStart(2, "0")}:00:00Z`,
+        skillCosts: { implement: 2.0, qa: 1.0 },
+      }));
+    }
+    const trends = computeSkillCostTrends(jobs);
+    // qa increased +200%, implement decreased -50%
+    const impl = trends.find(t => t.skillName === "implement")!;
+    const qa = trends.find(t => t.skillName === "qa")!;
+
+    expect(impl.changePercent).toBe(-50);
+    expect(impl.flagged).toBe(false); // negative is below threshold
+    expect(qa.changePercent).toBe(200);
+    expect(qa.flagged).toBe(true);
+
+    // Sort: decreasing costs should be at the bottom (sorted desc by changePercent)
+    expect(trends[0].skillName).toBe("qa");       // +200%
+    expect(trends[1].skillName).toBe("implement"); // -50%
+  });
+
   it("uses completedAt for sort order, falls back to enqueuedAt", () => {
     const jobs: Job[] = [];
     // Recent: have completedAt
@@ -373,6 +406,34 @@ describe("formatDashboard skill costs", () => {
     };
     const output = formatDashboard(data);
     expect(output).not.toContain("## Skill Cost Breakdown");
+  });
+
+  it("formats positive changePercent with + prefix on flagged trends", () => {
+    const data: DashboardData = {
+      ...makeMinimalHealthData(),
+      healthScore: 85,
+      topConcern: null,
+      generatedAt: "2026-03-31T12:00:00Z",
+      skillCosts: {
+        skills: [
+          { skillName: "implement", totalCostUsd: 4.0, runCount: 2, avgCostUsd: 2.0, minCostUsd: 1.5, maxCostUsd: 2.5 },
+        ],
+        trends: [
+          {
+            skillName: "implement",
+            recentAvgCostUsd: 2.0,
+            previousAvgCostUsd: 1.0,
+            changePercent: 100,
+            flagged: true,
+            recentRunCount: 10,
+            previousRunCount: 10,
+          },
+        ],
+      },
+    };
+    const output = formatDashboard(data);
+    // Positive trends should show "+" prefix
+    expect(output).toContain("+100.0%");
   });
 
   it("shows flagged trends section", () => {
@@ -480,5 +541,27 @@ describe("computeHealthScore with skill cost trends", () => {
 
     // 2 flagged skills * 2 points each = 4 point deduction
     expect(withoutTrends.score - withTrends.score).toBe(4);
+  });
+
+  it("surfaces cost trend concern as topConcern when no higher-priority concerns", () => {
+    const base = makeMinimalHealthData();
+    const { topConcern } = computeHealthScore({
+      ...base,
+      skillCosts: {
+        skills: [],
+        trends: [
+          {
+            skillName: "implement",
+            recentAvgCostUsd: 2.0,
+            previousAvgCostUsd: 1.0,
+            changePercent: 50,
+            flagged: true,
+            recentRunCount: 10,
+            previousRunCount: 10,
+          },
+        ],
+      },
+    });
+    expect(topConcern).toContain("skill(s) with >30% cost increase");
   });
 });
