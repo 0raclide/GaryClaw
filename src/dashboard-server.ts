@@ -320,12 +320,29 @@ function defaultGlobalBudget(): GlobalBudget {
 
 function defaultDaemonConfig(projectDir: string): DaemonConfig {
   return {
+    version: 1,
     projectDir,
-    skills: ["prioritize", "implement", "qa"],
+    triggers: [],
     budget: {
       dailyCostLimitUsd: 1000,
       perJobCostLimitUsd: 10,
       maxJobsPerDay: 100,
+    },
+    notifications: {
+      enabled: false,
+      onComplete: false,
+      onError: false,
+      onEscalation: false,
+    },
+    orchestrator: {
+      maxTurnsPerSegment: 15,
+      relayThresholdRatio: 0.85,
+      maxRelaySessions: 10,
+      askTimeoutMs: 30000,
+    },
+    logging: {
+      level: "info",
+      retainDays: 7,
     },
   };
 }
