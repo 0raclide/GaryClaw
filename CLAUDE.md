@@ -45,7 +45,7 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Project Type Awareness: COMPLETE** (2026-03-30) — Deterministic project classification (CLAUDE.md > package.json > file patterns), cached in `.garyclaw/project-type.json`. Injected into Oracle projectContext + skill prompts. Doctor check #10 for stale cache. Bootstrap saves on detection.
 **Oracle Decision Cache: COMPLETE** (2026-03-30) — Sticky answers for repeated Oracle questions. Keyword bag normalization strips variable tokens (paths, numbers, timestamps, quoted strings), sorted dedup keyword set as cache key. 5-hit promotion threshold, warm start from decision-outcomes.md, reflection-based invalidation on failure outcomes. Partial-batch: cached questions resolved at zero cost, uncached sent to Oracle. Per-skill scope. `onCacheEvent` emits hit/miss/invalidated events. Daemon config validation for `oracleCache.enabled` + `oracleCache.minHits`.
 **Per-Skill Cost Attribution: COMPLETE** (2026-03-31) — Per-skill cost aggregation, trend detection (>15% flagging), dashboard formatting, health score integration
-- 43 source modules, 209 test files, 3382 tests
+- 43 source modules, 209 test files, 3384 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
