@@ -45,7 +45,8 @@ GaryClaw wraps Claude Code in an external harness that monitors context usage, c
 **Project Type Awareness: COMPLETE** (2026-03-30) — Deterministic project classification (CLAUDE.md > package.json > file patterns), cached in `.garyclaw/project-type.json`. Injected into Oracle projectContext + skill prompts. Doctor check #10 for stale cache. Bootstrap saves on detection.
 **Oracle Decision Cache: COMPLETE** (2026-03-30) — Sticky answers for repeated Oracle questions. Keyword bag normalization strips variable tokens (paths, numbers, timestamps, quoted strings), sorted dedup keyword set as cache key. 5-hit promotion threshold, warm start from decision-outcomes.md, reflection-based invalidation on failure outcomes. Partial-batch: cached questions resolved at zero cost, uncached sent to Oracle. Per-skill scope. `onCacheEvent` emits hit/miss/invalidated events. Daemon config validation for `oracleCache.enabled` + `oracleCache.minHits`.
 **Per-Skill Cost Attribution: COMPLETE** (2026-03-31) — Per-skill cost aggregation, trend detection (>15% flagging), dashboard formatting, health score integration
-- 43 source modules, 213 test files, 3420 tests
+**Oracle Memory Compaction: COMPLETE** (2026-03-31) — Age-gated question compaction via normalizeQuestion(), [compact] prefix, RECENT_KEEP_FULL=10, PATTERNS_BUDGET_TOKENS=2K cap, warmFromOutcomes prefix stripping, 36% size reduction bounded at 7.4K tokens
+- 43 source modules, 214 test files, 3438 tests
 - All 5 spikes passed (canUseTool, token tracking, env passthrough, relay prompt sizing, oracle session reuse)
 
 ---
@@ -178,7 +179,7 @@ CLI (args, readline, display, daemon subcommands, --name/--all)
 | `src/reflection-lock.ts` | Advisory file lock (mkdir-based) for concurrent oracle-memory writes |
 | `src/budget-lock.ts` | Advisory file lock (mkdir-based) for concurrent global-budget.json writes |
 | `src/safe-json.ts` | Shared atomic JSON/text I/O — `safeReadJSON`, `safeWriteJSON`, corruption recovery |
-| `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics |
+| `src/oracle-memory.ts` | Two-layer oracle memory: read/write taste, domain expertise, outcomes, metrics, age-gated question compaction |
 | `src/reflection.ts` | Post-job reflection: decision outcomes, reopened detection, quality metrics |
 | `src/researcher.ts` | Domain expertise research: web search, freshness tracking, section merge |
 | `src/bootstrap.ts` | Bootstrap skill: codebase analysis, CLAUDE.md/TODOS.md generation for cold-start repos, enriched re-bootstrap prompt |
@@ -370,6 +371,7 @@ All unit tests use synthetic data — **no SDK calls**. `sdk-wrapper.ts` is the 
 | `test/oracle-memory.regression-1.test.ts` | 8 | Oracle memory regression: layer resolution edge cases |
 | `test/oracle-memory.regression-2.test.ts` | 4 | Oracle memory regression: sanitization edge cases |
 | `test/oracle-memory.regression-3.test.ts` | 6 | Oracle memory regression: metrics edge cases |
+| `test/oracle-memory-compaction.test.ts` | 18 | compactOutcomeEntry, stripCompactMarker, compactDecisionOutcomes, writeDecisionOutcomesRolling integration, warmFromOutcomes cache key stability |
 | `test/codebase-summary.regression-1.test.ts` | 16 | Codebase summary regression: observation extraction edge cases |
 | `test/codebase-summary.regression-2.test.ts` | 4 | Codebase summary regression: dedup edge cases |
 | `test/codebase-summary.regression-3.test.ts` | 6 | Codebase summary regression: token budget edge cases |
