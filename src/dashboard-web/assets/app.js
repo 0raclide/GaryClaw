@@ -16,6 +16,7 @@
     decisions: [],
     mutations: [],
     growth: null,
+    activityLog: [],       // Array of { time, icon, text, type }
     connected: false,
     loading: true,
     error: null,
@@ -24,6 +25,8 @@
     decisionOffset: 0,
     decisionTotal: 0,
   };
+
+  var MAX_ACTIVITY_LOG = 200;
 
   // ── DOM References ─────────────────────────────────────────
 
@@ -74,17 +77,120 @@
     }
   }
 
+  // ── Activity Log Helpers ──────────────────────────────────
+
+  function addActivityEntry(icon, text, type) {
+    var now = new Date();
+    var time = ("0" + now.getHours()).slice(-2) + ":" +
+               ("0" + now.getMinutes()).slice(-2) + ":" +
+               ("0" + now.getSeconds()).slice(-2);
+    state.activityLog.unshift({ time: time, icon: icon, text: text, type: type });
+    if (state.activityLog.length > MAX_ACTIVITY_LOG) {
+      state.activityLog.length = MAX_ACTIVITY_LOG;
+    }
+    if (state.activeTab === "live") renderActivityFeed();
+  }
+
+  function renderActivityFeed() {
+    var container = document.getElementById("activity-feed");
+    if (!container) return;
+
+    if (state.activityLog.length === 0) {
+      var emptyMsg = state.connected ? "Watching for events..." : "Reconnecting...";
+      var dotClass = state.connected ? "pulse-dot" : "pulse-dot disconnected";
+      container.innerHTML = '<div style="display: flex; align-items: center; gap: 8px; padding: 12px; color: var(--text-dim); font-size: 13px;">' +
+        '<div class="' + dotClass + '"></div>' + escapeHtml(emptyMsg) + '</div>';
+      return;
+    }
+
+    var html = "";
+    for (var i = 0; i < state.activityLog.length; i++) {
+      var entry = state.activityLog[i];
+      html += '<div class="activity-line">';
+      html += '<span class="activity-time">' + entry.time + '</span>';
+      html += '<span class="activity-icon">' + entry.icon + '</span>';
+      html += '<span class="activity-text">' + escapeHtml(entry.text) + '</span>';
+      html += '</div>';
+    }
+
+    // Check if user has scrolled up before updating
+    var wasScrolledToBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 50;
+    container.innerHTML = html;
+    if (wasScrolledToBottom) {
+      container.scrollTop = 0; // newest on top, so scroll to top
+    }
+  }
+
+  // ── Simple Markdown Renderer ────────────────────────────────
+
+  function renderSimpleMarkdown(md) {
+    if (!md) return "";
+    var html = md
+      .replace(/^---[\s\S]*?---\n?/m, "")           // strip YAML frontmatter
+      .replace(/^### (.+)$/gm, "<h4>$1</h4>")        // h3 -> h4
+      .replace(/^## (.+)$/gm, "<h3>$1</h3>")         // h2 -> h3
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>") // bold
+      .replace(/^- (.+)$/gm, "<li>$1</li>")           // bullets
+      .replace(/\n{2,}/g, "<br>")                     // paragraph breaks
+      .trim();
+    // Wrap contiguous <li> runs in <ul>
+    html = html.replace(/((?:<li>.*?<\/li>\s*)+)/g, "<ul>$1</ul>");
+    return html;
+  }
+
+  function renderDomainExpertise(md) {
+    if (!md) return '<div style="color: var(--text-dim); padding: 8px 0;">No domain expertise researched yet.</div>';
+    // Split on ## headings, preserving the heading text
+    var sections = md.split(/^## /gm).filter(Boolean);
+    if (sections.length === 0) return renderSimpleMarkdown(md);
+
+    var html = "";
+    for (var i = 0; i < sections.length; i++) {
+      var lines = sections[i].split("\n");
+      var title = lines[0].trim();
+      var body = lines.slice(1).join("\n");
+      // Extract per-section YAML frontmatter
+      var lastResearched = null;
+      var fmMatch = body.match(/^---\n([\s\S]*?)\n---/m);
+      if (fmMatch) {
+        var dateMatch = fmMatch[1].match(/lastResearched:\s*(\S+)/);
+        if (dateMatch) lastResearched = dateMatch[1];
+        body = body.replace(/^---\n[\s\S]*?\n---\n?/m, "");
+      }
+      // Freshness badge
+      var badge = "";
+      if (lastResearched) {
+        var age = (Date.now() - new Date(lastResearched).getTime()) / 86400000;
+        var cls = age < 14 ? "freshness-fresh" : age < 30 ? "freshness-aging" : "freshness-stale";
+        var label = age < 14 ? "fresh" : age < 30 ? "aging" : "stale";
+        badge = ' <span class="freshness-badge ' + cls + '">' + label + "</span>";
+      }
+      html += "<h3>" + escapeHtml(title) + badge + "</h3>";
+      html += renderSimpleMarkdown(body);
+    }
+    return html;
+  }
+
   // ── Live Feed View ─────────────────────────────────────────
 
   function renderLiveFeed() {
     var d = state.dashboardData;
     if (!d) { showEmpty("view-live"); return; }
 
+    // Activity feed section
+    var dotClass = state.connected ? "pulse-dot" : "pulse-dot disconnected";
+    var statusText = state.connected ? "LIVE ACTIVITY" : "RECONNECTING";
+    var html = '<div class="activity-header">';
+    html += '<div class="' + dotClass + '"></div>';
+    html += '<span style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim);">' + statusText + '</span>';
+    html += '</div>';
+    html += '<div id="activity-feed" class="activity-feed"></div>';
+
     // Health card
     var healthColor = d.healthScore >= 80 ? "green" : d.healthScore >= 50 ? "amber" : "red";
     var healthLabel = d.healthScore >= 80 ? "HEALTHY" : d.healthScore >= 50 ? "DEGRADED" : "UNHEALTHY";
 
-    var html = '<div class="card-grid">';
+    html += '<div class="card-grid">';
 
     // Health
     html += '<div class="card">';
@@ -170,6 +276,8 @@
     }
 
     $("view-live").innerHTML = html;
+    // Populate activity feed after DOM update
+    renderActivityFeed();
   }
 
   // ── Mutation Timeline View ─────────────────────────────────
@@ -376,6 +484,22 @@
 
     html += '</div>';
 
+    // Taste Profile card
+    html += '<div class="card oracle-content-card">';
+    html += '<div class="card-title">Taste Profile</div>';
+    if (d.tasteProfile) {
+      html += renderSimpleMarkdown(d.tasteProfile);
+    } else {
+      html += '<div style="color: var(--text-dim); padding: 8px 0;">No taste profile learned yet.</div>';
+    }
+    html += '</div>';
+
+    // Domain Expertise card
+    html += '<div class="card oracle-content-card">';
+    html += '<div class="card-title">Domain Expertise</div>';
+    html += renderDomainExpertise(d.domainExpertise);
+    html += '</div>';
+
     el.innerHTML = html;
 
     // Bind search
@@ -528,6 +652,9 @@
           if (data.healthScore !== undefined) state.dashboardData.healthScore = data.healthScore;
           if (data.budget) state.dashboardData.budget = data.budget;
         }
+        var jobText = "Job update";
+        if (data.jobs) jobText = "Jobs: " + data.jobs.total + " total, " + data.jobs.complete + " complete";
+        addActivityEntry("\uD83D\uDCBC", jobText, "job_update");
         if (state.activeTab === "live") renderLiveFeed();
         updateFooter();
       } catch (e) { /* ignore */ }
@@ -539,6 +666,9 @@
         if (state.dashboardData && data.budget) {
           state.dashboardData.budget = data.budget;
         }
+        var budgetText = "Budget updated";
+        if (data.budget) budgetText = "Budget: " + formatUsd(data.budget.dailySpentUsd) + " spent today";
+        addActivityEntry("\uD83D\uDCB2", budgetText, "budget");
         if (state.activeTab === "live") renderLiveFeed();
         updateFooter();
       } catch (e) { /* ignore */ }
@@ -550,6 +680,8 @@
         if (dec.id) {
           state.decisions.unshift(dec);
           state.decisionTotal++;
+          var decText = "Oracle: \"" + (dec.chosen || "?") + "\" (" + (dec.confidence || "?") + "/10)";
+          addActivityEntry("\uD83E\uDDE0", decText, "decision");
           if (state.activeTab === "mind") renderOracleMind();
         }
       } catch (e) { /* ignore */ }
@@ -557,6 +689,10 @@
 
     source.addEventListener("mutation", function (event) {
       try {
+        var mutData = JSON.parse(event.data);
+        var mutText = "Mutation";
+        if (mutData.todoTitle) mutText = "Mutation " + (mutData.outcome || "") + ": " + mutData.todoTitle;
+        addActivityEntry("\uD83E\uDDEC", mutText, "mutation");
         // Reload mutations on any change
         fetch("/api/mutations?limit=20")
           .then(function (r) { return r.json(); })
@@ -568,12 +704,21 @@
     });
 
     source.addEventListener("taste_update", function () {
-      // Refresh mind view if active
-      if (state.activeTab === "mind") renderOracleMind();
+      addActivityEntry("\u2728", "Taste profile updated", "taste_update");
+      // Re-fetch /api/state to get fresh taste content
+      fetch("/api/state").then(function (r) { return r.json(); }).then(function (data) {
+        state.dashboardData = data;
+        if (state.activeTab === "mind") renderOracleMind();
+      }).catch(function () { /* best-effort */ });
     });
 
     source.addEventListener("expertise_update", function () {
-      if (state.activeTab === "mind") renderOracleMind();
+      addActivityEntry("\uD83D\uDCDA", "Domain expertise updated", "expertise_update");
+      // Re-fetch /api/state to get fresh expertise content
+      fetch("/api/state").then(function (r) { return r.json(); }).then(function (data) {
+        state.dashboardData = data;
+        if (state.activeTab === "mind") renderOracleMind();
+      }).catch(function () { /* best-effort */ });
     });
   }
 
